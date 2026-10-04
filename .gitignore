@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.env
+.env.local
+.vercel/
+*.log
+*.tsbuildinfo
+.DS_Store
+
+# Runtime uploads and generated assets
+apps/storage/
+apps/api/public/assets/covers/
+apps/api/uploads/
+apps/web/public/covers/
+.vercel
+.env*
+
+# Local skill binaries
+.cursor/skills/**/bin/
+.cursor/skills/**/*.exe
+

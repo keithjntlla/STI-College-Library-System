@@ -1,0 +1,361 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Poppins", "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
+  --font-display: "Poppins", "Aptos Display", "Segoe UI Variable Display", "Segoe UI", Arial, sans-serif;
+}
+
+:root {
+  font-family: var(--font-sans);
+  color: #0b5ea2;
+  background: #FFFFFF;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --sl-bg: #FFFFFF;
+  --sl-bg-elevated: #FFFFFF;
+  --sl-bg-muted: rgba(11,94,162, 0.05);
+  --sl-text: #0b5ea2;
+  --sl-text-muted: rgba(11,94,162, 0.65);
+  --sl-border: rgba(11,94,162, 0.15);
+  --sl-accent: #FFF200;
+  --sl-brand: #0b5ea2;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--sl-bg);
+  color: var(--sl-text);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--sl-bg);
+  color: var(--sl-text);
+}
+
+button,
+select,
+input,
+textarea {
+  font: inherit;
+}
+
+button,
+a,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  cursor: pointer;
+}
+
+::selection {
+  color: #ffffff;
+  background: #0b5ea2;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #0b5ea2;
+  background-clip: padding-box;
+}
+
+.demo-loader {
+  animation: demo-progress 900ms ease-in-out forwards;
+}
+
+@keyframes demo-progress {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Dark mode — STI palette only (deep navy / white / yellow)                  */
+/* Attribute selectors catch every opacity/placeholder variant of brand ink.  */
+/* -------------------------------------------------------------------------- */
+
+html.dark {
+  color-scheme: dark;
+  --sl-bg: #000d2b;
+  --sl-bg-elevated: #001a4d;
+  --sl-bg-muted: rgba(255, 255, 255, 0.08);
+  --sl-text: #f7f9ff;
+  --sl-text-muted: rgba(247, 249, 255, 0.88);
+  --sl-text-subtle: rgba(247, 249, 255, 0.72);
+  --sl-border: rgba(255, 255, 255, 0.18);
+  --sl-accent: #FFF200;
+  --sl-brand: #0b5ea2;
+  color: var(--sl-text);
+  background: var(--sl-bg);
+}
+
+html.dark body {
+  color: var(--sl-text);
+  background: var(--sl-bg);
+}
+
+html.dark ::selection {
+  color: #ffffff;
+  background: #0b5ea2;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 242, 0, 0.55);
+  background-clip: padding-box;
+}
+
+/* Surfaces */
+html.dark .bg-white,
+html.dark .bg-\[\#FFFFFF\],
+html.dark .bg-\[\#ffffff\],
+html.dark .bg-\[\#fff\] {
+  background-color: var(--sl-bg-elevated) !important;
+}
+
+html.dark .bg-white\/90 {
+  background-color: rgba(0, 26, 77, 0.94) !important;
+}
+
+html.dark .bg-\[\#0b5ea2\]\/5,
+html.dark .bg-\[\#0b5ea2\]\/\[0\.05\] {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark .bg-\[\#0b5ea2\]\/10 {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark .hover\:bg-\[\#0b5ea2\]\/5:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+html.dark .focus\:bg-white:focus {
+  background-color: #002266 !important;
+}
+
+/*
+ * Brand blue ink → light ink on dark surfaces.
+ * Attribute selectors cover text-[#0b5ea2], text-[#0b5ea2]/70, placeholder:, etc.
+ */
+html.dark [class*="text-[#0b5ea2]"] {
+  color: var(--sl-text) !important;
+}
+
+html.dark [class*="text-[#0b5ea2]/9"],
+html.dark [class*="text-[#0b5ea2]/8"],
+html.dark [class*="text-[#0b5ea2]/7"] {
+  color: var(--sl-text) !important;
+}
+
+html.dark [class*="text-[#0b5ea2]/6"],
+html.dark [class*="text-[#0b5ea2]/5"],
+html.dark [class*="text-[#0b5ea2]/4"],
+html.dark [class*="text-[#0b5ea2]/3"] {
+  color: var(--sl-text-muted) !important;
+}
+
+html.dark [class*="text-[#0b5ea2]/2"],
+html.dark [class*="text-[#0b5ea2]/1"] {
+  color: var(--sl-text-subtle) !important;
+}
+
+html.dark .hover\:text-\[\#0b5ea2\]:hover {
+  color: #ffffff !important;
+}
+
+/* Borders */
+html.dark [class*="border-[#0b5ea2]"] {
+  border-color: var(--sl-border) !important;
+}
+
+html.dark .ring-\[\#0b5ea2\]\/10,
+html.dark .focus\:ring-\[\#0b5ea2\]\/10:focus {
+  --tw-ring-color: rgba(255, 242, 0, 0.28) !important;
+}
+
+html.dark .focus\:border-\[\#0b5ea2\]:focus,
+html.dark .focus\:border-\[\#0b5ea2\]\/15:focus {
+  border-color: rgba(255, 242, 0, 0.5) !important;
+}
+
+html.dark [class*="shadow"] {
+  --tw-shadow-color: rgba(0, 0, 0, 0.35);
+}
+
+/* Form controls + placeholders (placeholder:text-[#0b5ea2]/40 stays dark otherwise) */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  color-scheme: dark;
+}
+
+html.dark input:not([type="checkbox"]):not([type="radio"]),
+html.dark select,
+html.dark textarea {
+  background-color: #001433 !important;
+  color: #f7f9ff !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: rgba(247, 249, 255, 0.55) !important;
+  opacity: 1;
+}
+
+html.dark option {
+  background-color: #001a4d;
+  color: #f7f9ff;
+}
+
+/* Tables */
+html.dark thead.bg-\[\#0b5ea2\],
+html.dark thead[class*="bg-[#0b5ea2]"] {
+  background-color: #0b5ea2 !important;
+  color: #ffffff !important;
+}
+
+html.dark thead.bg-\[\#0b5ea2\] *,
+html.dark thead[class*="bg-[#0b5ea2]"] * {
+  color: #ffffff !important;
+}
+
+html.dark tbody tr {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+html.dark .divide-\[\#0b5ea2\]\/10 > :not([hidden]) ~ :not([hidden]),
+html.dark [class*="divide-[#0b5ea2]"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* Yellow fills (solid / strong tints) keep navy ink — not faint /10 washes on navy heroes */
+html.dark .bg-\[\#FFF200\],
+html.dark .bg-\[\#FFF200\]\/35,
+html.dark .bg-\[\#FFF200\]\/40,
+html.dark .bg-\[\#FFF200\]\/50,
+html.dark .bg-\[\#FFF200\]\/60,
+html.dark .bg-\[\#FFF200\]\/70,
+html.dark .bg-\[\#FFF200\]\/80,
+html.dark .bg-\[\#FFF200\]\/90,
+html.dark .hover\:bg-\[\#FFF200\]:hover {
+  color: #0b5ea2 !important;
+}
+
+html.dark .bg-\[\#FFF200\] [class*="text-[#0b5ea2]"],
+html.dark .bg-\[\#FFF200\]\/35 [class*="text-[#0b5ea2]"],
+html.dark .bg-\[\#FFF200\]\/40 [class*="text-[#0b5ea2]"],
+html.dark .bg-\[\#FFF200\] [class*="text-[#0b5ea2]/"],
+html.dark .bg-\[\#FFF200\]\/35 [class*="text-[#0b5ea2]/"],
+html.dark .bg-\[\#FFF200\]\/40 [class*="text-[#0b5ea2]/"] {
+  color: #0b5ea2 !important;
+}
+
+/* Nested brand chips inside yellow headers stay white-on-navy */
+html.dark .bg-\[\#FFF200\] .bg-\[\#0b5ea2\],
+html.dark .bg-\[\#FFF200\]\/35 .bg-\[\#0b5ea2\],
+html.dark .bg-\[\#FFF200\]\/40 .bg-\[\#0b5ea2\] {
+  background-color: #0b5ea2 !important;
+  color: #ffffff !important;
+}
+
+html.dark .bg-\[\#FFF200\] .bg-\[\#0b5ea2\] [class*="text-[#FFFFFF]"],
+html.dark .bg-\[\#FFF200\] .bg-\[\#0b5ea2\] .text-white,
+html.dark .bg-\[\#FFF200\] .bg-\[\#0b5ea2\] [class*="text-[#FFF"] {
+  color: #ffffff !important;
+}
+
+/* Solid brand navy panels / primary CTAs: white text */
+html.dark .bg-\[\#0b5ea2\],
+html.dark .bg-\[\#0b5ea2\]\/90,
+html.dark [class~="bg-[#0b5ea2]"] {
+  background-color: #0b5ea2 !important;
+  color: #ffffff !important;
+}
+
+html.dark .bg-\[\#0b5ea2\] [class*="text-[#FFFFFF]"],
+html.dark .bg-\[\#0b5ea2\] .text-white,
+html.dark .bg-\[\#0b5ea2\]\/90 [class*="text-[#FFFFFF]"],
+html.dark .bg-\[\#0b5ea2\]\/90 .text-white {
+  color: #ffffff !important;
+}
+
+html.dark .bg-\[\#0b5ea2\] [class*="text-[#FFF200]"],
+html.dark .bg-\[\#0b5ea2\]\/90 [class*="text-[#FFF200]"] {
+  color: #FFF200 !important;
+}
+
+html.dark .bg-\[\#0b5ea2\] [class*="text-[#FFFFFF]/"],
+html.dark .bg-\[\#0b5ea2\] [class*="text-white/"],
+html.dark .bg-\[\#0b5ea2\]\/90 [class*="text-[#FFFFFF]/"],
+html.dark .bg-\[\#0b5ea2\]\/90 [class*="text-white/"] {
+  color: rgba(255, 255, 255, 0.82) !important;
+}
+
+/* Soft navy washes must NOT inherit solid-brand white text rules */
+html.dark .bg-\[\#0b5ea2\]\/5,
+html.dark .bg-\[\#0b5ea2\]\/10,
+html.dark .bg-\[\#0b5ea2\]\/15,
+html.dark .bg-\[\#0b5ea2\]\/20,
+html.dark .bg-\[\#0b5ea2\]\/25,
+html.dark .bg-\[\#0b5ea2\]\/35,
+html.dark .bg-\[\#0b5ea2\]\/40,
+html.dark .bg-\[\#0b5ea2\]\/55 {
+  color: var(--sl-text) !important;
+}
+
+/* Same-element yellow + brand-ink (badges, CTAs) */
+html.dark .bg-\[\#FFF200\][class*="text-[#0b5ea2]"],
+html.dark .bg-\[\#FFF200\]\/35[class*="text-[#0b5ea2]"],
+html.dark .bg-\[\#FFF200\]\/40[class*="text-[#0b5ea2]"],
+html.dark .bg-\[\#FFF200\][class*="dark:text-[#0b5ea2]"],
+html.dark .bg-\[\#FFF200\]\/35[class*="dark:text-[#0b5ea2]"],
+html.dark .bg-\[\#FFF200\]\/40[class*="dark:text-[#0b5ea2]"] {
+  color: #0b5ea2 !important;
+}
+
+/* Sidebar active item: yellow pill + navy label */
+html.dark aside a.bg-white,
+html.dark aside a.dark\:bg-\[\#FFF200\],
+html.dark aside .bg-white.text-\[\#0b5ea2\],
+html.dark aside a[class*="bg-[#FFF200]"] {
+  background-color: #FFF200 !important;
+  color: #0b5ea2 !important;
+}
+
+html.dark aside a.bg-white [class*="text-[#0b5ea2]"],
+html.dark aside a[class*="bg-[#FFF200]"] * {
+  color: #0b5ea2 !important;
+}

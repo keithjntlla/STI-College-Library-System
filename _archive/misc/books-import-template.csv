@@ -1,0 +1,51 @@
+Title,Author,ISBN,Publication_Year,Category_ID,Quantity
+To Kill a Mockingbird,Harper Lee,9780060935467,1960,1,1
+1984,George Orwell,9780451524935,1949,1,1
+The Great Gatsby,F. Scott Fitzgerald,9780743273565,1925,1,4
+Pride and Prejudice,Jane Austen,9781503290563,1813,1,1
+The Catcher in the Rye,J.D. Salinger,9780316769174,1951,1,3
+The Hobbit,J.R.R. Tolkien,9780547928227,1937,1,3
+Fahrenheit 451,Ray Bradbury,9781451673319,1953,1,3
+Moby-Dick,Herman Melville,9781503280786,1851,1,3
+Jane Eyre,Charlotte Brontë,9780141441146,1847,1,3
+The Lord of the Rings,J.R.R. Tolkien,9780544003415,1954,1,3
+Code: The Hidden Language of Computer Hardware and Software,Charles Petzold,9780735611313,2000,2,3
+The Mythical Man-Month,Frederick P. Brooks Jr.,9780201835953,1975,2,4
+Structure and Interpretation of Computer Programs,Harold Abelson,9780262510875,1984,2,5
+The Art of Computer Programming,Donald Knuth,9780201896831,1968,2,4
+Cracking the Coding Interview,Gayle Laakmann McDowell,9780984782857,2015,2,4
+Clean Code,Robert C. Martin,9780132350884,2008,2,3
+Design Patterns,Erich Gamma,9780201633610,1994,2,1
+Introduction to Algorithms,Thomas H. Cormen,9780262033848,1990,2,5
+The Pragmatic Programmer,Andrew Hunt,9780201616224,1999,2,2
+Refactoring,Martin Fowler,9780201485677,1999,2,3
+"Thinking, Fast and Slow",Daniel Kahneman,9780374533557,2011,3,5
+Principles of Marketing,Philip Kotler,9780134492513,2017,3,1
+Good to Great,Jim Collins,9780066620992,2001,3,3
+Shoe Dog,Phil Knight,9781501135927,2016,3,2
+Zero to One,Peter Thiel,9780804139298,2014,3,4
+The Lean Startup,Eric Ries,9780307887894,2011,3,2
+Dare to Lead,Brené Brown,9780399592522,2018,3,3
+Atomic Habits,James Clear,9780735211292,2018,3,5
+Deep Work,Cal Newport,9781455586691,2016,3,5
+Start with Why,Simon Sinek,9781591846444,2009,3,3
+Fundamentals of Electric Circuits,Charles K. Alexander,9780078028229,2016,4,2
+Engineering Mechanics: Dynamics,J.L. Meriam,9781118885840,2015,4,1
+Materials Science and Engineering,William D. Callister Jr.,9781118324578,2013,4,4
+A Brief History of Time,Stephen Hawking,9780553380163,1988,4,4
+The Selfish Gene,Richard Dawkins,9780192860927,1976,4,3
+Cosmos,Carl Sagan,9780345331359,1980,4,5
+Sapiens: A Brief History of Humankind,Yuval Noah Harari,9780062316097,2011,4,3
+The Origin of Species,Charles Darwin,9780451529060,1859,4,1
+Astrophysics for People in a Hurry,Neil deGrasse Tyson,9780393609394,2017,4,1
+Silent Spring,Rachel Carson,9780618249060,1962,4,5
+Educational Psychology,Anita Woolfolk,9780134774329,2018,5,1
+Democracy and Education,John Dewey,9781680922837,1916,5,2
+Pedagogy of the Oppressed,Paulo Freire,9780826412768,1968,5,2
+The Story of Art,E.H. Gombrich,9780714832470,1950,7,5
+A History of the World in 6 Glasses,Tom Standage,9780802715524,2005,7,3
+Ways of Seeing,John Berger,9780140135152,1972,7,5
+"Guns, Germs, and Steel",Jared Diamond,9780393317558,1997,7,1
+The Elements of Style,William Strunk Jr.,9780205309023,1918,7,1
+On Writing: A Memoir of the Craft,Stephen King,9781439156810,2000,7,1
+Steal Like an Artist,Austin Kleon,9780761169253,2012,7,1

@@ -1,0 +1,151 @@
+import type { GeneratedBookLabel,  AdminBookAsset, BulkBookResult, CatalogFilters, CatalogItem, Category, CategoryAssignmentResult, IsbnMetadata, PhysicalCopy } from './types'
+import { getAccessToken } from '../auth/auth-storage'
+
+export class ApiError extends Error {
+  constructor(message: string, public code: string, public details?: { errors?: Record<string, string> }) { super(message) }
+}
+
+let csrfToken: string | null = null
+
+async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const method = options.method?.toUpperCase() ?? 'GET'
+  const headers = new Headers(options.headers)
+  const accessToken = getAccessToken()
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    if (!accessToken && !csrfToken) {
+      const response = await fetch('/api/auth/csrf', { credentials: 'include' })
+      const payload = await response.json() as { csrfToken?: string; message?: string }
+      if (!response.ok || !payload.csrfToken) throw new ApiError(payload.message ?? 'Unable to start a secure request.', 'CSRF_UNAVAILABLE')
+      csrfToken = payload.csrfToken
+    }
+    headers.set('Content-Type', 'application/json')
+    if (csrfToken) headers.set('x-csrf-token', csrfToken)
+  }
+  const response = await fetch(url, { ...options, headers, credentials: 'include' })
+  const payload = await response.json() as { success?: boolean; message?: string; code?: string; details?: { errors?: Record<string, string> }; data?: T }
+  if (!response.ok) {
+    if (payload.code === 'INVALID_CSRF_TOKEN') csrfToken = null
+    throw new ApiError(payload.message ?? 'The request could not be completed.', payload.code ?? 'REQUEST_FAILED', payload.details)
+  }
+  return payload.data as T
+}
+
+export function filterQuery(filters: CatalogFilters) {
+  const query = new URLSearchParams()
+  if (filters.q) query.set('q', filters.q)
+  if (filters.scope !== 'all') query.set('scope', filters.scope)
+  if (filters.categoryId) query.set('categoryId', filters.categoryId)
+  if (filters.author) query.set('author', filters.author)
+  if (filters.publicationYear) query.set('publicationYear', filters.publicationYear)
+  if (filters.availability) query.set('availability', filters.availability)
+  return query.toString()
+}
+
+export const catalogApi = {
+  async quotations(titleId: number) { return request<Array<{ quotationId: number; titleId: number; filename: string; quotedAmount: number; uploadedAt: string; current: boolean }>>(`/api/v1/admin/catalog/titles/${titleId}/quotations`) },
+  async uploadQuotation(titleId: number, file: File, amount: number) {
+    const body = new FormData(); body.set('quotation', file); body.set('quoted_amount', String(amount))
+    const headers = new Headers({ Accept: 'application/json' }); const token = getAccessToken(); if (token) headers.set('Authorization', `Bearer ${token}`)
+    const response = await fetch(`/api/v1/admin/catalog/titles/${titleId}/quotations`, { method: 'POST', body, headers, credentials: 'include' })
+    const payload = await response.json() as { success?: boolean; message?: string }
+    if (!response.ok || !payload.success) throw new ApiError(payload.message ?? 'Quotation upload failed.', 'QUOTATION_UPLOAD_FAILED')
+  },
+  async downloadQuotation(titleId: number, quotationId: number, filename: string) {
+    const headers = new Headers(); const token = getAccessToken(); if (token) headers.set('Authorization', `Bearer ${token}`)
+    const response = await fetch(`/api/v1/admin/catalog/titles/${titleId}/quotations/${quotationId}/file`, { headers, credentials: 'include' })
+    if (!response.ok) throw new ApiError('The quotation could not be downloaded.', 'QUOTATION_DOWNLOAD_FAILED')
+    const url = URL.createObjectURL(await response.blob()); const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  },
+  archivedBooks: (q = '') => request<Array<{ titleId: number; copyId?: number; title: string; isbn: string | null; authors: string | null; accession?: string; barcode?: string; archivedAt: string; reason: string | null; archivedBy: string | null; copyCount: number; recordKind: string }>>(`/api/v1/admin/catalog/archive?q=${encodeURIComponent(q)}`),
+  deletedBookSnapshots: (q = '') => request<Array<{ eventId: number; barcode: string; lastCondition: string | null; lastAvailability: string | null; reason: string | null; staffLabel: string; deletedAt: string }>>(`/api/v1/admin/catalog/archive/deleted-snapshots?q=${encodeURIComponent(q)}`),
+  archivedBookDetail: (titleId: number) => request<{ titleId: number; title: string; isbn: string | null; authors: string | null; reason: string | null; archivedAt: string | null; archivedBy: string | null; copies: Array<{ copyId: number; accession: string; barcode: string; shelf: string; condition: string; archivedAt: string; reason: string; borrowingCount: number }>; borrowings: Array<{ transactionId: number; accession: string; borrowerId: string; status: string; borrowedAt: string | null; returnedAt: string | null }>; auditEvents: Array<{ eventId: number; accession: string; eventType: string; reason: string | null; staffLabel: string; createdAt: string }> }>(`/api/v1/admin/catalog/archive/${titleId}`),
+  archiveBook: (titleId: number, reason: string) => request(`/api/catalog/books/${titleId}/archive`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  async search(filters: CatalogFilters) {
+    return request<{ items: CatalogItem[]; pagination: { total: number } }>(`/api/catalog/search?${filterQuery(filters)}`)
+  },
+  categories: () => request<Category[]>('/api/categories'),
+  copies: () => request<PhysicalCopy[]>('/api/catalog/admin/copies?limit=150'),
+  changeTitleCategory: (titleId: number, targetCategoryId: number, expectedRowVersion: number) => request<CategoryAssignmentResult>(
+    `/api/v1/admin/catalog/titles/${titleId}/category`,
+    { method: 'PATCH', body: JSON.stringify({ targetCategoryId, expectedRowVersion }) },
+  ),
+  createBook: (body: unknown) => request('/api/catalog/books', { method: 'POST', body: JSON.stringify(body) }),
+  createBulkBook: (body: unknown) => request<BulkBookResult>('/api/v1/admin/catalog/bulk-entry', { method: 'POST', body: JSON.stringify(body) }),
+  async bulkImport(file: File) {
+    const body = new FormData()
+    body.set('file', file)
+    const headers = new Headers({ Accept: 'application/json' })
+    const token = getAccessToken()
+    if (token) headers.set('Authorization', `Bearer ${token}`)
+    const response = await fetch('/api/v1/admin/catalog/bulk-import', {
+      method: 'POST',
+      body,
+      headers,
+      credentials: 'include',
+    })
+    const payload = await response.json() as {
+      success?: boolean
+      message?: string
+      code?: string
+      data?: { booksCreated: number; copiesCreated: number }
+    }
+    if (!response.ok || !payload.success || !payload.data) {
+      throw new ApiError(payload.message ?? 'The CSV import could not be completed.', payload.code ?? 'BULK_IMPORT_FAILED')
+    }
+    return { ...payload.data, message: payload.message ?? `Successfully imported ${payload.data.booksCreated} books and ${payload.data.copiesCreated} copies.` }
+  },
+  lookupIsbn: (isbn: string, signal?: AbortSignal) => request<IsbnMetadata>(`/api/v1/admin/books/isbn/${encodeURIComponent(isbn)}`, { signal }),
+  copyByBarcode: (barcode: string, signal?: AbortSignal) => request<GeneratedBookLabel>(`/api/catalog/books/copies/${encodeURIComponent(barcode)}`, { signal }),
+  asset: (physicalCopyId: number, signal?: AbortSignal) => request<AdminBookAsset>(`/api/v1/admin/books/assets/${physicalCopyId}`, { signal }),
+  researchAsset: (researchInventoryId: number, signal?: AbortSignal) => request<AdminBookAsset>(`/api/v1/admin/research/assets/${researchInventoryId}`, { signal }),
+  async downloadAssetPng(assetId: number, kind: 'barcode' | 'qr', assetType: 'book' | 'research' = 'book') {
+    const accessToken = getAccessToken()
+    const headers = new Headers({ Accept: 'image/png' })
+    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+    const response = await fetch(`/api/v1/admin/${assetType === 'research' ? 'research' : 'books'}/assets/${assetId}/${kind}.png`, { headers, credentials: 'include' })
+    if (!response.ok) {
+      const isJson = (response.headers.get('content-type') ?? '').includes('application/json')
+      const payload = isJson ? await response.json() as { message?: string; code?: string } : null
+      throw new ApiError(payload?.message ?? 'The asset image could not be downloaded.', payload?.code ?? 'ASSET_DOWNLOAD_FAILED')
+    }
+    if (!(response.headers.get('content-type') ?? '').includes('image/png')) throw new ApiError('The server returned an unexpected asset file type.', 'INVALID_ASSET_IMAGE')
+    const disposition = response.headers.get('content-disposition') ?? ''
+    const filename = disposition.match(/filename="([^"]+)"/i)?.[1] ?? `smartlib-${kind}.png`
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a'); link.href = url; link.download = filename
+    document.body.appendChild(link); link.click(); link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  },
+  createThesis: (body: unknown) => request<BulkBookResult>('/api/catalog/research', { method: 'POST', body: JSON.stringify(body) }),
+  parseRegistry: (value: string) => request<{ kind: string; normalizedValue: string; match: null | Record<string, unknown> }>('/api/catalog/registry/parse', {
+    method: 'POST', body: JSON.stringify({ value, mode: 'auto' }),
+  }),
+  async downloadInventory(format: 'csv' | 'pdf', filters: CatalogFilters) {
+    const accessToken = getAccessToken()
+    const headers = new Headers({ Accept: format === 'csv' ? 'text/csv' : 'application/pdf' })
+    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+    const query = filterQuery(filters)
+    const response = await fetch(`/api/reports/catalog/inventory.${format}${query ? `?${query}` : ''}`, {
+      headers, credentials: 'include',
+    })
+    if (!response.ok) {
+      const isJson = (response.headers.get('content-type') ?? '').includes('application/json')
+      const payload = isJson ? await response.json() as { message?: string; code?: string } : null
+      throw new ApiError(payload?.message ?? `The ${format.toUpperCase()} report could not be generated.`, payload?.code ?? 'EXPORT_FAILED')
+    }
+    const expectedType = format === 'csv' ? 'text/csv' : 'application/pdf'
+    if (!(response.headers.get('content-type') ?? '').includes(expectedType)) {
+      throw new ApiError('The report server returned an unexpected file type.', 'INVALID_EXPORT_RESPONSE')
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `sti-library-inventory.${format}`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  },
+}

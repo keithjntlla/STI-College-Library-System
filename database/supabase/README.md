@@ -1,0 +1,37 @@
+-- ============================================================================
+-- STI Ormoc Smart Library — Supabase / Postgres schema drafts
+-- ============================================================================
+-- Status: drafts from MySQL baseline + migrations via tools/ai/mysql_to_pg.py,
+--         plus curated MAIN product gap-fill for migrations 033–040.
+-- Apply a reviewed file with: npm run db:supabase -w @sti-library/api -- 009_inventory_audit_orphan_history.sql
+-- Requires DATABASE_URL=postgresql://… in apps/api/.env
+--
+-- Files:
+--   001_from_baseline.sql                 — converted mysql56-schema
+--   002_from_migrations.sql               — draft from MySQL migrations (partial)
+--   003_readiness_gapfill.sql             — curated gap-fill
+--   004_inventory_audit_action_reason.sql — readiness column
+--   005_main_product_gapfill.sql          — MAIN 033–040 (profile, soft-delete,
+--                                           floor plans, shelf grid, attendance QR,
+--                                           printing receipts)
+--   006_print_request_timestamps.sql      — print_requests started_at/ready_at/etc.
+--   007_security_invoker_views.sql        — borrow_records / book_titles SECURITY INVOKER
+--   008_cutover_schema_gaps.sql            — missing category description and asset-code history ledger
+--   009_inventory_audit_orphan_history.sql  — nullable copy link for Deleted audit snapshots
+--   010_phase3_archive_floor_image.sql      — archive actor and published floor image history
+--   011_phase2_user_management.sql          — account auth versions and Admin management audit
+--   012_phase2_book_quotations.sql           — private quotation history and lost charge resolution (applied)
+--   013_phase2_job_runner.sql                — durable scheduled-run lease and metrics (applied)
+--   014_phase2_invoices.sql                  — separate gated invoice ledger (applied)
+--   015_phase6_registration_roles.sql        — pending verified accounts, Staff role, and avatar reviews (applied)
+--   016_phase6_legacy_student_account_links.sql — backfill missing Student/Faculty login links (applied)
+-- Next Postgres file number: 017. Product files through 016 are applied. Apply reviewed files individually.
+-- The hosted ledger also lists advisor-named 011/012 files absent from this checkout;
+-- reconcile their sources before whole-directory replay.
+--
+-- MySQL tree under database/mysql56-schema.sql and database/migrations/ remains
+-- the historical contract and local rollback path (latest MySQL reference migration: 047, prepared locally).
+--
+-- Connection note: free-tier direct db.* host is often IPv6-only. Use Session
+-- pooler (port 5432) with user postgres.<project-ref> when on IPv4 networks.
+--
