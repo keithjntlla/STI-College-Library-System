@@ -272,7 +272,7 @@ export function BookCatalog() {
       ) : null}
 
       {books.length > 0 ? (
-        <div className={`transition-opacity duration-300 ${isFetching ? 'pointer-events-none opacity-40' : 'opacity-100'} ${viewMode === 'grid' ? 'grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid gap-4'}`}>
+        <div className={`transition-opacity duration-300 ${isFetching ? 'pointer-events-none opacity-40' : 'opacity-100'} ${viewMode === 'grid' ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' : 'grid gap-4'}`}>
           {books.map((book) => {
             const action = catalogActionLabel(book.availableCopiesCount)
             const inCart = cartBooks.has(book.titleId)
@@ -307,28 +307,28 @@ export function BookCatalog() {
             }
 
             return (
-              <article key={book.titleId} className="group relative flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 transition-all duration-300 hover:shadow-xl dark:bg-zinc-900 dark:ring-zinc-800">
+              <article key={book.titleId} className="group relative flex min-w-0 flex-col overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 transition-all duration-300 hover:shadow-lg dark:bg-zinc-900 dark:ring-zinc-800">
                 <button type="button" onClick={() => setSelectedTitleId(book.titleId)} className="aspect-[3/4] w-full overflow-hidden bg-zinc-100 text-left dark:bg-zinc-800" aria-label={`Open ${book.title}`}>
                   <BookCoverThumbnail title={book.title} coverImagePath={book.coverImagePath} className="h-full w-full rounded-none" />
                 </button>
-                <div className="flex flex-1 flex-col justify-between p-4">
+                <div className="flex flex-1 flex-col justify-between p-3">
                   <div>
                     <CatalogAvailabilityBadge status={book.currentAvailabilityStatus} availableCopiesCount={book.availableCopiesCount} />
-                    <h3 className="mt-2 font-display text-lg font-bold leading-tight text-zinc-900 line-clamp-2 dark:text-white">{book.title}</h3>
-                    <p className="mt-1 line-clamp-1 text-sm text-zinc-500 dark:text-zinc-400">{book.author}</p>
-                    <p className="mt-2 text-xs font-bold text-[#0b5ea2]">Copies: {book.availableCopiesCount} of {book.totalCopiesCount} available</p>
-                    <p className="mt-1 line-clamp-1 inline-flex items-center gap-1 text-xs font-semibold text-zinc-500"><MapPin size={12} />{shelf}</p>
+                    <h3 className="mt-1.5 font-display text-sm font-bold leading-tight text-zinc-900 line-clamp-2 dark:text-white">{book.title}</h3>
+                    <p className="mt-0.5 line-clamp-1 text-xs text-zinc-500 dark:text-zinc-400">{book.author}</p>
+                    <p className="mt-1.5 text-[11px] font-bold text-[#0b5ea2]">Copies: {book.availableCopiesCount} of {book.totalCopiesCount} available</p>
+                    <p className="mt-0.5 line-clamp-1 inline-flex max-w-full items-center gap-1 text-[11px] font-semibold text-zinc-500"><MapPin size={11} className="shrink-0" />{shelf}</p>
                   </div>
-                  <div className="mt-4 grid grid-cols-2 gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-                    <button type="button" onClick={() => setSelectedTitleId(book.titleId)} className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-[#0b5ea2]/15 bg-white text-xs font-bold text-[#0b5ea2]">
-                      <Eye size={14} /> View details
+                  <div className="mt-2.5 flex flex-col gap-1.5 border-t border-zinc-100 pt-2.5 dark:border-zinc-800">
+                    <button type="button" onClick={() => setSelectedTitleId(book.titleId)} className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-[#0b5ea2]/15 bg-white px-2 text-[11px] font-bold text-[#0b5ea2]">
+                      <Eye size={12} className="shrink-0" /> View details
                     </button>
                     {action === 'Add to cart' ? (
-                      <button type="button" onClick={() => addToCart(book)} disabled={inCart} className="h-10 rounded-xl bg-[#0b5ea2] text-xs font-bold text-white disabled:opacity-50">
+                      <button type="button" onClick={() => addToCart(book)} disabled={inCart} className="h-8 rounded-lg bg-[#0b5ea2] px-2 text-[11px] font-bold text-white disabled:opacity-50">
                         {inCart ? 'In cart' : 'Add to cart'}
                       </button>
                     ) : (
-                      <button type="button" onClick={() => void reserve(book)} disabled={reserving === book.titleId} className="h-10 rounded-xl bg-[#FFF200] text-xs font-bold text-[#0b5ea2] disabled:opacity-50">
+                      <button type="button" onClick={() => void reserve(book)} disabled={reserving === book.titleId} className="h-8 rounded-lg bg-[#FFF200] px-2 text-[11px] font-bold text-[#0b5ea2] disabled:opacity-50">
                         {reserving === book.titleId ? 'Reserving…' : 'Reserve'}
                       </button>
                     )}

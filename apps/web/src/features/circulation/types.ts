@@ -12,12 +12,32 @@ export type BorrowingHistoryData = {
   pagination: { page: number; limit: number; total: number; totalPages: number }
 }
 
+export type OpenLoan = {
+  transactionId: number
+  title: string
+  accessionNumber: string | null
+  barcode: string
+  dueDate: string | null
+  status: 'Borrowed' | 'Overdue'
+}
+
+export type CheckoutEligibility = {
+  allowed: boolean
+  schoolId: string
+  name: string
+  role: string
+  activeLoans: number
+  loanLimit: number | null
+  openLoans: OpenLoan[]
+  message: string | null
+}
+
 export type CirculationMonitorData = {
   summary: { pendingClaims: number; activeLoans: number; overdueLoans: number; returnedToday: number; dueToday: number }
   items: Array<{
     transactionId: number; userName: string; schoolId: string; role: string; title: string
     accessionNumber: string | null; barcode: string; requestedAt: string; borrowDate: string | null; dueDate: string | null
-    returnDate: string | null; status: BorrowStatus
+    returnDate: string | null; status: BorrowStatus; lostReportStatus: string | null
   }>
   pagination: { page: number; limit: number; total: number; totalPages: number }
 }

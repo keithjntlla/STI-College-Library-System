@@ -49,6 +49,9 @@ const toneClasses: Record<string, string> = {
   unpaid: 'bg-red-100 text-red-700 ring-red-200 dark:bg-red-500/20 dark:text-red-400 dark:ring-red-500/30',
   unavailable: 'bg-[#0b5ea2]/5 text-[#0b5ea2]/65 ring-[#0b5ea2]/10 dark:bg-white/10 dark:text-white/80 dark:ring-white/15',
   inactive: 'bg-[#0b5ea2]/5 text-[#0b5ea2]/65 ring-[#0b5ea2]/10 dark:bg-white/10 dark:text-white/80 dark:ring-white/15',
+  lost_report_pending: 'bg-amber-100 text-amber-800 ring-amber-200 dark:bg-amber-500/20 dark:text-amber-200 dark:ring-amber-500/30',
+  lost_report_confirmed: 'bg-red-100 text-red-700 ring-red-200 dark:bg-red-500/20 dark:text-red-400 dark:ring-red-500/30',
+  lost_report_rejected: 'bg-[#0b5ea2]/5 text-[#0b5ea2]/65 ring-[#0b5ea2]/10 dark:bg-white/10 dark:text-white/80 dark:ring-white/15',
 }
 
 export function StatusBadge({ status }: { status: string }) {
@@ -126,7 +129,7 @@ export function StatusModal({ type = 'success', title, description, onClose }: {
   const styles = {
     error: { iconBg: 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400', button: 'bg-red-600 hover:bg-red-700 text-white', icon: AlertTriangle, title: 'text-red-900 dark:text-red-100' },
     warning: { iconBg: 'bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400', button: 'bg-orange-600 hover:bg-orange-700 text-white', icon: AlertTriangle, title: 'text-orange-900 dark:text-orange-100' },
-    success: { iconBg: 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400', button: 'bg-green-600 hover:bg-green-700 text-white', icon: CheckCircle2, title: 'text-green-900 dark:text-green-100' },
+    success: { iconBg: 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400', button: 'bg-[#0b5ea2] hover:bg-[#094d87] text-white', icon: CheckCircle2, title: 'text-green-900 dark:text-green-100' },
     info: { iconBg: 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400', button: 'bg-blue-600 hover:bg-blue-700 text-white', icon: Info, title: 'text-blue-900 dark:text-blue-100' },
   }[type]
   const Icon = styles.icon;
@@ -148,13 +151,13 @@ export function StatusModal({ type = 'success', title, description, onClose }: {
 
 export function ConfirmModal({ title, description, confirmText = 'Confirm', cancelText = 'Cancel', onConfirm, onCancel }: { title: string; description: ReactNode; confirmText?: string; cancelText?: string; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#001133]/40 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-[#001133]/40 p-4 backdrop-blur-sm lg:left-[var(--sidebar-offset,0px)]" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
       <div className="w-full max-w-sm rounded-3xl bg-[#FFFFFF] p-6 shadow-2xl dark:bg-[#001a4d] border border-white/10">
-        <h3 className="font-display text-xl font-bold text-[#0b5ea2] dark:text-white">{title}</h3>
+        <h3 id="confirm-modal-title" className="font-display text-xl font-bold text-[#0b5ea2] dark:text-white">{title}</h3>
         <p className="mt-2 text-sm text-[#0b5ea2]/70 dark:text-white/60">{description}</p>
         <div className="mt-6 flex justify-end gap-3">
-          <button onClick={onCancel} className="h-10 rounded-xl px-4 text-sm font-bold text-[#0b5ea2] hover:bg-zinc-100 transition-colors dark:text-white/80 dark:hover:bg-white/10">{cancelText}</button>
-          <button onClick={onConfirm} className="h-10 rounded-xl bg-[#0b5ea2] px-4 text-sm font-bold text-[#FFFFFF] hover:bg-[#004488] transition-colors">{confirmText}</button>
+          <button type="button" onClick={onCancel} className="h-10 rounded-xl px-4 text-sm font-bold text-[#0b5ea2] hover:bg-zinc-100 transition-colors dark:text-white/80 dark:hover:bg-white/10">{cancelText}</button>
+          <button type="button" onClick={onConfirm} className="h-10 rounded-xl bg-[#0b5ea2] px-4 text-sm font-bold text-[#FFFFFF] hover:bg-[#004488] transition-colors">{confirmText}</button>
         </div>
       </div>
     </div>

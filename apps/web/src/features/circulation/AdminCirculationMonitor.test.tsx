@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AdminCirculationMonitor } from './AdminCirculationMonitor'
+import { attendanceApi } from '../attendance/attendance-api'
 import { catalogApi } from '../catalog/catalog-api'
 import { usersApi } from '../users/users-api'
 
@@ -11,9 +12,19 @@ const api = vi.hoisted(() => ({
   calculatePenalty: vi.fn(),
   cancelRequest: vi.fn(),
   reportLost: vi.fn(),
+  checkoutEligibility: vi.fn(),
 }))
 vi.mock('./circulation-api', () => ({ circulationApi: api }))
 vi.mock('../attendance/attendance-api', () => ({ attendanceApi: { resolveScan: vi.fn() } }))
+vi.mock('./CirculationScannerModal', () => ({
+  CirculationScannerModal: ({ onScan, mode = 'checkout' }: { onScan: (value: string) => void; mode?: 'checkout' | 'return' }) => (
+    <div role="dialog" aria-label={mode === 'return' ? 'Scan book to return' : 'Scan for checkout'}>
+      <button type="button" onClick={() => onScan(mode === 'return' ? 'ACC-RETURN' : 'STILIB.ATTENDANCE.token')}>
+        {mode === 'return' ? 'Simulate return scan' : 'Simulate student scan'}
+      </button>
+    </div>
+  ),
+}))
 vi.mock('../catalog/catalog-api', () => ({ catalogApi: { copyByBarcode: vi.fn() } }))
 vi.mock('../users/users-api', () => ({ usersApi: { getAvatar: vi.fn() } }))
 
@@ -22,7 +33,7 @@ const monitor = {
   items: [{
     transactionId: 4, userName: 'A Student', schoolId: 'STI-4', role: 'Student', title: 'Database Systems',
     accessionNumber: 'ACC-4', barcode: 'BOOK-4', requestedAt: '2026-08-23T08:55:00',
-    borrowDate: '2026-08-23T09:00:00', dueDate: '2026-08-24T08:59:00', returnDate: null, status: 'Borrowed',
+    borrowDate: '2026-08-23T09:00:00', dueDate: '2026-08-24T08:59:00', returnDate: null, status: 'Borrowed', lostReportStatus: null,
   }],
   pagination: { page: 1, limit: 50, total: 1, totalPages: 1 },
 }
@@ -126,6 +137,136 @@ describe('AdminCirculationMonitor', () => {
     expect(screen.getByText('Clean Code')).toBeTruthy()
   })
 
+  it('refuses a scanned student who already has two active loans', async () => {
+    api.monitor.mockResolvedValue(monitor)
+    vi.mocked(attendanceApi.resolveScan).mockResolvedValue({
+      visitor: { userId: 7, schoolId: 'STI-7', name: 'Ada Student', role: 'Student', program: 'BSIT', section: null },
+      openVisit: null,
+      occupancy: { current: 1, capacity: 80, available: 79, percentage: 1, overCapacity: false },
+    })
+    api.checkoutEligibility.mockResolvedValue({
+      allowed: false,
+      schoolId: 'STI-7',
+      name: 'Ada Student',
+      role: 'Student',
+      activeLoans: 2,
+      loanLimit: 2,
+      message: 'This student already has 2 active loans, which is the 2-book limit. Checkout is not allowed until a book is returned.',
+    })
+    render(<AdminCirculationMonitor />)
+    fireEvent.click(await screen.findByRole('button', { name: /open scanner/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate student scan' }))
+    expect(await screen.findByRole('alertdialog', { name: 'Action needed' })).toBeTruthy()
+    expect(screen.getByText('Scanned student')).toBeTruthy()
+    expect(screen.getByText('Ada Student')).toBeTruthy()
+    expect(screen.getByText('STI-7')).toBeTruthy()
+    expect(screen.getByText(/Student · BSIT/i)).toBeTruthy()
+    expect(screen.getByText(/already has 2 active loans/i)).toBeTruthy()
+    expect((screen.getByPlaceholderText(/Manual School ID/i) as HTMLInputElement).value).toBe('')
+    await new Promise((resolve) => setTimeout(resolve, 5200))
+    expect(screen.getByRole('alertdialog', { name: 'Action needed' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }))
+    expect(screen.queryByRole('alertdialog', { name: 'Action needed' })).toBeNull()
+  }, 12000)
+
+  it('opens the return scanner when a blocked student has one open loan', async () => {
+    api.monitor.mockResolvedValue(monitor)
+    vi.mocked(usersApi.getAvatar).mockResolvedValue({ avatarUrl: '/avatars/sti-7.png' })
+    vi.mocked(attendanceApi.resolveScan).mockResolvedValue({
+      visitor: { userId: 7, schoolId: 'STI-7', name: 'Ada Student', role: 'Student', program: 'BSIT', section: null },
+      openVisit: null,
+      occupancy: { current: 1, capacity: 80, available: 79, percentage: 1, overCapacity: false },
+    })
+    api.checkoutEligibility.mockResolvedValue({
+      allowed: false,
+      schoolId: 'STI-7',
+      name: 'Ada Student',
+      role: 'Student',
+      activeLoans: 2,
+      loanLimit: 2,
+      openLoans: [{
+        transactionId: 11, title: 'Clean Code', accessionNumber: 'ACC-11', barcode: 'BOOK-11',
+        dueDate: '2026-08-24T08:59:00', status: 'Borrowed',
+      }],
+      message: 'This student already has 2 active loans, which is the 2-book limit. Checkout is not allowed until a book is returned.',
+    })
+    render(<AdminCirculationMonitor />)
+    fireEvent.click(await screen.findByRole('button', { name: /open scanner/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate student scan' }))
+    expect(await screen.findByRole('dialog', { name: 'Scan book to return' })).toBeTruthy()
+    expect(screen.getByText(/already has 2 active loans/i)).toBeTruthy()
+    expect(screen.getByText('Clean Code')).toBeTruthy()
+    expect((screen.getByPlaceholderText(/Manual School ID/i) as HTMLInputElement).value).toBe('')
+    expect((screen.getByPlaceholderText(/Manual Accession/i) as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('button', { name: /confirm checkout/i }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('alertdialog', { name: 'Action needed' })).toBeNull()
+  })
+
+  it('lists both open loans when a blocked student must choose which book to return', async () => {
+    api.monitor.mockResolvedValue(monitor)
+    vi.mocked(usersApi.getAvatar).mockResolvedValue({ avatarUrl: '/avatars/sti-7.png' })
+    vi.mocked(attendanceApi.resolveScan).mockResolvedValue({
+      visitor: { userId: 7, schoolId: 'STI-7', name: 'Ada Student', role: 'Student', program: 'BSIT', section: null },
+      openVisit: null,
+      occupancy: { current: 1, capacity: 80, available: 79, percentage: 1, overCapacity: false },
+    })
+    api.checkoutEligibility.mockResolvedValue({
+      allowed: false,
+      schoolId: 'STI-7',
+      name: 'Ada Student',
+      role: 'Student',
+      activeLoans: 2,
+      loanLimit: 2,
+      openLoans: [
+        { transactionId: 11, title: 'Clean Code', accessionNumber: 'ACC-11', barcode: 'BOOK-11', dueDate: '2026-08-24T08:59:00', status: 'Borrowed' },
+        { transactionId: 12, title: 'Refactoring', accessionNumber: 'ACC-12', barcode: 'BOOK-12', dueDate: '2026-08-23T08:59:00', status: 'Overdue' },
+      ],
+      message: 'This student already has 2 active loans, which is the 2-book limit. Checkout is not allowed until a book is returned.',
+    })
+    render(<AdminCirculationMonitor />)
+    fireEvent.click(await screen.findByRole('button', { name: /open scanner/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate student scan' }))
+    expect(await screen.findByText('Clean Code')).toBeTruthy()
+    expect(screen.getByText('Refactoring')).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: 'Scan book to return' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Process return' })).toHaveLength(2)
+    expect((screen.getByPlaceholderText(/Manual School ID/i) as HTMLInputElement).value).toBe('')
+    expect((screen.getByPlaceholderText(/Manual Accession/i) as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('button', { name: /confirm checkout/i }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Process return' })[0])
+    expect(await screen.findByRole('dialog', { name: 'Scan book to return' })).toBeTruthy()
+  })
+
+  it('loads a scanned student who still has a loan slot', async () => {
+    api.monitor.mockResolvedValue(monitor)
+    vi.mocked(usersApi.getAvatar).mockResolvedValue({ avatarUrl: '/avatars/sti-7.png' })
+    vi.mocked(attendanceApi.resolveScan).mockResolvedValue({
+      visitor: { userId: 7, schoolId: 'STI-7', name: 'Ada Student', role: 'Student', program: 'BSIT', section: null },
+      openVisit: null,
+      occupancy: { current: 1, capacity: 80, available: 79, percentage: 1, overCapacity: false },
+    })
+    api.checkoutEligibility.mockResolvedValue({
+      allowed: true,
+      schoolId: 'STI-7',
+      name: 'Ada Student',
+      role: 'Student',
+      activeLoans: 1,
+      loanLimit: 2,
+      message: null,
+    })
+    render(<AdminCirculationMonitor />)
+    fireEvent.click(await screen.findByRole('button', { name: /open scanner/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate student scan' }))
+    expect(await screen.findByText('Scanned student')).toBeTruthy()
+    expect(screen.getAllByText('Ada Student').length).toBeGreaterThan(0)
+    expect((screen.getByPlaceholderText(/Manual School ID/i) as HTMLInputElement).value).toBe('STI-7')
+    expect(screen.getByRole('dialog', { name: 'Success' })).toBeTruthy()
+    await new Promise((resolve) => setTimeout(resolve, 4000))
+    expect(screen.getByRole('dialog', { name: 'Success' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }))
+    expect(screen.queryByRole('dialog', { name: 'Success' })).toBeNull()
+  })
+
   it('cancels a pending claim and removes it from the admin lane without a page reload', async () => {
     api.monitor.mockResolvedValue({
       ...monitor,
@@ -140,6 +281,18 @@ describe('AdminCirculationMonitor', () => {
     await waitFor(() => expect(api.cancelRequest).toHaveBeenCalledWith(9, ''))
     expect(await screen.findByRole('dialog', { name: 'Success' })).toBeTruthy()
     expect(screen.getByText('Computer Networks pending claim was cancelled and released.')).toBeTruthy()
+  })
+
+  it('keeps Borrowed visible and badges a pending lost report on active loans', async () => {
+    api.monitor.mockResolvedValue({
+      ...monitor,
+      items: [{ ...monitor.items[0], lostReportStatus: 'Pending' }],
+    })
+    render(<AdminCirculationMonitor />)
+    fireEvent.click(await screen.findByRole('tab', { name: /Active loans/i }))
+    expect(await screen.findByText('Borrowed')).toBeTruthy()
+    expect(screen.getByText('Lost report pending')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Report lost' })).toBeNull()
   })
 })
 

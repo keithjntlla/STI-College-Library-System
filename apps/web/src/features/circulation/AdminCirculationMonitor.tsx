@@ -9,11 +9,12 @@ import { CancelBorrowRequestDialog } from './CancelBorrowRequestDialog'
 import { CirculationScannerModal } from './CirculationScannerModal'
 import { ReportLostDialog } from './ReportLostDialog'
 import { circulationApi } from './circulation-api'
-import type { CirculationMonitorData } from './types'
+import type { CheckoutEligibility, CirculationMonitorData } from './types'
 
 type MonitorItem = CirculationMonitorData['items'][number]
 type MonitorTab = 'pending' | 'active' | 'overdue'
 type StudentInfo = { name: string; role: string; program: string; avatarUrl: string | null }
+type FeedbackStudent = StudentInfo & { schoolId: string; activeLoans: number | null; loanLimit: number | null }
 type BookInfo = {
   title: string
   authors: string
@@ -61,6 +62,7 @@ export function AdminCirculationMonitor() {
   const [busyId, setBusyId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [feedbackStudent, setFeedbackStudent] = useState<FeedbackStudent | null>(null)
   const [barcode, setBarcode] = useState('')
   const [schoolId, setSchoolId] = useState('')
   const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null)
@@ -76,13 +78,15 @@ export function AdminCirculationMonitor() {
   const [lostTarget, setLostTarget] = useState<MonitorItem | null>(null)
   const [lostError, setLostError] = useState('')
   const [deskSearch, setDeskSearch] = useState('')
+  const [checkoutBlocked, setCheckoutBlocked] = useState(false)
+  const [limitNotice, setLimitNotice] = useState('')
+  const [returnCandidates, setReturnCandidates] = useState<MonitorItem[]>([])
   const [monitorTab, setMonitorTab] = useState<MonitorTab>('pending')
 
   const load = useCallback(async (nextPage = page) => {
     setLoading(true)
     try {
       setData(await circulationApi.monitor(nextPage, PAGE_SIZE))
-      setError('')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Circulation records are unavailable.')
     } finally {
@@ -102,18 +106,13 @@ export function AdminCirculationMonitor() {
   }, [load, page])
 
   useEffect(() => {
-    if (!success) return
-    const timer = window.setTimeout(() => setSuccess(''), 3500)
-    return () => window.clearTimeout(timer)
-  }, [success])
-
-  useEffect(() => {
     if (!error && !success) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       if (showConfirmCheckout || showScanner || returnTarget || cancelTarget || lostTarget) return
       setError('')
       setSuccess('')
+      setFeedbackStudent(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -122,6 +121,7 @@ export function AdminCirculationMonitor() {
   function clearFeedback() {
     setError('')
     setSuccess('')
+    setFeedbackStudent(null)
   }
 
   function clearTerminal() {
@@ -132,7 +132,11 @@ export function AdminCirculationMonitor() {
     setSelectedClaimId(null)
     setError('')
     setSuccess('')
+    setFeedbackStudent(null)
     setShowConfirmCheckout(false)
+    setCheckoutBlocked(false)
+    setLimitNotice('')
+    setReturnCandidates([])
   }
 
   async function loadBookPreview(code: string) {
@@ -181,7 +185,34 @@ export function AdminCirculationMonitor() {
     }
   }
 
+  function loansToMonitorItems(loans: CheckoutEligibility['openLoans'], identity: { name: string; schoolId: string; role: string }): MonitorItem[] {
+    return loans.map((loan) => ({
+      transactionId: loan.transactionId,
+      userName: identity.name,
+      schoolId: identity.schoolId,
+      role: identity.role,
+      title: loan.title,
+      accessionNumber: loan.accessionNumber,
+      barcode: loan.barcode,
+      requestedAt: loan.dueDate ?? '',
+      borrowDate: null,
+      dueDate: loan.dueDate,
+      returnDate: null,
+      status: loan.status,
+      lostReportStatus: null,
+    }))
+  }
+
+  function lostReportLabel(status: string) {
+    if (status === 'Pending') return 'Lost report pending'
+    if (status === 'Confirmed') return 'Lost report confirmed'
+    if (status === 'Rejected') return 'Lost report rejected'
+    return status
+  }
+
   async function applyStudent(next: { schoolId: string; name: string; role: string; program?: string }) {
+    setCheckoutBlocked(false)
+    setLimitNotice('')
     setSchoolId(next.schoolId)
     const avatarUrl = await resolveAvatar(next.schoolId)
     setStudentInfo({
@@ -190,6 +221,55 @@ export function AdminCirculationMonitor() {
       program: next.program ?? '',
       avatarUrl,
     })
+  }
+
+  async function acceptScannedStudent(next: { schoolId: string; name: string; role: string; program?: string }) {
+    const eligibility = await circulationApi.checkoutEligibility(next.schoolId)
+    const schoolIdValue = eligibility.schoolId || next.schoolId
+    const identity: FeedbackStudent = {
+      name: eligibility.name || next.name,
+      schoolId: schoolIdValue,
+      role: eligibility.role || next.role,
+      program: next.program ?? '',
+      avatarUrl: await resolveAvatar(schoolIdValue),
+      activeLoans: eligibility.activeLoans,
+      loanLimit: eligibility.loanLimit,
+    }
+    const openLoans = loansToMonitorItems(eligibility.openLoans ?? [], identity)
+    setFeedbackStudent(identity)
+    setReturnCandidates(openLoans)
+    if (!eligibility.allowed) {
+      if (!openLoans.length) {
+        setCheckoutBlocked(false)
+        setLimitNotice('')
+        setSchoolId('')
+        setStudentInfo(null)
+        setError(eligibility.message ?? 'This student has reached the borrowing limit and cannot check out another book.')
+        return false
+      }
+      setCheckoutBlocked(true)
+      setSchoolId('')
+      setBarcode('')
+      setBookInfo(null)
+      setSelectedClaimId(null)
+      setStudentInfo({
+        name: identity.name,
+        role: identity.role,
+        program: identity.program,
+        avatarUrl: identity.avatarUrl,
+      })
+      setLimitNotice(eligibility.message ?? 'This student has reached the borrowing limit and cannot check out another book.')
+      setDeskSearch(identity.schoolId)
+      if (openLoans.length === 1) await openReturnScanner(openLoans[0])
+      return false
+    }
+    await applyStudent({
+      schoolId: identity.schoolId,
+      name: identity.name,
+      role: identity.role,
+      program: identity.program,
+    })
+    return true
   }
 
   async function selectClaim(item: MonitorItem) {
@@ -203,6 +283,7 @@ export function AdminCirculationMonitor() {
     setShowScanner(false)
     setError('')
     setSuccess('')
+    setFeedbackStudent(null)
     const dataText = raw.trim()
     if (!dataText) return
 
@@ -218,15 +299,18 @@ export function AdminCirculationMonitor() {
       setSubmitting(true)
       try {
         const result = await attendanceApi.resolveScan(dataText)
-        await applyStudent({
+        const accepted = await acceptScannedStudent({
           schoolId: result.visitor.schoolId,
           name: result.visitor.name,
           role: result.visitor.role,
           program: result.visitor.program ?? '',
         })
+        if (!accepted) return
         setSuccess('Student verified. Review pending claims below, then scan or select the book.')
         setMonitorTab('pending')
       } catch (err) {
+        setSchoolId('')
+        setStudentInfo(null)
         setError(err instanceof Error ? err.message : 'Invalid student QR code.')
       } finally {
         setSubmitting(false)
@@ -237,13 +321,23 @@ export function AdminCirculationMonitor() {
     if (dataText.includes('-')) {
       const normalized = dataText.toUpperCase()
       const pendingMatch = data?.items.find((item) => item.schoolId.toUpperCase() === normalized)
-      await applyStudent({
-        schoolId: normalized,
-        name: pendingMatch?.userName ?? normalized,
-        role: pendingMatch?.role ?? 'Borrower',
-      })
-      setSuccess('School ID logged. Review pending claims below, then scan or select the book.')
-      setMonitorTab('pending')
+      setSubmitting(true)
+      try {
+        const accepted = await acceptScannedStudent({
+          schoolId: normalized,
+          name: pendingMatch?.userName ?? normalized,
+          role: pendingMatch?.role ?? 'Borrower',
+        })
+        if (!accepted) return
+        setSuccess('School ID logged. Review pending claims below, then scan or select the book.')
+        setMonitorTab('pending')
+      } catch (err) {
+        setSchoolId('')
+        setStudentInfo(null)
+        setError(err instanceof Error ? err.message : 'This student cannot be checked out.')
+      } finally {
+        setSubmitting(false)
+      }
       return
     }
 
@@ -506,6 +600,32 @@ export function AdminCirculationMonitor() {
                 className="h-10 w-full rounded-xl border border-[#0b5ea2]/20 bg-white px-3 font-mono text-sm font-bold text-[#0b5ea2] outline-none focus:ring-2 focus:ring-[#0b5ea2]/10"
               />
 
+              {limitNotice ? (
+                <p className="rounded-xl bg-[#FFF200] p-3 text-xs font-semibold leading-5 text-[#0b5ea2]">{limitNotice}</p>
+              ) : null}
+              {returnCandidates.length ? (
+                <div className="rounded-xl border border-[#0b5ea2]/15 bg-white p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]">Open loans for this borrower</p>
+                  <p className="mt-1 text-xs text-[#0b5ea2]/65">Choose a book to return. The next scan confirms that copy.</p>
+                  <ul className="mt-3 space-y-2">
+                    {returnCandidates.map((loan) => (
+                      <li key={loan.transactionId} className="flex items-center gap-3 rounded-xl border border-[#0b5ea2]/10 p-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold text-[#0b5ea2]">{loan.title}</p>
+                          <p className="font-mono text-[11px] text-[#0b5ea2]/65">{loan.accessionNumber ?? loan.barcode}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void openReturnScanner(loan)}
+                          className="shrink-0 rounded-lg bg-[#0b5ea2] px-3 py-2 text-xs font-bold text-white hover:bg-[#004488]"
+                        >
+                          Process return
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               {studentPendingClaims.length ? (
                 <div className="rounded-xl border border-[#0b5ea2]/15 bg-white p-3">
                   <p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]">Claim queue for this borrower</p>
@@ -582,7 +702,7 @@ export function AdminCirculationMonitor() {
             <button type="button" onClick={clearTerminal} className="rounded-xl px-5 py-3 font-bold text-[#0b5ea2] hover:bg-zinc-100">Clear</button>
             <button
               type="submit"
-              disabled={submitting || !schoolId.trim() || !barcode.trim()}
+              disabled={submitting || checkoutBlocked || !schoolId.trim() || !barcode.trim()}
               className="flex items-center gap-2 rounded-xl bg-[#0b5ea2] px-8 py-3 text-lg font-bold text-white shadow-md hover:bg-[#004488] disabled:opacity-50"
             >
               {submitting ? 'Confirming…' : <><ScanBarcode size={20} /> Confirm Checkout</>}
@@ -674,7 +794,12 @@ export function AdminCirculationMonitor() {
                   </td>
                   <td className="px-4 py-4 text-xs text-[#0b5ea2]">{formatDate(item.borrowDate ?? item.requestedAt)}</td>
                   <td className="px-4 py-4 text-xs font-semibold text-[#0b5ea2]">{formatDate(item.dueDate)}</td>
-                  <td className="px-4 py-4"><StatusBadge status={item.status === 'Pending' ? 'Pending claim' : item.status} /></td>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <StatusBadge status={item.status === 'Pending' ? 'Pending claim' : item.status} />
+                      {item.lostReportStatus ? <StatusBadge status={lostReportLabel(item.lostReportStatus)} /> : null}
+                    </div>
+                  </td>
                   <td className="px-4 py-4">
                     <div className="flex justify-end gap-2">
                       {item.status === 'Pending' ? (
@@ -687,7 +812,9 @@ export function AdminCirculationMonitor() {
                           {item.status === 'Overdue' ? (
                             <button type="button" disabled={busyId === item.transactionId} onClick={() => void penalty(item.transactionId)} className="rounded-lg bg-[#FFF200] px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:opacity-40">Calculate penalty</button>
                           ) : null}
-                          <button type="button" disabled={busyId === item.transactionId} onClick={() => { setLostError(''); setLostTarget(item) }} className="rounded-lg border border-[#0b5ea2]/20 px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:opacity-40">Report lost</button>
+                          {['Borrowed', 'Overdue', 'Active'].includes(item.status) && (!item.lostReportStatus || item.lostReportStatus === 'Rejected') ? (
+                            <button type="button" disabled={busyId === item.transactionId} onClick={() => { setLostError(''); setLostTarget(item) }} className="rounded-lg border border-[#0b5ea2]/20 px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:opacity-40">Report lost</button>
+                          ) : null}
                           <button type="button" disabled={busyId === item.transactionId} onClick={() => void openReturnScanner(item)} className="rounded-lg bg-[#0b5ea2] px-3 py-2 text-xs font-bold text-[#FFFFFF] disabled:opacity-40">Process return</button>
                         </>
                       )}
@@ -724,20 +851,37 @@ export function AdminCirculationMonitor() {
           className="w-full max-w-md rounded-3xl border border-[#0b5ea2]/15 bg-white p-6 shadow-2xl"
         >
           <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <span className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${statusTone === 'error' ? 'bg-[#FFF200] text-[#0b5ea2]' : 'bg-emerald-100 text-emerald-700'}`}>
-                {statusTone === 'error' ? <AlertTriangle size={22} /> : <CheckCircle2 size={22} />}
-              </span>
-              <div>
-                <p id="circulation-status-title" className="font-display text-lg font-bold text-[#0b5ea2]">
-                  {statusTone === 'error' ? 'Action needed' : 'Success'}
-                </p>
-                <p className="mt-2 text-sm font-semibold leading-6 text-[#0b5ea2]/80">{statusMessage}</p>
-              </div>
-            </div>
+            <p id="circulation-status-title" className="font-display text-lg font-bold text-[#0b5ea2]">
+              {statusTone === 'error' ? 'Action needed' : 'Success'}
+            </p>
             <button type="button" aria-label="Dismiss message" onClick={clearFeedback} className="rounded-xl p-2 text-[#0b5ea2]/60 hover:bg-[#0b5ea2]/5">
               <X size={18} />
             </button>
+          </div>
+          {feedbackStudent ? (
+            <div className="mt-4 flex items-center gap-3 rounded-2xl border border-[#0b5ea2]/15 bg-zinc-50 p-3">
+              {feedbackStudent.avatarUrl ? (
+                <img src={feedbackStudent.avatarUrl} alt={`${feedbackStudent.name} profile photo`} className="h-16 w-16 shrink-0 rounded-xl border border-[#0b5ea2]/20 object-cover" />
+              ) : (
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-[#0b5ea2]/10 text-[#0b5ea2]">
+                  <UserCircle size={32} />
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#0b5ea2]/55">Scanned student</p>
+                <p className="truncate font-display text-lg font-black text-[#0b5ea2]">{feedbackStudent.name}</p>
+                <p className="font-mono text-sm font-bold text-[#0b5ea2]/80">{feedbackStudent.schoolId}</p>
+                <p className="mt-0.5 text-xs font-semibold uppercase tracking-wider text-[#0b5ea2]/60">
+                  {feedbackStudent.role}{feedbackStudent.program ? ` · ${feedbackStudent.program}` : ''}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          <div className="mt-4 flex items-start gap-3">
+            <span className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${statusTone === 'error' ? 'bg-[#FFF200] text-[#0b5ea2]' : 'bg-emerald-100 text-emerald-700'}`}>
+              {statusTone === 'error' ? <AlertTriangle size={22} /> : <CheckCircle2 size={22} />}
+            </span>
+            <p className="text-sm font-semibold leading-6 text-[#0b5ea2]/80">{statusMessage}</p>
           </div>
           <div className="mt-5 flex justify-end">
             <button type="button" onClick={clearFeedback} className="h-10 rounded-xl bg-[#0b5ea2] px-5 text-sm font-bold text-white hover:bg-[#004488]">

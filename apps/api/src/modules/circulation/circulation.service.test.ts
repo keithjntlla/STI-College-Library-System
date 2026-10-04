@@ -15,6 +15,8 @@ function checkoutPool(role: 'Student' | 'Faculty', activeCount = 0, readyClaim: 
       if (sql.includes('SELECT transaction_id, user_id, transaction_status')) return [readyClaim ? [{ transaction_id: 54, user_id: 7, transaction_status: 'Pending', request_group_id: 'group-1', reservation_id: readyClaim === true ? 99 : null }] : []]
       if (sql.includes('FROM reservations') && sql.includes('ORDER BY queue_position')) return [readyClaim === true ? [{ reservation_id: 99, user_id: 7, queue_position: 1, reservation_status: 'ready_for_pickup' }] : []]
       if (sql.includes('COUNT(DISTINCT activity.title_id)')) return [[{ active_count: activeCount, target_already_active: 0 }]]
+      if (sql.includes('as unpaid')) return [[{ unpaid: 0 }]]
+      if (sql.includes('as overdue')) return [[{ overdue: 0 }]]
       if (sql.includes('FROM library_closed_days')) return [[]]
       if (sql.includes('INSERT INTO borrow_transactions')) { state.borrowInserts += 1; return [{ insertId: 55, affectedRows: 1 }] }
       if (sql.includes('UPDATE borrow_transactions')) return [{ affectedRows: 1 }]
@@ -166,4 +168,61 @@ test('borrowing history exposes the normalized title cover path', async () => {
 
   const result = await createCirculationService(database).history(1, { page: 1, limit: 25 })
   assert.equal(result.items[0].coverImagePath, '/api/assets/covers/clean-code.png')
+})
+
+function eligibilityPool(row: Record<string, unknown> | null, loans: Array<Record<string, unknown>> = []) {
+  return {
+    async execute(sql: string, params: unknown[]) {
+      assert.match(sql, /lost_confirmed_at IS NULL/)
+      if (sql.includes('FROM users u')) {
+        assert.deepEqual(params, ['STI-7'])
+        return [row ? [row] : []]
+      }
+      assert.match(sql, /FROM borrow_transactions bt/)
+      assert.deepEqual(params, [row?.user_id])
+      return [loans]
+    },
+  } as unknown as Pool
+}
+
+test('checkout scan rejects a student who already holds the two-book limit', async () => {
+  const result = await createCirculationService(eligibilityPool({
+    user_id: 7, full_name: 'Ada Student', school_id: 'STI-7', role_name: 'Student', account_status: 'Active', active_loans: 2,
+  })).checkoutEligibility('sti-7')
+  assert.equal(result.allowed, false)
+  assert.equal(result.activeLoans, 2)
+  assert.equal(result.loanLimit, 2)
+  assert.deepEqual(result.openLoans, [])
+  assert.match(result.message ?? '', /2 active loans/)
+})
+
+test('checkout scan includes open loans so a blocked student can be returned from the desk', async () => {
+  const result = await createCirculationService(eligibilityPool({
+    user_id: 7, full_name: 'Ada Student', school_id: 'STI-7', role_name: 'Student', account_status: 'Active', active_loans: 2,
+  }, [
+    { transaction_id: 11, title: 'Clean Code', accession_number: 'ACC-11', barcode: 'BOOK-11', due_at: '2026-08-24T08:59:00', transaction_status: 'Borrowed' },
+    { transaction_id: 12, title: 'Database Systems', accession_number: null, barcode: 'BOOK-12', due_at: '2026-08-23T08:59:00', transaction_status: 'Overdue' },
+  ])).checkoutEligibility('sti-7')
+  assert.equal(result.allowed, false)
+  assert.deepEqual(result.openLoans, [
+    { transactionId: 11, title: 'Clean Code', accessionNumber: 'ACC-11', barcode: 'BOOK-11', dueDate: '2026-08-24T08:59:00', status: 'Borrowed' },
+    { transactionId: 12, title: 'Database Systems', accessionNumber: null, barcode: 'BOOK-12', dueDate: '2026-08-23T08:59:00', status: 'Overdue' },
+  ])
+})
+
+test('checkout scan still accepts a student with an open loan slot', async () => {
+  const result = await createCirculationService(eligibilityPool({
+    user_id: 7, full_name: 'Ada Student', school_id: 'STI-7', role_name: 'Student', account_status: 'Active', active_loans: 1,
+  })).checkoutEligibility('STI-7')
+  assert.equal(result.allowed, true)
+  assert.deepEqual(result.openLoans, [])
+  assert.equal(result.message, null)
+})
+
+test('checkout scan does not apply the student loan cap to faculty', async () => {
+  const result = await createCirculationService(eligibilityPool({
+    user_id: 8, full_name: 'Jun Faculty', school_id: 'STI-7', role_name: 'Faculty', account_status: 'Active', active_loans: 6,
+  })).checkoutEligibility('STI-7')
+  assert.equal(result.allowed, true)
+  assert.equal(result.loanLimit, null)
 })

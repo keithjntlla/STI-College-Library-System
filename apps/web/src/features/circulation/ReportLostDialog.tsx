@@ -14,8 +14,8 @@ export function ReportLostDialog({ title, busy, error, onCancel, onConfirm }: {
         <button type="button" disabled={busy} aria-label="Close lost-book report" onClick={onCancel} className="rounded-xl p-2 text-[#0b5ea2] disabled:opacity-40"><X size={19} /></button>
       </header>
       <div className="space-y-4 p-5">
-        <div className="flex gap-3 rounded-xl bg-[#FFF200] p-4 text-[#0b5ea2]"><AlertTriangle className="shrink-0" size={19} /><p className="text-sm">Report <strong>{title}</strong> as lost? Library staff will review the report before confirming any replacement charge.</p></div>
-        {error ? <p role="alert" className="rounded-xl bg-[#FFF200] p-3 text-sm font-semibold text-[#0b5ea2]">{error}</p> : null}
+        <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100"><AlertTriangle className="shrink-0 text-amber-700 dark:text-amber-300" size={19} /><p className="text-sm">Report <strong>{title}</strong> as lost? Library staff will review the report before confirming any replacement charge.</p></div>
+        {error ? <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">{error}</p> : null}
       </div>
       <footer className="flex justify-end gap-2 border-t border-[#0b5ea2]/15 p-4">
         <button type="button" disabled={busy} onClick={onCancel} className="h-10 rounded-xl border border-[#0b5ea2]/20 bg-[#FFFFFF] px-4 text-sm font-bold text-[#0b5ea2] disabled:opacity-40">Keep book record</button>

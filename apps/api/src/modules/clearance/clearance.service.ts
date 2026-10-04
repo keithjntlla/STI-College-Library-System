@@ -280,8 +280,9 @@ export function createClearanceService(database: Pool = db) {
         const userId = await linkedUserId(connection, actorAccountId(actor))
         const [rows] = await connection.execute<RowDataPacket[]>(
           `SELECT bt.transaction_id,bt.user_id,bt.physical_copy_id,bt.transaction_status,
-                  COALESCE(t.title,m.title) AS title
+                  COALESCE(t.title,m.title) AS title,u.user_role
              FROM borrow_transactions bt INNER JOIN materials m ON m.material_id=bt.material_id
+             INNER JOIN users u ON u.user_id=bt.user_id
              LEFT JOIN physical_copies pc ON pc.physical_copy_id=bt.physical_copy_id
              LEFT JOIN titles t ON t.title_id=pc.title_id
             WHERE bt.transaction_id=? LIMIT 1 ${forUpdate('bt')}`, [transactionId],
@@ -289,11 +290,37 @@ export function createClearanceService(database: Pool = db) {
         const loan = rows[0]
         if (!loan || (!staffReport && Number(loan.user_id) !== userId)) throw new HttpError(404, 'LOST_BOOK_LOAN_NOT_FOUND', 'The active borrowing record was not found.')
         if (!['Borrowed', 'Overdue'].includes(String(loan.transaction_status))) throw new HttpError(422, 'LOST_BOOK_REPORT_INVALID', 'Only a currently borrowed or overdue book can be reported lost.')
+        const clearancePath = String(loan.user_role) === 'Faculty' ? '/faculty/clearance' : '/student/clearance'
+        const notifyLostReport = async (reportId: number, reopened: boolean) => {
+          await connection.execute(
+            `INSERT INTO admin_notifications(event_type,actor_user_id,borrow_transaction_id,message_title,message_body)
+             VALUES ('lost_book_reported',?,?, 'Lost book reported',?)`, [userId, transactionId, `${loan.title} was reported lost by ${staffReport ? 'library staff' : 'its borrower'}.`],
+          )
+          await connection.execute(
+            insertIgnoreNotification(`INSERT IGNORE INTO notifications(user_id,message_title,message_body,trigger_type,source_type,source_id,action_path,priority,dedupe_key,scheduled_for,delivered_at)
+             VALUES (?, 'Lost book report received', ?, 'Lost Book','Lost Book Report',?,?,'Urgent',?,NOW(),NOW())`),
+            [loan.user_id, `${loan.title} has been reported lost. Library staff will verify the report and replacement charge.`, reportId, clearancePath, `lost-report:${reportId}:${reopened ? `reopened:${Date.now()}` : 'pending'}`],
+          )
+        }
         const [existing] = await connection.execute<RowDataPacket[]>('SELECT lost_book_report_id,report_status FROM lost_book_reports WHERE transaction_id=? LIMIT 1 FOR UPDATE', [transactionId])
         if (existing[0]) {
-          if (staffReport && existing[0].report_status === 'Pending') {
+          const reportId = Number(existing[0].lost_book_report_id)
+          if (existing[0].report_status === 'Pending') {
             await connection.commit()
-            return { lostBookReportId: Number(existing[0].lost_book_report_id), status: 'Pending', alreadyReported: true }
+            return { lostBookReportId: reportId, status: 'Pending', alreadyReported: true }
+          }
+          if (existing[0].report_status === 'Rejected') {
+            await connection.execute(
+              `UPDATE lost_book_reports
+                  SET report_status='Pending',purchase_price_snapshot=NULL,replacement_charge=0,payment_status='Unpaid',
+                      quotation_id=NULL,charge_resolution='Awaiting Review',resolution_reason=NULL,
+                      verified_by_user_id=NULL,verified_at=NULL,staff_notes=NULL,reported_at=NOW(),updated_at=NOW()
+                WHERE lost_book_report_id=?`, [reportId],
+            )
+            await connection.execute('UPDATE borrow_transactions SET reported_lost_at=NOW(),updated_at=NOW() WHERE transaction_id=?', [transactionId])
+            await notifyLostReport(reportId, true)
+            await connection.commit()
+            return { lostBookReportId: reportId, status: 'Pending' }
           }
           throw new HttpError(409, 'LOST_BOOK_ALREADY_REPORTED', 'This book has already been reported lost.')
         }
@@ -302,15 +329,7 @@ export function createClearanceService(database: Pool = db) {
            VALUES (?,?,?,NULL,0,NOW())`, [transactionId, loan.user_id, loan.physical_copy_id],
         )
         await connection.execute('UPDATE borrow_transactions SET reported_lost_at=NOW(),updated_at=NOW() WHERE transaction_id=?', [transactionId])
-        await connection.execute(
-          `INSERT INTO admin_notifications(event_type,actor_user_id,borrow_transaction_id,message_title,message_body)
-           VALUES ('lost_book_reported',?,?, 'Lost book reported',?)`, [userId, transactionId, `${loan.title} was reported lost by ${staffReport ? 'library staff' : 'its borrower'}.`],
-        )
-        await connection.execute(
-          insertIgnoreNotification(`INSERT IGNORE INTO notifications(user_id,message_title,message_body,trigger_type,source_type,source_id,action_path,priority,dedupe_key,scheduled_for,delivered_at)
-           VALUES (?, 'Lost book report received', ?, 'Lost Book','Lost Book Report',?,'/student/clearance','Urgent',?,NOW(),NOW())`),
-          [loan.user_id, `${loan.title} has been reported lost. Library staff will verify the report and replacement charge.`, insert.insertId, `lost-report:${insert.insertId}:pending`],
-        )
+        await notifyLostReport(Number(insert.insertId), false)
         await connection.commit()
         return { lostBookReportId: Number(insert.insertId), status: 'Pending' }
       } catch (error) { await connection.rollback(); throw error } finally { connection.release() }

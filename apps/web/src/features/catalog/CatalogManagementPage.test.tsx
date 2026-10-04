@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import { CatalogManagementPage } from './CatalogManagementPage'
 import type { CatalogItem, PhysicalCopy } from './types'
 
@@ -35,10 +36,25 @@ vi.mock('./AssetCodeModal', () => ({
   ),
 }))
 vi.mock('./ChangeTitleCategoryModal', () => ({ ChangeTitleCategoryModal: () => null }))
-vi.mock('./BookQuotationModal', () => ({ BookQuotationModal: () => null }))
+vi.mock('./BookQuotationModal', () => ({
+  BookQuotationModal: ({ titleId, title, onClose }: { titleId: number; title: string; onClose: () => void }) => (
+    <div role="dialog" aria-label={`Supplier quotations for ${title}`}>
+      <p>Quotations for title {titleId}</p>
+      <button type="button" onClick={onClose}>Close quotations</button>
+    </div>
+  ),
+}))
 vi.mock('./BookCoverThumbnail', () => ({
   BookCoverThumbnail: ({ title }: { title: string }) => <span>{title} cover</span>,
 }))
+
+function renderCatalog(path = '/librarian/catalog') {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <CatalogManagementPage />
+    </MemoryRouter>,
+  )
+}
 
 const sampleBook: CatalogItem = {
   titleId: 11,
@@ -89,7 +105,7 @@ describe('CatalogManagementPage', () => {
   afterEach(() => cleanup())
 
   it('shows ops toolbar actions and template download href without a hardware scanner', async () => {
-    render(<CatalogManagementPage />)
+    renderCatalog()
     expect((await screen.findAllByText('Clean Code')).length).toBeGreaterThan(0)
     expect(screen.queryByText('Hardware scanner')).toBeNull()
     expect(screen.getByRole('button', { name: 'Import CSV' })).toBeTruthy()
@@ -102,7 +118,7 @@ describe('CatalogManagementPage', () => {
   })
 
   it('imports a CSV through confirm dialog and refreshes the list', async () => {
-    render(<CatalogManagementPage />)
+    renderCatalog()
     expect((await screen.findAllByText('Clean Code')).length).toBeGreaterThan(0)
     expect(api.search).toHaveBeenCalled()
 
@@ -125,7 +141,7 @@ describe('CatalogManagementPage', () => {
 
   it('shows empty-state CTAs when filters return no titles', async () => {
     api.search.mockResolvedValue({ items: [], total: 0 })
-    render(<CatalogManagementPage />)
+    renderCatalog()
 
     expect(await screen.findByText('No records match these filters')).toBeTruthy()
     expect(screen.getAllByRole('button', { name: 'Import CSV' }).length).toBeGreaterThan(1)
@@ -133,7 +149,7 @@ describe('CatalogManagementPage', () => {
   })
 
   it('opens Add book from the toolbar and exposes compact catalog actions', async () => {
-    render(<CatalogManagementPage />)
+    renderCatalog()
     expect(await screen.findByRole('button', { name: /^View$/ })).toBeTruthy()
     expect(screen.getByLabelText('More actions for Clean Code')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Add book' }))
@@ -141,11 +157,19 @@ describe('CatalogManagementPage', () => {
   })
 
   it('opens View Codes from the physical copy register', async () => {
-    render(<CatalogManagementPage />)
+    renderCatalog()
     expect(await screen.findByText('STI-ACC-2026-0041')).toBeTruthy()
     expect(screen.getByText('Copy ID')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /^View Codes$/ }))
     expect(await screen.findByRole('dialog', { name: 'Asset codes' })).toBeTruthy()
     expect(screen.getByText('Codes for copy 41')).toBeTruthy()
+  })
+
+  it('opens the supplier quotation modal from clearance deep-link query params', async () => {
+    renderCatalog('/librarian/catalog?titleId=11&action=quotation&title=Clean%20Code')
+    expect(await screen.findByRole('dialog', { name: 'Supplier quotations for Clean Code' })).toBeTruthy()
+    expect(screen.getByText('Quotations for title 11')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Close quotations' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Supplier quotations for Clean Code' })).toBeNull())
   })
 })

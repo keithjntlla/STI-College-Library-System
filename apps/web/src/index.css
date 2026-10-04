@@ -108,8 +108,8 @@ a {
 
 html.dark {
   color-scheme: dark;
-  --sl-bg: #000d2b;
-  --sl-bg-elevated: #001a4d;
+  --sl-bg: #14151b;
+  --sl-bg-elevated: #22232e;
   --sl-bg-muted: rgba(255, 255, 255, 0.08);
   --sl-text: #f7f9ff;
   --sl-text-muted: rgba(247, 249, 255, 0.88);
@@ -145,7 +145,12 @@ html.dark .bg-\[\#fff\] {
 }
 
 html.dark .bg-white\/90 {
-  background-color: rgba(0, 26, 77, 0.94) !important;
+  background-color: rgba(34, 35, 46, 0.94) !important;
+}
+
+html.dark [class*="dark:bg-[#001a4d]"],
+html.dark [class*="dark:bg-zinc-900"] {
+  background-color: #22232e !important;
 }
 
 html.dark .bg-\[\#0b5ea2\]\/5,
@@ -344,6 +349,13 @@ html.dark .bg-\[\#FFF200\][class*="dark:text-[#0b5ea2]"],
 html.dark .bg-\[\#FFF200\]\/35[class*="dark:text-[#0b5ea2]"],
 html.dark .bg-\[\#FFF200\]\/40[class*="dark:text-[#0b5ea2]"] {
   color: #0b5ea2 !important;
+}
+
+/* Portal sidebar stays #132a3f in both themes, off bg-white so the card rewrite does not repaint it. */
+.portal-sidebar,
+html.dark .portal-sidebar {
+  background-color: #132a3f !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
 /* Sidebar active item: yellow pill + navy label */

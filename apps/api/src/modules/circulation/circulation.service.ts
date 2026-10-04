@@ -365,12 +365,14 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
       const fromSql = `FROM borrow_transactions bt INNER JOIN users u ON u.user_id = bt.user_id
         INNER JOIN roles ro ON ro.role_id = u.role_id INNER JOIN materials m ON m.material_id = bt.material_id
         LEFT JOIN physical_copies pc ON pc.physical_copy_id = bt.physical_copy_id OR (bt.physical_copy_id IS NULL AND pc.material_id = bt.material_id)
-        LEFT JOIN titles t ON t.title_id = pc.title_id`
+        LEFT JOIN titles t ON t.title_id = pc.title_id
+        LEFT JOIN lost_book_reports lbr ON lbr.transaction_id = bt.transaction_id`
       const [[rows], [summaryRows], [countRows]] = await Promise.all([
         database.execute<RowDataPacket[]>(
           `SELECT bt.transaction_id, u.full_name, u.school_id, ro.role_name, COALESCE(t.title, m.title) AS title,
              pc.accession_number, COALESCE(pc.barcode, m.barcode) AS barcode, bt.created_at AS requested_at, bt.borrowed_at, bt.due_at, bt.returned_at,
-             CASE WHEN bt.transaction_status = 'Borrowed' AND bt.due_at < NOW() THEN 'Overdue' ELSE bt.transaction_status END AS transaction_status
+             CASE WHEN bt.transaction_status = 'Borrowed' AND bt.due_at < NOW() THEN 'Overdue' ELSE bt.transaction_status END AS transaction_status,
+             lbr.report_status AS lost_report_status
            ${fromSql} ORDER BY ${isPostgres
              ? `CASE (CASE WHEN bt.transaction_status = 'Borrowed' AND bt.due_at < NOW() THEN 'Overdue' ELSE bt.transaction_status END) WHEN 'Overdue' THEN 1 WHEN 'Borrowed' THEN 2 WHEN 'Pending' THEN 3 WHEN 'Returned' THEN 4 ELSE 5 END`
              : `FIELD(CASE WHEN bt.transaction_status = 'Borrowed' AND bt.due_at < NOW() THEN 'Overdue' ELSE bt.transaction_status END, 'Overdue','Borrowed','Pending','Returned')`}, bt.due_at ASC, bt.transaction_id DESC LIMIT ${filters.limit} OFFSET ${offset}`,
@@ -397,8 +399,69 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
         summary: { pendingClaims: Number(summary.pending_claims ?? 0), activeLoans: Number(summary.active_loans ?? 0), overdueLoans: Number(summary.overdue_loans ?? 0), returnedToday: Number(summary.returned_today ?? 0), dueToday: Number(summary.due_today ?? 0) },
         items: rows.map((row) => ({ transactionId: Number(row.transaction_id), userName: row.full_name, schoolId: row.school_id, role: row.role_name,
           title: row.title, accessionNumber: row.accession_number ?? null, barcode: row.barcode, requestedAt: row.requested_at, borrowDate: row.borrowed_at,
-          dueDate: row.due_at, returnDate: row.returned_at, status: String(row.transaction_status) })),
+          dueDate: row.due_at, returnDate: row.returned_at, status: String(row.transaction_status),
+          lostReportStatus: row.lost_report_status ? String(row.lost_report_status) : null })),
         pagination: { page: filters.page, limit: filters.limit, total, totalPages: Math.ceil(total / filters.limit) },
+      }
+    },
+
+    async checkoutEligibility(schoolIdValue: unknown) {
+      const schoolId = typeof schoolIdValue === 'string' ? schoolIdValue.trim().toUpperCase().slice(0, 50) : ''
+      if (!schoolId) {
+        throw new HttpError(422, 'CIRCULATION_VALIDATION_FAILED', 'School ID is required.', {
+          errors: { schoolId: 'School ID is required.' },
+        })
+      }
+      const [rows] = await database.execute<RowDataPacket[]>(
+        `SELECT u.user_id, u.full_name, u.school_id, ro.role_name, u.account_status,
+                (SELECT COUNT(*) FROM borrow_transactions bt
+                  WHERE bt.user_id = u.user_id
+                    AND bt.transaction_status IN ('Borrowed','Overdue')
+                    AND bt.lost_confirmed_at IS NULL) AS active_loans
+           FROM users u INNER JOIN roles ro ON ro.role_id = u.role_id
+          WHERE u.school_id = ? LIMIT 1`,
+        [schoolId],
+      )
+      const borrower = rows[0]
+      if (!borrower) throw new HttpError(404, 'CIRCULATION_BORROWER_NOT_FOUND', 'The borrower account was not found.')
+      if (borrower.account_status !== 'Active') throw new HttpError(422, 'CIRCULATION_ACCOUNT_BLOCKED', 'This account is not active and cannot borrow materials.')
+      const role = String(borrower.role_name)
+      const activeLoans = Number(borrower.active_loans ?? 0)
+      const loanLimit = role === 'Student' ? 2 : null
+      const allowed = loanLimit === null || activeLoans < loanLimit
+      const [loanRows] = await database.execute<RowDataPacket[]>(
+        `SELECT bt.transaction_id, COALESCE(t.title, m.title) AS title, pc.accession_number,
+                COALESCE(pc.barcode, m.barcode) AS barcode, bt.due_at,
+                CASE WHEN bt.transaction_status = 'Borrowed' AND bt.due_at < NOW() THEN 'Overdue' ELSE bt.transaction_status END AS transaction_status
+           FROM borrow_transactions bt
+           INNER JOIN materials m ON m.material_id = bt.material_id
+           LEFT JOIN physical_copies pc ON pc.physical_copy_id = bt.physical_copy_id
+             OR (bt.physical_copy_id IS NULL AND pc.material_id = bt.material_id)
+           LEFT JOIN titles t ON t.title_id = pc.title_id
+          WHERE bt.user_id = ?
+            AND bt.transaction_status IN ('Borrowed','Overdue')
+            AND bt.lost_confirmed_at IS NULL
+          ORDER BY bt.due_at ASC, bt.transaction_id DESC`,
+        [borrower.user_id],
+      )
+      return {
+        allowed,
+        schoolId: String(borrower.school_id),
+        name: String(borrower.full_name),
+        role,
+        activeLoans,
+        loanLimit,
+        openLoans: loanRows.map((row) => ({
+          transactionId: Number(row.transaction_id),
+          title: String(row.title ?? 'Untitled'),
+          accessionNumber: row.accession_number == null ? null : String(row.accession_number),
+          barcode: String(row.barcode ?? ''),
+          dueDate: row.due_at == null ? null : String(row.due_at),
+          status: String(row.transaction_status) === 'Overdue' ? 'Overdue' as const : 'Borrowed' as const,
+        })),
+        message: allowed
+          ? null
+          : `This student already has ${activeLoans} active ${activeLoans === 1 ? 'loan' : 'loans'}, which is the ${loanLimit}-book limit. Checkout is not allowed until a book is returned.`,
       }
     },
 

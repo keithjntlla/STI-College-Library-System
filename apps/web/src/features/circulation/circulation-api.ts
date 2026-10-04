@@ -1,5 +1,5 @@
 import { getAccessToken } from '../auth/auth-storage'
-import type { BorrowingHistoryData, CirculationMonitorData } from './types'
+import type { BorrowingHistoryData, CheckoutEligibility, CirculationMonitorData } from './types'
 
 export class CirculationApiError extends Error {
   constructor(message: string, public code: string) { super(message) }
@@ -21,6 +21,7 @@ export const circulationApi = {
     method: 'PUT', body: JSON.stringify({ reason }),
   }),
   monitor: (page = 1, limit = 50) => request<CirculationMonitorData>(`/api/v1/admin/borrowing/monitor?page=${page}&limit=${limit}`),
+  checkoutEligibility: (schoolId: string) => request<CheckoutEligibility>(`/api/v1/admin/borrowing/checkout-eligibility?school_id=${encodeURIComponent(schoolId)}`),
   confirmCheckout: (barcode: string, schoolId: string) => request('/api/v1/admin/borrowing/confirm-checkout', {
     method: 'POST', body: JSON.stringify({ barcode, school_id: schoolId }),
   }),

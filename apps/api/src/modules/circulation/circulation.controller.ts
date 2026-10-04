@@ -28,6 +28,10 @@ export function createCirculationController(service: Service = circulationServic
       })
     }),
     monitor: asyncController(async (request, response) => { response.json({ success: true, data: await service.monitor(request.query as Record<string, unknown>) }) }),
+    checkoutEligibility: asyncController(async (request, response) => {
+      const schoolId = request.query.school_id ?? request.query.schoolId
+      response.json({ success: true, data: await service.checkoutEligibility(schoolId) })
+    }),
     confirmCheckout: asyncController(async (request, response) => { response.status(201).json({ success: true, message: 'Checkout confirmed successfully.', data: await service.confirmCheckout(authenticatedAccount(response), request.body) }) }),
     fulfillClaim: asyncController(async (request, response) => {
       response.status(201).json({

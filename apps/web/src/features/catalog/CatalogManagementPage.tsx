@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Archive, ArrowRightLeft, BookOpen, CheckCircle2, ChevronDown, Download, Eye, FileSpreadsheet, FileText, Layers, MapPin, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { SectionCard, StatusBadge } from '../../components/ui'
 import { catalogApi } from './catalog-api'
 import type { CatalogFilters, CatalogItem, Category, PhysicalCopy } from './types'
@@ -109,6 +110,7 @@ function CatalogRowActions({
 }
 
 export function CatalogManagementPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [items, setItems] = useState<CatalogItem[]>([])
   const [copies, setCopies] = useState<PhysicalCopy[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -126,13 +128,31 @@ export function CatalogManagementPage() {
   const [changingCategory, setChangingCategory] = useState(false)
   const [categoryError, setCategoryError] = useState<string | null>(null)
   const [archiveItem, setArchiveItem] = useState<CatalogItem | null>(null)
-  const [quotationItem, setQuotationItem] = useState<CatalogItem | null>(null)
+  const [quotationItem, setQuotationItem] = useState<{ titleId: number; title: string } | null>(null)
   const [archiveReason, setArchiveReason] = useState('')
   const [archiving, setArchiving] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ booksCreated: number; copiesCreated: number; message: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (searchParams.get('action') !== 'quotation') return
+    const titleId = Number(searchParams.get('titleId'))
+    if (!Number.isInteger(titleId) || titleId <= 0) return
+    const title = searchParams.get('title')?.trim() || 'Book'
+    setQuotationItem({ titleId, title })
+  }, [searchParams])
+
+  function closeQuotationModal() {
+    setQuotationItem(null)
+    if (searchParams.get('action') !== 'quotation' && !searchParams.has('titleId') && !searchParams.has('title')) return
+    const next = new URLSearchParams(searchParams)
+    next.delete('action')
+    next.delete('titleId')
+    next.delete('title')
+    setSearchParams(next, { replace: true })
+  }
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -446,7 +466,7 @@ export function CatalogManagementPage() {
                       if (item.research?.researchInventoryId) setResearchAssetId(item.research.researchInventoryId)
                     }}
                     onChangeCategory={() => { setCategoryError(null); setCategoryItem(item) }}
-                    onQuotations={() => setQuotationItem(item)}
+                    onQuotations={() => setQuotationItem({ titleId: item.titleId, title: item.title })}
                     onArchive={() => { setArchiveReason(''); setArchiveItem(item) }}
                   />
                 </td>
@@ -600,6 +620,6 @@ export function CatalogManagementPage() {
         </div>
       </div>
     ) : null}
-    {quotationItem ? <BookQuotationModal titleId={quotationItem.titleId} title={quotationItem.title} onClose={() => setQuotationItem(null)} /> : null}
+    {quotationItem ? <BookQuotationModal titleId={quotationItem.titleId} title={quotationItem.title} onClose={closeQuotationModal} /> : null}
   </>
 }
