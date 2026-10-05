@@ -59,6 +59,13 @@ export async function login(schoolId: string, role: AuthRole, password: string):
   if (!claims || claims.role !== payload.data.user.role || claims.userId !== payload.data.user.id) {
     throw new AuthenticationError('The server returned an invalid access token.', 'INVALID_TOKEN_RESPONSE')
   }
+  setSessionIdentity({
+    userId: payload.data.user.id,
+    schoolId: payload.data.user.schoolId,
+    fullName: payload.data.user.fullName ?? undefined,
+    role: payload.data.user.role,
+    source: 'jwt',
+  })
   return payload.data
 }
 

@@ -10,34 +10,41 @@ import {
   FileBarChart,
   FileText,
   LayoutDashboard,
-  LibraryBig,
   LogOut,
   Menu,
   Map,
   Megaphone,
+  Moon,
   PackageOpen,
   PanelLeftClose,
-  PanelLeftOpen,
   Printer,
   QrCode,
   ShoppingCart,
+  Sun,
   Tags,
   Users,
   UserRound,
   X,
   type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '../components/ui'
-import { getAccessToken, getCurrentIdentity } from '../features/auth/auth-storage'
+import { getAccessToken, getCurrentIdentity, setSessionIdentity } from '../features/auth/auth-storage'
 import { logout } from '../features/auth/auth-api'
-// AttendanceFab removed
 import { useMockAuth } from '../features/inventory/MockAuthContext'
-import { ThemeToggle } from '../features/theme/ThemeToggle'
+import { useTheme } from '../features/theme/ThemeProvider'
+import { NotificationBell } from '../features/notifications/NotificationBell'
+import { usersApi } from '../features/users/users-api'
 
 type Role = 'student' | 'faculty' | 'librarian' | 'staff'
 type NavItem = { label: string; to: string; icon: LucideIcon; section?: string }
+
+const profilePath = (role: Role) =>
+  role === 'faculty' ? '/faculty/profile'
+    : role === 'librarian' ? '/librarian/profile'
+      : role === 'staff' ? '/staff/profile'
+        : '/student/profile'
 
 const userNav = (role: 'student' | 'faculty'): NavItem[] => {
   const prefix = role === 'faculty' ? '/faculty' : '/student'
@@ -51,11 +58,9 @@ const userNav = (role: 'student' | 'faculty'): NavItem[] => {
     { label: 'Reservations', to: `${prefix}/reservations`, icon: BookMarked },
     ...(role === 'student' ? [{ label: 'Printing service', to: '/student/printing', icon: Printer }] : []),
     { label: 'QR attendance', to: `${prefix}/attendance`, icon: QrCode },
-    { label: 'Notifications', to: `${prefix}/notifications`, icon: Bell, section: 'My account' },
-    { label: 'Fines', to: `${prefix}/fines`, icon: CircleDollarSign },
+    { label: 'Fines', to: `${prefix}/fines`, icon: CircleDollarSign, section: 'My account' },
     { label: 'Invoices', to: `${prefix}/invoices`, icon: FileText },
     { label: 'Clearance status', to: `${prefix}/clearance`, icon: BadgeCheck },
-    { label: 'My profile', to: `${prefix}/profile`, icon: UserRound },
   ]
 }
 
@@ -80,7 +85,6 @@ const librarianNav: NavItem[] = [
   { label: 'Attendance', to: '/librarian/attendance', icon: QrCode, section: 'People & records' },
   { label: 'Clearance', to: '/librarian/clearance', icon: ClipboardCheck },
   { label: 'Announcements', to: '/librarian/announcements', icon: Megaphone },
-  { label: 'My profile', to: '/librarian/profile', icon: UserRound },
 ]
 const staffNav: NavItem[] = [
   { label: 'Dashboard', to: '/staff/dashboard', icon: LayoutDashboard, section: 'My tasks' },
@@ -89,7 +93,6 @@ const staffNav: NavItem[] = [
   { label: 'Printing queue', to: '/staff/printing', icon: Printer },
   { label: 'Attendance', to: '/staff/attendance', icon: QrCode },
   { label: 'Announcements', to: '/staff/announcements', icon: Megaphone },
-  { label: 'My profile', to: '/staff/profile', icon: UserRound },
 ]
 const navigation = (role: Role) => role === 'librarian' ? librarianNav : role === 'staff' ? staffNav : userNav(role)
 
@@ -104,22 +107,6 @@ function Brand({ compact = false }: { compact?: boolean }) {
 
 function Sidebar({ role, open, onClose, collapsed, onToggleCollapse }: { role: Role; open: boolean; onClose: () => void; collapsed: boolean; onToggleCollapse: () => void }) {
   const nav = navigation(role)
-  const preview = useMockAuth()
-  const claims = preview.identity ?? getCurrentIdentity()
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
-  useEffect(() => {
-    let active = true
-    const token = getAccessToken()
-    if (!token) return
-    void fetch('/api/v1/profile/avatar/me', { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' })
-      .then(async response => {
-        if (!response.ok) return
-        const payload = await response.json() as { data?: { currentUrl?: string | null } }
-        if (active) setAvatarUrl(payload.data?.currentUrl ?? null)
-      })
-      .catch(() => { /* sidebar initials remain when the picture cannot load */ })
-    return () => { active = false }
-  }, [role, claims?.schoolId])
   return (
     <>
       {open ? <button aria-label="Close navigation" onClick={onClose} className="fixed inset-0 z-40 bg-zinc-900/40 backdrop-blur-sm lg:hidden" /> : null}
@@ -144,23 +131,176 @@ function Sidebar({ role, open, onClose, collapsed, onToggleCollapse }: { role: R
             )
           })}
         </nav>
-        <div className="border-t border-white/10 p-3">
-          <div className="mt-2 rounded-xl bg-white/8 p-3 ring-1 ring-white/10">
-            <div className="flex items-center gap-3">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="" className="h-9 w-9 rounded-full object-cover ring-2 ring-[#FFF200]/80" />
-              ) : (
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFF200] text-xs font-black text-[#0b5ea2]">{claims?.role.slice(0, 2).toUpperCase() ?? 'ST'}</span>
-              )}
-              <div className="min-w-0">
-                <p className="truncate text-xs font-bold text-white">{claims?.schoolId ?? 'STI account'}</p>
-                <p className="mt-0.5 text-xs text-white/70">{claims?.role ?? role}</p>
-              </div>
-            </div>
-          </div>
-        </div>
       </aside>
     </>
+  )
+}
+
+function accountInitials(name: string | null | undefined, roleLabel: string) {
+  if (name) {
+    const parts = name.trim().split(/\s+/).filter(Boolean)
+    if (parts.length >= 2) return `${parts[0]![0]!}${parts[1]![0]!}`.toUpperCase()
+    if (parts[0]?.[0]) return parts[0][0].toUpperCase()
+  }
+  return roleLabel.slice(0, 2).toUpperCase()
+}
+
+function resolveProfileName(profile: {
+  first_name?: string | null
+  last_name?: string | null
+  full_name?: string | null
+  school_id?: string | null
+}) {
+  const fromParts = [profile.first_name, profile.last_name].map((part) => part?.trim()).filter(Boolean).join(' ')
+  if (fromParts) return fromParts
+  const fullName = profile.full_name?.trim()
+  if (fullName && fullName !== profile.school_id) return fullName
+  return fullName || null
+}
+
+function AccountMenu({ role, onRequestSignOut }: { role: Role; onRequestSignOut: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [profileName, setProfileName] = useState<string | null>(null)
+  const [profileSchoolId, setProfileSchoolId] = useState<string | null>(null)
+  const [profileRole, setProfileRole] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const menuId = useId()
+  const navigate = useNavigate()
+  const preview = useMockAuth()
+  const claims = preview.identity ?? getCurrentIdentity()
+  const { isDark, toggleTheme } = useTheme()
+  const fallbackRole = claims?.role ?? (role === 'librarian' ? 'Librarian' : role === 'staff' ? 'Staff' : role === 'faculty' ? 'Faculty' : 'Student')
+  const schoolId = profileSchoolId ?? claims?.schoolId ?? 'STI account'
+  const displayRole = profileRole ?? fallbackRole
+  const displayName = profileName ?? claims?.fullName ?? null
+  const initials = accountInitials(displayName, String(displayRole))
+
+  useEffect(() => {
+    let active = true
+    const token = getAccessToken()
+    if (!token && !preview.enabled) return
+
+    void usersApi.myProfile()
+      .then((profile) => {
+        if (!active) return
+        const name = resolveProfileName(profile)
+        setProfileName(name)
+        setProfileSchoolId(profile.school_id)
+        setProfileRole(profile.role)
+        if (claims && name) {
+          setSessionIdentity({
+            userId: claims.userId,
+            schoolId: profile.school_id || claims.schoolId,
+            fullName: name,
+            role: claims.role,
+            source: claims.source,
+          })
+        }
+      })
+      .catch(() => { /* claims remain until the live profile loads */ })
+
+    void fetch('/api/v1/profile/avatar/me', {
+      headers: { Authorization: `Bearer ${token ?? ''}`, Accept: 'application/json' },
+      credentials: 'include',
+    })
+      .then(async (response) => {
+        if (!response.ok) return
+        const payload = await response.json() as { data?: { currentUrl?: string | null } }
+        if (active) setAvatarUrl(payload.data?.currentUrl ?? null)
+      })
+      .catch(() => { /* initials remain when the picture cannot load */ })
+
+    return () => { active = false }
+  }, [role, claims?.schoolId, claims?.userId, claims?.role, claims?.source, preview.enabled])
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const menuItemClass =
+    'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-white/10'
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        aria-label={`Account menu for ${displayName ?? schoolId}`}
+        onClick={() => setOpen((value) => !value)}
+        className="rounded-full ring-2 ring-[#FFF200]/80 transition hover:ring-[#FFF200] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0b5ea2]"
+      >
+        {avatarUrl ? (
+          <img src={avatarUrl} alt="" className="h-9 w-9 rounded-full object-cover" />
+        ) : (
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFF200] text-xs font-black text-[#0b5ea2]">{initials}</span>
+        )}
+      </button>
+
+      {open ? (
+        <div
+          id={menuId}
+          role="menu"
+          aria-label="Account options"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-60 overflow-hidden rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl dark:border-white/15 dark:bg-[#1a1b22]"
+        >
+          <div className="border-b border-zinc-100 px-3 py-2.5 dark:border-white/10">
+            <p className="truncate text-sm font-bold text-zinc-900 dark:text-white">{displayName ?? 'Loading profile…'}</p>
+            <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">{schoolId}</p>
+            <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">{displayRole}</p>
+          </div>
+          <div className="pt-1">
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => toggleTheme()}
+            >
+              {isDark ? <Sun size={17} /> : <Moon size={17} />}
+              <span>{isDark ? 'Light mode' : 'Dark mode'}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => {
+                setOpen(false)
+                navigate(profilePath(role))
+              }}
+            >
+              <UserRound size={17} />
+              <span>My profile</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => {
+                setOpen(false)
+                onRequestSignOut()
+              }}
+            >
+              <LogOut size={17} />
+              <span>Sign out</span>
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -171,36 +311,52 @@ export function PortalLayout({ role }: { role: Role }) {
   const navigate = useNavigate()
   const nav = navigation(role)
   const current = nav.find((item) => location.pathname.startsWith(item.to))
+    ?? (location.pathname.startsWith(profilePath(role)) ? { label: 'My profile' } : undefined)
+    ?? ((role === 'student' || role === 'faculty') && location.pathname.includes('/notifications') ? { label: 'Notifications' } : undefined)
   const [hasAdminAlerts, setHasAdminAlerts] = useState(false)
+  const [alertPollStopped, setAlertPollStopped] = useState(false)
   useEffect(() => {
+    if (role === 'student' || role === 'faculty' || alertPollStopped) return
     let active = true
     const loadAlerts = async () => {
       const token = getAccessToken()
-      if (!token) return
+      if (!token) {
+        if (active) {
+          setHasAdminAlerts(false)
+          setAlertPollStopped(true)
+        }
+        return
+      }
       try {
         const requestHeaders = { Accept: 'application/json', Authorization: `Bearer ${token}` }
         if (role === 'librarian') {
           const response = await fetch('/api/v1/admin/notifications', { headers: requestHeaders, credentials: 'include' })
-          const payload = await response.json() as { data?: { pendingCount?: number } }
+          const payload = await response.json() as { data?: { pendingCount?: number }; code?: string }
+          if (response.status === 401 || payload.code === 'JWT_REQUIRED' || payload.code === 'JWT_INVALID') {
+            if (active) {
+              setHasAdminAlerts(false)
+              setAlertPollStopped(true)
+            }
+            return
+          }
           if (active && response.ok) setHasAdminAlerts(Number(payload.data?.pendingCount ?? 0) > 0)
           return
         }
-        const response = await fetch('/api/v1/notifications?status=unread&limit=1', { headers: requestHeaders, credentials: 'include' })
-        const payload = await response.json() as { success?: boolean; data?: unknown[] | { unreadCount?: number } }
-        const hasAlerts = Array.isArray(payload.data) ? Boolean(payload.data.length) : Number(payload.data?.unreadCount ?? 0) > 0
-        if (active && response.ok && payload.success) setHasAdminAlerts(hasAlerts)
-      } catch { /* The page-level operational modules surface connectivity errors. */ }
+        /* Staff: no unread notification poll; bell opens announcements. */
+        if (active) setHasAdminAlerts(false)
+      } catch { /* Quiet background poll: page modules surface real connectivity errors. */ }
     }
-    void loadAlerts(); const timer = window.setInterval(() => void loadAlerts(), 15000)
+    void loadAlerts()
+    const timer = window.setInterval(() => void loadAlerts(), 60_000)
     return () => { active = false; window.clearInterval(timer) }
-  }, [role])
+  }, [role, alertPollStopped])
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const signOut = async () => { await logout(); navigate('/', { replace: true }) }
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 transition-colors dark:bg-[#14151b] dark:text-zinc-100 relative">
       {/* Global Dot-Matrix Background */}
-      <div 
+      <div
         className="absolute inset-0 opacity-[0.15] dark:opacity-20 pointer-events-none z-0"
         style={{
           backgroundImage: 'radial-gradient(circle, #0b5ea2 1.5px, transparent 1.5px)',
@@ -209,8 +365,8 @@ export function PortalLayout({ role }: { role: Role }) {
       />
 
       <Sidebar role={role} open={sidebarOpen} onClose={() => setSidebarOpen(false)} collapsed={desktopCollapsed} onToggleCollapse={() => setDesktopCollapsed(!desktopCollapsed)} />
-      
-      <div className={cn("relative z-10 transition-all duration-300", desktopCollapsed ? "lg:pl-0" : "lg:pl-64")} style={{ "--sidebar-offset": desktopCollapsed ? "0px" : "256px" } as React.CSSProperties}>
+
+      <div className={cn("relative z-10 transition-all duration-300", desktopCollapsed ? "lg:pl-0" : "lg:pl-64")} style={{ "--sidebar-offset": desktopCollapsed ? "0px" : "256px" } as CSSProperties}>
         <header className="sticky top-0 z-30 flex h-20 items-center border-b border-zinc-200 bg-white/80 px-4 backdrop-blur-xl transition-colors sm:px-6 lg:px-8 dark:border-white/10 dark:bg-[#14151b]">
           <button onClick={() => { setSidebarOpen(true); setDesktopCollapsed(false); }} className={cn("mr-3 rounded-xl border border-zinc-200 p-2.5 text-zinc-500 dark:border-white/15 dark:text-[#f4f6f8]/80 hover:bg-zinc-50 dark:hover:bg-white/10 transition-colors", desktopCollapsed ? "block" : "lg:hidden")}><Menu size={19} /></button>
           <div className="hidden sm:block">
@@ -219,13 +375,23 @@ export function PortalLayout({ role }: { role: Role }) {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <ThemeToggle />
-            <button onClick={() => navigate(role === 'librarian' ? '/librarian/notifications' : role === 'staff' ? '/staff/announcements' : role === 'faculty' ? '/faculty/notifications' : '/student/notifications')} aria-label="Notifications" className="relative rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 dark:border-white/15 dark:bg-white/10 dark:text-[#f4f6f8]/80 dark:hover:bg-white/15"><Bell size={18} />{hasAdminAlerts ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[#FFF200] ring-2 ring-white dark:ring-[#14151b]" /> : null}</button>
-            <button onClick={() => setShowLogoutConfirm(true)} aria-label="Sign out" title="Sign out" className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 dark:border-white/15 dark:bg-white/10 dark:text-[#f4f6f8]/80 dark:hover:bg-white/15"><LogOut size={18} /></button>
+            {role === 'student' || role === 'faculty' ? (
+              <NotificationBell role={role} />
+            ) : (
+              <button
+                type="button"
+                onClick={() => navigate(role === 'librarian' ? '/librarian/notifications' : '/staff/announcements')}
+                aria-label="Notifications"
+                className="relative rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 dark:border-white/15 dark:bg-white/10 dark:text-[#f4f6f8]/80 dark:hover:bg-white/15"
+              >
+                <Bell size={18} />
+                {hasAdminAlerts ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[#FFF200] ring-2 ring-white dark:ring-[#14151b]" /> : null}
+              </button>
+            )}
+            <AccountMenu role={role} onRequestSignOut={() => setShowLogoutConfirm(true)} />
           </div>
         </header>
         <main className="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8"><Outlet /></main>
-        {/* AttendanceFab removed */}
       </div>
 
       {showLogoutConfirm ? (
@@ -243,4 +409,3 @@ export function PortalLayout({ role }: { role: Role }) {
     </div>
   )
 }
-

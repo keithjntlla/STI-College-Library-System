@@ -59,6 +59,7 @@ export function getAccessToken() {
 
 export function clearAccessToken() {
   sessionStorage.removeItem(TOKEN_KEY)
+  cachedSessionIdentity = null
 }
 
 export function setSessionIdentity(identity: AuthenticatedIdentity | null) {
@@ -79,6 +80,19 @@ export function getCurrentClaims() {
 
 export function getCurrentIdentity(): AuthenticatedIdentity | null {
   const claims = getCurrentClaims()
-  if (claims) return { userId: claims.userId, schoolId: claims.schoolId, role: claims.role, source: 'jwt' }
-  return cachedSessionIdentity
+  if (!claims) return cachedSessionIdentity
+  const cached = cachedSessionIdentity
+  const sameAccount = Boolean(
+    cached
+    && cached.userId === claims.userId
+    && cached.schoolId === claims.schoolId
+    && cached.role === claims.role,
+  )
+  return {
+    userId: claims.userId,
+    schoolId: claims.schoolId,
+    role: claims.role,
+    fullName: sameAccount ? cached?.fullName : undefined,
+    source: 'jwt',
+  }
 }

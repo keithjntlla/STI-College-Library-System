@@ -78,7 +78,8 @@ export class UsersRepository {
     const [rows] = await this.pool.execute<RowDataPacket[]>(
       `SELECT a.account_id id,a.school_id,a.role,a.account_status,u.email,u.user_id,
               sp.first_name,sp.last_name,sp.program_strand,sp.year_grade_level,
-              COALESCE(u.full_name,a.school_id) full_name, u.course_or_strand
+              COALESCE(NULLIF(CONCAT_WS(' ',sp.first_name,sp.last_name),''),NULLIF(u.full_name,''),a.school_id) full_name,
+              u.course_or_strand
          FROM accounts a LEFT JOIN users u ON u.user_id=a.user_id
          LEFT JOIN student_profiles sp ON sp.account_id=a.account_id WHERE a.account_id=?`, [accountId])
     if (!rows[0]) throw new HttpError(404, 'USER_NOT_FOUND', 'Account not found.')
