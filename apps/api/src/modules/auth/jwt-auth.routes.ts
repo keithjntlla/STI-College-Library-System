@@ -52,11 +52,11 @@ jwtAuthRouter.post('/reset-password', limiter, async (request, response, next) =
   catch (error) { next(error) }
 })
 jwtAuthRouter.get('/me', authenticateJwt, ensureActiveJwtAccount, (_request, response) => response.json({ success: true, data: response.locals.authenticatedUser }))
-jwtAuthRouter.get('/registration-requests', authenticateJwt, ensureActiveJwtAccount, requireJwtRoles('Admin'), async (_request, response, next) => {
+jwtAuthRouter.get('/registration-requests', authenticateJwt, ensureActiveJwtAccount, requireJwtRoles('Librarian', 'Admin'), async (_request, response, next) => {
   try { response.json({ success: true, data: await registrationService.pendingApprovals() }) }
   catch (error) { next(error) }
 })
-jwtAuthRouter.post('/registration-requests/:requestId/review', authenticateJwt, ensureActiveJwtAccount, requireJwtRoles('Admin'), async (request, response, next) => {
+jwtAuthRouter.post('/registration-requests/:requestId/review', authenticateJwt, ensureActiveJwtAccount, requireJwtRoles('Librarian', 'Admin'), async (request, response, next) => {
   try {
     const data = await registrationService.review(Number(request.params.requestId), response.locals.authenticatedUser.accountId,
       String(request.body?.decision ?? ''))
@@ -65,8 +65,8 @@ jwtAuthRouter.post('/registration-requests/:requestId/review', authenticateJwt, 
 })
 
 export const jwtProtectedRouter = Router()
-jwtProtectedRouter.get('/admin/dashboard', authenticateJwt, requireJwtRoles('Admin'), (_request, response) => response.json({ success: true, data: { area: 'admin' } }))
-jwtProtectedRouter.get('/librarian/dashboard', authenticateJwt, requireJwtRoles('Librarian'), (_request, response) => response.json({ success: true, data: { area: 'librarian' } }))
+jwtProtectedRouter.get('/admin/dashboard', authenticateJwt, requireJwtRoles('Librarian', 'Admin'), (_request, response) => response.json({ success: true, data: { area: 'librarian' } }))
+jwtProtectedRouter.get('/librarian/dashboard', authenticateJwt, requireJwtRoles('Librarian', 'Admin'), (_request, response) => response.json({ success: true, data: { area: 'librarian' } }))
 jwtProtectedRouter.get('/faculty/dashboard', authenticateJwt, requireJwtRoles('Faculty'), (_request, response) => response.json({ success: true, data: { area: 'faculty' } }))
 jwtProtectedRouter.get('/staff/dashboard', authenticateJwt, requireJwtRoles('Staff'), (_request, response) => response.json({ success: true, data: { area: 'staff' } }))
 jwtProtectedRouter.get('/student/dashboard', authenticateJwt, requireJwtRoles('Student'), (_request, response) => response.json({ success: true, data: { area: 'student' } }))

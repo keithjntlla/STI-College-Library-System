@@ -19,7 +19,7 @@ async function api<T>(url: string, options: RequestInit = {}): Promise<T> {
 
 export function FloorPlanImagePage() {
   const [params] = useSearchParams()
-  const isAdmin = getCurrentIdentity()?.role === 'Admin'
+  const isAdmin = ['Librarian', 'Admin'].includes(getCurrentIdentity()?.role ?? '')
   const [image, setImage] = useState<FloorImage>(null)
   const [location, setLocation] = useState<Location>(null)
   const [loading, setLoading] = useState(true)

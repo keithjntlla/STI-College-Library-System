@@ -19,6 +19,13 @@ export type RevenueEntry={received_at:string;request_id:number;full_name:string;
 export type ExpenseSummary={period:FinancePeriod;label:string;from:string;to:string;restock_entries:number;ink_expenses:number;paper_expenses:number;total_expenses:number}
 export type RestockEntry={created_at:string;supply_type:'Ink'|'Paper';supply_name:string;quantity:number|string;unit:string;unit_cost:number|string;total_expense:number|string;balance_before:number|string|null;balance_after:number|string|null;recorded_by:string|null}
 export type StockUsageEntry={created_at:string;supply_type:'Ink'|'Paper';supply_name:string;activity_code:'LoadedIntoPrinter'|'OpenedReam';quantity:number|string;unit:string;balance_before:number|string;balance_after:number|string;recorded_by:string|null}
+export type SupplyReportPackage={
+  revenue:RevenueSummary
+  revenue_entries:RevenueEntry[]
+  expenses:ExpenseSummary
+  restocks:RestockEntry[]
+  usage:StockUsageEntry[]
+}
 
 let csrfToken:string|null=null
 function headers(accept='application/json'){const h=new Headers({Accept:accept}),token=getAccessToken();if(token)h.set('Authorization',`Bearer ${token}`);return h}
@@ -50,12 +57,16 @@ export const printingApi={
   revenueEntries:async(filters:FinanceFilters)=>(await request<RevenueEntry[]>(`/api/v1/admin/printing/revenue/entries?${filterParams(filters)}`)).data,
   expenseSummary:async(filters:FinanceFilters)=>(await request<ExpenseSummary>(`/api/v1/admin/printing/expenses/summary?${filterParams(filters)}`)).data,
   restockHistory:async(filters:FinanceFilters)=>(await request<RestockEntry[]>(`/api/v1/admin/printing/restocks?${filterParams(filters)}`)).data,
-  stockUsage:async()=>(await request<StockUsageEntry[]>('/api/v1/admin/printing/stock-usage?limit=100')).data,
+  stockUsage:async(filters?:FinanceFilters)=>(await request<StockUsageEntry[]>(`/api/v1/admin/printing/stock-usage?limit=20${filters?`&${filterParams(filters)}`:''}`)).data,
+  reportPackage:async(filters:FinanceFilters)=>(await request<SupplyReportPackage>(`/api/v1/admin/printing/reports/package?${filterParams(filters)}&limit=20`)).data,
   stock:async(kind:'ink'|'paper',id:number,data:{movement_type:string;quantity:number;expense_amount:number;notes?:string})=>request(`/api/v1/admin/printing/supplies/${kind}/${id}/movements`,{method:'POST',body:JSON.stringify(data)}),
   restock:async(kind:'ink'|'paper',id:number,data:{quantity:number;unit_cost:number})=>request(`/api/v1/admin/printing/supplies/${kind}/${id}/restock`,{method:'POST',body:JSON.stringify(data)}),
   useInkBottle:async(id:number)=>request(`/api/v1/admin/printing/supplies/ink/${id}/use-bottle`,{method:'POST',body:'{}'}),
   openPaperReam:async(id:number)=>request(`/api/v1/admin/printing/supplies/paper/${id}/open-ream`,{method:'POST',body:'{}'}),
   createInk:async(data:{cartridge_type:string;color_variation:string;available_bottles:number;low_stock_threshold_bottles:number;cost_per_bottle:number})=>request('/api/v1/admin/printing/supplies/ink',{method:'POST',body:JSON.stringify(data)}),
+  createPaper:async(data:{paper_size_dimension:string;unopened_reams:number;low_stock_threshold_reams:number;cost_per_ream:number})=>request('/api/v1/admin/printing/supplies/paper',{method:'POST',body:JSON.stringify(data)}),
+  updateInkThreshold:async(id:number,low_stock_threshold_bottles:number)=>request(`/api/v1/admin/printing/supplies/ink/${id}/threshold`,{method:'PATCH',body:JSON.stringify({low_stock_threshold_bottles})}),
+  updatePaperThreshold:async(id:number,low_stock_threshold_reams:number)=>request(`/api/v1/admin/printing/supplies/paper/${id}/threshold`,{method:'PATCH',body:JSON.stringify({low_stock_threshold_reams})}),
   printReport:()=>download('/api/v1/admin/printing/report.pdf','smartlib-printing-report.pdf','application/pdf','application/pdf'),
   supplyReport:()=>download('/api/v1/admin/printing/supplies/report.pdf','smartlib-print-supplies-current-stock.pdf','application/pdf','application/pdf'),
   financeReport:(filters:FinanceFilters)=>download(`/api/v1/admin/printing/finance/report.pdf?${filterParams(filters)}`,`smartlib-print-finance-${filters.period}-${filters.date}.pdf`,'application/pdf','application/pdf'),

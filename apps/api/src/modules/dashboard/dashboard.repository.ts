@@ -180,12 +180,8 @@ export class DashboardRepository {
         LEFT JOIN physical_copies pc ON pc.physical_copy_id=bt.physical_copy_id LEFT JOIN titles t ON t.title_id=pc.title_id
         LEFT JOIN lost_book_reports lbr ON lbr.transaction_id=bt.transaction_id
         WHERE bt.user_id=? AND bt.transaction_status IN ('Borrowed','Overdue')
-          AND (
-            bt.lost_confirmed_at IS NULL
-            OR (lbr.report_status='Confirmed' AND lbr.charge_resolution IN ('Awaiting Quotation','Quoted') AND lbr.payment_status<>'Paid')
-          )
+          AND bt.lost_confirmed_at IS NULL
         ORDER BY
-          (lbr.report_status='Confirmed') DESC,
           (CASE WHEN bt.transaction_status='Overdue' OR (bt.transaction_status='Borrowed' AND bt.due_at < NOW()) THEN 1 ELSE 0 END) DESC,
           bt.due_at ASC
         LIMIT 1`, [userId]),

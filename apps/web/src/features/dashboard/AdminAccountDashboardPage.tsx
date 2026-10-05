@@ -27,11 +27,11 @@ export function AdminAccountDashboardPage() {
     <PageHeader eyebrow="Account administration" title="Admin dashboard" action={<button onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-[#0b5ea2]/20 px-4 py-2 font-bold text-[#0b5ea2]"><RefreshCw size={16} />{loading ? 'Refreshing…' : 'Refresh'}</button>} />
     {error ? <p role="alert" className="mb-4 rounded-xl bg-[#FFF200] p-4 text-[#0b5ea2]">{error}</p> : null}
     <div className="grid gap-4 md:grid-cols-3">
-      <Link to="/admin/users?status=Active"><StatCard label="Active users" value={data?.activeUsers ?? '—'} icon={Users} /></Link>
-      <Link to="/admin/clearance?status=Cleared&active=1"><StatCard label="Cleared active students" value={data?.cleared ?? '—'} icon={BadgeCheck} /></Link>
-      <Link to="/admin/clearance?status=Not%20Cleared&active=1"><StatCard label="Not-cleared active students" value={data?.notCleared ?? '—'} icon={UserRoundX} /></Link>
+      <Link to="/librarian/users?status=Active"><StatCard label="Active users" value={data?.activeUsers ?? '—'} icon={Users} /></Link>
+      <Link to="/librarian/clearance?status=Cleared&active=1"><StatCard label="Cleared active students" value={data?.cleared ?? '—'} icon={BadgeCheck} /></Link>
+      <Link to="/librarian/clearance?status=Not%20Cleared&active=1"><StatCard label="Not-cleared active students" value={data?.notCleared ?? '—'} icon={UserRoundX} /></Link>
     </div>
-    <SectionCard className="mt-5 p-5"><h2 className="font-bold text-[#0b5ea2]">Account review</h2><p className="mt-2 text-sm text-[#0b5ea2]/70">Review requested Librarian and Staff accounts and pending profile pictures.</p><Link to="/admin/approvals" className="mt-4 inline-flex rounded-xl bg-[#0b5ea2] px-4 py-2 font-bold text-white">Open account approvals</Link></SectionCard>
+    <SectionCard className="mt-5 p-5"><h2 className="font-bold text-[#0b5ea2]">Account review</h2><p className="mt-2 text-sm text-[#0b5ea2]/70">Review Student and Faculty registrations and pending profile pictures.</p><Link to="/librarian/approvals" className="mt-4 inline-flex rounded-xl bg-[#0b5ea2] px-4 py-2 font-bold text-white">Open account approvals</Link></SectionCard>
     {data ? <p className="mt-4 text-sm text-[#0b5ea2]/60">{data.unknown} active students have an unknown clearance state. Updated {new Date(data.generatedAt).toLocaleString('en-PH')}.</p> : null}
   </>
 }

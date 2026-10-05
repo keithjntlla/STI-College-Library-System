@@ -6,7 +6,7 @@ import type { ClearanceRecord } from './types'
 
 const api = vi.hoisted(() => ({
   list: vi.fn(), detail: vi.fn(), override: vi.fn(), revoke: vi.fn(),
-  decideLost: vi.fn(), settleLost: vi.fn(),
+  decideLost: vi.fn(), settleLost: vi.fn(), resolveLost: vi.fn(),
 }))
 vi.mock('./clearance-api', () => ({ clearanceApi: api }))
 
@@ -130,6 +130,65 @@ describe('AdminClearancePage simplified exceptions', () => {
     expect(await screen.findByRole('dialog', { name: 'Confirm this loss?' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Yes, confirm loss' }))
     await waitFor(() => expect(api.decideLost).toHaveBeenCalledWith(12, 'Confirmed'))
+  })
+
+  it('documents a non-monetary resolution through an in-app dialog', async () => {
+    const awaiting: ClearanceRecord = {
+      ...blocked,
+      lostBooks: [{
+        lostBookReportId: 12, transactionId: 20, titleId: 5, title: 'Emma', status: 'Confirmed',
+        chargeResolution: 'Awaiting Quotation', resolutionReason: null, quotationId: null, quotedAmount: null, replacementCharge: 0,
+        paymentStatus: 'Unpaid', reportedAt: '2026-09-26T01:00:00.000Z', verifiedAt: '2026-09-26T02:00:00.000Z',
+      }],
+    }
+    const waived: ClearanceRecord = {
+      ...awaiting,
+      status: 'Cleared',
+      computedStatus: 'Cleared',
+      reason: 'No library obligations',
+      summary: { ...awaiting.summary, unpaidOverdueFines: 0, totalOutstanding: 0, blockCount: 0 },
+      lostBooks: [{ ...awaiting.lostBooks[0], chargeResolution: 'Waived', resolutionReason: 'Replacement copy donated by the program.' }],
+    }
+    api.list.mockResolvedValue(listWith(awaiting))
+    api.detail.mockResolvedValue(awaiting)
+    api.resolveLost.mockResolvedValue({ lostBookReportId: 12, chargeResolution: 'Waived' })
+    render(<MemoryRouter initialEntries={['/librarian/clearance']}><AdminClearancePage /></MemoryRouter>)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Document non-monetary resolution' }))
+    expect(await screen.findByRole('dialog', { name: 'Document non-monetary resolution' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Record resolution' }))
+    expect((await screen.findByRole('alert')).textContent).toMatch(/at least 10 characters/i)
+    expect(api.resolveLost).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('Resolution reason'), {
+      target: { value: 'Replacement copy donated by the program.' },
+    })
+    api.detail.mockResolvedValue(waived)
+    fireEvent.click(screen.getByRole('button', { name: 'Record resolution' }))
+    await waitFor(() => expect(api.resolveLost).toHaveBeenCalledWith(
+      12, 'Waive', 'Replacement copy donated by the program.',
+    ))
+  })
+
+  it('confirms a quotation charge through an in-app confirm modal', async () => {
+    api.list.mockResolvedValue(listWith(blocked))
+    api.detail.mockResolvedValue({
+      ...blocked,
+      lostBooks: [{
+        lostBookReportId: 12, transactionId: 20, titleId: 5, title: 'Emma', status: 'Confirmed',
+        chargeResolution: 'Awaiting Quotation', resolutionReason: null, quotationId: 3, quotedAmount: 650, replacementCharge: 0,
+        paymentStatus: 'Unpaid', reportedAt: '2026-09-26T01:00:00.000Z', verifiedAt: '2026-09-26T02:00:00.000Z',
+      }],
+    })
+    api.resolveLost.mockResolvedValue({ lostBookReportId: 12, chargeResolution: 'Quoted' })
+    render(<MemoryRouter initialEntries={['/librarian/clearance']}><AdminClearancePage /></MemoryRouter>)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Confirm quotation charge/ }))
+    expect(await screen.findByRole('dialog', { name: 'Assess quotation charge?' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, assess charge' }))
+    await waitFor(() => expect(api.resolveLost).toHaveBeenCalledWith(12, 'Charge', ''))
   })
 
   it('soft-refreshes the librarian lost-report worklist when the window regains focus', async () => {

@@ -1,8 +1,7 @@
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import { PortalLayout } from './layouts/PortalLayout'
 import { UserAttendancePage } from './features/attendance/UserAttendancePage'
 import { AdminDashboardPage } from './features/dashboard/AdminDashboardPage'
-import { AdminAccountDashboardPage } from './features/dashboard/AdminAccountDashboardPage'
 import { StaffDashboardPage } from './features/dashboard/StaffDashboardPage'
 import { AccountApprovalsPage } from './features/users/AccountApprovalsPage'
 import { ProfileAvatarPage } from './features/users/ProfileAvatarPage'
@@ -15,7 +14,7 @@ import { AdminUsersPage } from './features/users/AdminUsersPage'
 import { CatalogManagementPage } from './features/catalog/CatalogManagementPage'
 import { CategoryManagementPage } from './features/categories/CategoryManagementPage'
 import { AdminReservationQueuePage } from './features/reservations/AdminReservationQueuePage'
-import { AuthenticatedHome, ProtectedRoute } from './features/auth/ProtectedRoute'
+import { ProtectedRoute } from './features/auth/ProtectedRoute'
 import { LoginPage } from './features/auth/LoginPage'
 import { RegistrationPage } from './features/auth/RegistrationPage'
 import { AdminLoginPage } from './features/auth/AdminLoginPage'
@@ -47,6 +46,10 @@ function NotFound() {
   return <div className="flex min-h-screen items-center justify-center bg-[#0b5ea2]/5 p-6 text-center"><div><p className="text-sm font-bold text-[#0b5ea2]">404</p><h1 className="mt-2 font-display text-3xl font-bold text-[#0b5ea2]">This shelf is empty.</h1><p className="mt-2 text-sm text-[#0b5ea2]/65">The page you requested is not part of SmartLib.</p><a href="/" className="mt-5 inline-flex rounded-xl bg-[#0b5ea2] px-4 py-2.5 text-sm font-bold text-[#FFFFFF]">Return to library</a></div></div>
 }
 
+function AdminPathRedirect() {
+  return <Navigate to="/librarian/dashboard" replace />
+}
+
 export default function App() {
   return (
     <Routes>
@@ -54,6 +57,14 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegistrationPage />} />
       <Route path="/admin/login" element={<AdminLoginPage />} />
+
+      <Route path="/admin" element={<AdminPathRedirect />} />
+      <Route path="/admin/dashboard" element={<Navigate to="/librarian/dashboard" replace />} />
+      <Route path="/admin/users" element={<Navigate to="/librarian/users" replace />} />
+      <Route path="/admin/user-archive" element={<Navigate to="/librarian/user-archive" replace />} />
+      <Route path="/admin/approvals" element={<Navigate to="/librarian/approvals" replace />} />
+      <Route path="/admin/notifications" element={<Navigate to="/librarian/notifications" replace />} />
+      <Route path="/admin/clearance" element={<Navigate to="/librarian/clearance" replace />} />
 
       <Route element={<ProtectedRoute roles={['Student']} />}>
         <Route element={<PortalLayout role="student" />}>
@@ -74,18 +85,7 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route element={<ProtectedRoute roles={['Admin']} />}>
-        <Route element={<PortalLayout role="admin" />}>
-          <Route path="/admin/dashboard" element={<AdminAccountDashboardPage />} />
-          <Route path="/admin/users" element={<AdminUsersPage />} />
-          <Route path="/admin/user-archive" element={<AdminUsersPage archive />} />
-          <Route path="/admin/approvals" element={<AccountApprovalsPage />} />
-          <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
-          <Route path="/admin/clearance" element={<AdminClearancePage />} />
-        </Route>
-      </Route>
-
-      <Route element={<ProtectedRoute roles={['Librarian']} />}>
+      <Route element={<ProtectedRoute roles={['Librarian', 'Admin']} />}>
         <Route element={<PortalLayout role="librarian" />}>
           <Route path="/librarian/dashboard" element={<AdminDashboardPage />} />
           <Route path="/librarian/catalog" element={<CatalogManagementPage />} />
@@ -100,6 +100,10 @@ export default function App() {
           <Route path="/librarian/floor-plan" element={<FloorPlanImagePage />} />
           <Route path="/librarian/printing" element={<AdminPrintingQueuePage />} />
           <Route path="/librarian/supplies" element={<AdminPrintSuppliesPage />} />
+          <Route path="/librarian/users" element={<AdminUsersPage />} />
+          <Route path="/librarian/user-archive" element={<AdminUsersPage archive />} />
+          <Route path="/librarian/approvals" element={<AccountApprovalsPage />} />
+          <Route path="/librarian/notifications" element={<AdminNotificationsPage />} />
           <Route path="/librarian/attendance" element={<AdminAttendancePage />} />
           <Route path="/librarian/clearance" element={<AdminClearancePage />} />
           <Route path="/librarian/announcements" element={<AdminAnnouncementsPage />} />

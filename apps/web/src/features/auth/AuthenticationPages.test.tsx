@@ -7,21 +7,30 @@ import { AdminLoginPage } from './AdminLoginPage'
 import { ThemeProvider } from '../theme/ThemeProvider'
 
 describe('authentication pages', () => {
-  it('shows the role and school-ID login contract with a registration link', () => {
+  it('shows the school-ID login contract with a registration link', () => {
     render(<MemoryRouter><ThemeProvider><LoginPage /></ThemeProvider></MemoryRouter>)
-    expect(screen.getByLabelText('Login as')).toBeTruthy()
     expect(screen.getByLabelText('School ID')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Register an account' }).getAttribute('href')).toBe('/register')
-    expect(screen.getByRole('link', { name: 'System Administrator Login' }).getAttribute('href')).toBe('/admin/login')
   })
 
-  it('shows role-aware account registration and school email', () => {
-    render(<MemoryRouter><RegistrationPage /></MemoryRouter>)
+  it('shows Student/Faculty account registration and school email', () => {
+    render(<MemoryRouter><ThemeProvider><RegistrationPage /></ThemeProvider></MemoryRouter>)
     for (const label of ['Register as', 'First Name', 'Last Name', 'School Email', 'School ID', 'Program / Strand', 'Year / Grade Level', 'Password', 'Confirm Password']) {
       expect(screen.getByLabelText(label)).toBeTruthy()
     }
+    expect(screen.getByLabelText('Register as').textContent).toContain('Student')
+    expect(screen.getByLabelText('Register as').textContent).toContain('Faculty')
+    expect(screen.getByLabelText('Register as').textContent).not.toContain('Librarian')
+    expect(screen.getByLabelText('Register as').textContent).not.toContain('Staff')
     expect(screen.queryByLabelText('Contact Number')).toBeNull()
     expect(screen.getByRole('button', { name: 'Register' })).toBeTruthy()
+  })
+
+  it('hides academic fields when Faculty is selected', () => {
+    render(<MemoryRouter><ThemeProvider><RegistrationPage /></ThemeProvider></MemoryRouter>)
+    fireEvent.change(screen.getByLabelText('Register as'), { target: { value: 'Faculty' } })
+    expect(screen.queryByLabelText('Program / Strand')).toBeNull()
+    expect(screen.queryByLabelText('Year / Grade Level')).toBeNull()
   })
 
   it('directs an existing registrant to sign in without claiming the new password was saved', async () => {
@@ -30,7 +39,7 @@ describe('authentication pages', () => {
       headers: { get: () => 'application/json' },
       json: async () => ({ code: 'REGISTRATION_UNAVAILABLE', message: 'These details may already be in the library system. The password entered here was not saved.' }),
     }))
-    render(<MemoryRouter><RegistrationPage /></MemoryRouter>)
+    render(<MemoryRouter><ThemeProvider><RegistrationPage /></ThemeProvider></MemoryRouter>)
     for (const [label, value] of [
       ['First Name', 'Example'], ['Last Name', 'Student'], ['School Email', 'example@ormoc.sti.edu.ph'],
       ['School ID', 'STUDENT-123'], ['Password', 'ExamplePass123'], ['Confirm Password', 'ExamplePass123'],
@@ -46,7 +55,7 @@ describe('authentication pages', () => {
       ok: true, headers: { get: () => 'application/json' },
       json: async () => ({ data: String(input).endsWith('/verify') ? { status: 'PendingApproval', role: 'Student' } : { requestId: 5, status: 'PendingEmail' } }),
     })))
-    render(<MemoryRouter><RegistrationPage /></MemoryRouter>)
+    render(<MemoryRouter><ThemeProvider><RegistrationPage /></ThemeProvider></MemoryRouter>)
     for (const [label, value] of [
       ['First Name', 'Example'], ['Last Name', 'Student'], ['School Email', 'example@ormoc.sti.edu.ph'],
       ['School ID', 'STUDENT-123'], ['Password', 'ExamplePass123'], ['Confirm Password', 'ExamplePass123'],
@@ -57,15 +66,15 @@ describe('authentication pages', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Verify school email' }))
     expect((await screen.findByRole('alert')).textContent).toContain('approve your account')
     expect(screen.queryByRole('button', { name: 'Resend code' })).toBeNull()
-    expect(screen.getByText(/registration is awaiting Admin approval/)).toBeTruthy()
+    expect(screen.getByText(/librarian will review your request/i)).toBeTruthy()
   })
 
-  it('provides a dedicated administrator login without a selectable role', () => {
+  it('provides a staff portal login for Librarian and Staff', () => {
     render(<MemoryRouter><ThemeProvider><AdminLoginPage /></ThemeProvider></MemoryRouter>)
-    expect(screen.getByRole('heading', { name: 'Administration Portal' })).toBeTruthy()
-    expect(screen.getByLabelText('Administrator School ID')).toBeTruthy()
-    expect(screen.queryByLabelText('Login as')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Open Administration Portal' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Staff login' })).toBeTruthy()
+    expect(screen.getByLabelText('School ID')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open staff portal' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Use the main login' }).getAttribute('href')).toBe('/login')
   })
 })
 

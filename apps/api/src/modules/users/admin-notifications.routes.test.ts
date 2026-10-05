@@ -17,15 +17,15 @@ test('Admin notifications combine pending reviews with account history without e
   const result = await listAdminNotifications(database)
   assert.equal(result.pendingCount, 2)
   assert.deepEqual(result.pending.map(item => item.kind), ['avatar', 'registration'])
-  assert.equal(result.activity[0].actionPath, '/admin/users')
+  assert.equal(result.activity[0].actionPath, '/librarian/users')
   assert.match(result.activity[0].body, /first name, year grade level/)
   assert.doesNotMatch(JSON.stringify(result), /storage_path|password_hash|code_hash|email/)
 })
 
-test('Admin notification route rejects Staff access', async () => {
+test('Account alert route rejects Staff access', async () => {
   const app = express()
   app.use((_request, response, next) => { response.locals.authenticatedUser = { role: 'Staff', accountId: 1 }; next() })
-  app.use('/admin/notifications', requireJwtRoles('Admin'), adminNotificationsRouter)
+  app.use('/admin/notifications', requireJwtRoles('Librarian'), adminNotificationsRouter)
   const response = await request(app).get('/admin/notifications')
   assert.equal(response.status, 403)
   assert.equal(response.body.code, 'JWT_ROLE_FORBIDDEN')

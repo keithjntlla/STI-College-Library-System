@@ -20,7 +20,7 @@ usersRouter.get('/active', handle(async (request, response) => {
 usersRouter.get('/:accountId', handle(async (request, response) => {
   response.json({ success: true, data: await usersRepository.detail(request.params.accountId) })
 }))
-usersRouter.post('/:accountId/status', requireJwtRoles('Admin'), handle(async (request, response) => {
+usersRouter.post('/:accountId/status', requireJwtRoles('Librarian', 'Admin'), handle(async (request, response) => {
   response.json({ success: true, data: await usersRepository.changeStatus(request.params.accountId, actor(response), request.body ?? {}) })
 }))
 export const adminUsersV1Router = usersRouter

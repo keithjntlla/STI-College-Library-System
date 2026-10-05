@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminUsersPage } from './AdminUsersPage'
 
 const api = vi.hoisted(() => ({ summary: vi.fn(), programs: vi.fn(), directory: vi.fn(), detail: vi.fn(), changeStatus: vi.fn() }))
-const identity = vi.hoisted(() => ({ role: 'Admin' }))
+const identity = vi.hoisted(() => ({ role: 'Librarian' }))
 vi.mock('./users-api', () => ({ usersApi: api }))
 vi.mock('../auth/auth-storage', () => ({ getCurrentIdentity: () => identity }))
 
@@ -11,7 +11,7 @@ const student = { id: 8, school_id: '02000000008', role: 'Student', account_stat
 const detail = { ...student, user_id: 18, first_name: 'Test', last_name: 'Student', program_strand: 'IT', year_grade_level: '4th Year', events: [], records: { borrowing: [{ id: 1, status: 'Returned' }] } }
 
 beforeEach(() => {
-  identity.role = 'Admin'
+  identity.role = 'Librarian'
   api.summary.mockResolvedValue({ active_accounts: 1, deactivated_accounts: 0, archived_accounts: 0, student_accounts: 1, faculty_accounts: 0, staff_accounts: 0 })
   api.programs.mockResolvedValue(['IT'])
   api.directory.mockResolvedValue({ rows: [student], pagination: { page: 1, limit: 25, total: 1, total_pages: 1 } })
@@ -32,7 +32,7 @@ describe('AdminUsersPage', () => {
     await waitFor(() => expect(api.changeStatus).toHaveBeenCalledWith(8, 'Deactivated', 'Term ended'))
   })
 
-  it('shows account data and history without Admin profile editing', async () => {
+  it('shows account data and history without profile editing controls', async () => {
     render(<AdminUsersPage />)
     fireEvent.click(await screen.findByRole('button', { name: 'View record' }))
     await screen.findByRole('dialog', { name: 'Account record' })
@@ -48,8 +48,8 @@ describe('AdminUsersPage', () => {
     expect(screen.getByRole('heading', { name: 'User archive' })).toBeTruthy()
   })
 
-  it('shows Librarians account records without management actions', async () => {
-    identity.role = 'Librarian'
+  it('keeps Librarian accounts view-only for status changes', async () => {
+    api.detail.mockResolvedValue({ ...detail, role: 'Librarian', full_name: 'Campus Librarian' })
     render(<AdminUsersPage />)
     fireEvent.click(await screen.findByRole('button', { name: 'View record' }))
     await screen.findByRole('dialog', { name: 'Account record' })

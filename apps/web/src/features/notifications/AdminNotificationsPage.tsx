@@ -30,19 +30,19 @@ export function AdminNotificationsPage() {
     try {
       const response = await fetch('/api/v1/admin/notifications', { credentials: 'include', headers: { Accept: 'application/json', Authorization: `Bearer ${getAccessToken() ?? ''}` } })
       const payload = await response.json() as { data?: Inbox; message?: string }
-      if (!response.ok || !payload.data) throw new Error(payload.message ?? 'Unable to load Admin notifications.')
+      if (!response.ok || !payload.data) throw new Error(payload.message ?? 'Unable to load account alerts.')
       setInbox(payload.data); setError('')
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to load Admin notifications.') }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to load account alerts.') }
     finally { setLoading(false) }
   }, [])
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 30_000); return () => window.clearInterval(timer) }, [load])
   return <>
-    <PageHeader eyebrow="Accounts" title="Admin notifications" description="Account registrations, profile pictures, and account changes." action={<Button variant="secondary" disabled={loading} onClick={() => void load()}><RefreshCw size={16} /> Refresh</Button>} />
+    <PageHeader eyebrow="Accounts" title="Account alerts" description="Account registrations, profile pictures, and account changes." action={<Button variant="secondary" disabled={loading} onClick={() => void load()}><RefreshCw size={16} /> Refresh</Button>} />
     {error ? <p role="alert" className="mb-5 rounded-xl bg-[#FFF200] p-4 font-bold text-[#0b5ea2]">{error}</p> : null}
     <SectionCard className="mb-6 overflow-hidden">
       <div className="flex items-center gap-3 border-b border-[#0b5ea2]/10 px-5 py-4 dark:border-white/10"><Bell size={19} /><div><h2 className="font-display text-lg font-bold">Needs your review</h2><p className="text-xs opacity-65">{inbox?.pendingCount ?? 0} pending · Entries clear after approval or rejection.</p></div></div>
       {inbox?.pending.length ? <ul>{inbox.pending.map(notice => <NoticeCard key={notice.id} notice={notice} />)}</ul> : <p className="p-6 text-sm text-[#0b5ea2]/65 dark:text-white/65">No account or picture approvals are pending.</p>}
-      {inbox && inbox.pendingCount > inbox.pending.length ? <p className="border-t border-[#0b5ea2]/10 p-4 text-sm dark:border-white/10">More items are waiting. Open <Link to="/admin/approvals" className="font-bold underline">Approvals</Link> to review them.</p> : null}
+      {inbox && inbox.pendingCount > inbox.pending.length ? <p className="border-t border-[#0b5ea2]/10 p-4 text-sm dark:border-white/10">More items are waiting. Open <Link to="/librarian/approvals" className="font-bold underline">Approvals</Link> to review them.</p> : null}
     </SectionCard>
     <SectionCard className="overflow-hidden">
       <div className="border-b border-[#0b5ea2]/10 px-5 py-4 dark:border-white/10"><h2 className="font-display text-lg font-bold">Recent account activity</h2><p className="text-xs opacity-65">Profile edits and account status changes remain in account history.</p></div>

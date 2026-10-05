@@ -1,9 +1,12 @@
-import { CalendarClock, ClipboardCheck, Download, Printer, QrCode, RefreshCw, RotateCcw } from 'lucide-react'
+import { BadgeCheck, CalendarClock, ClipboardCheck, Download, Printer, QrCode, RefreshCw, RotateCcw, UserRoundX, Users } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, PageHeader, SectionCard, TableShell } from '../../components/ui'
+import { Button, PageHeader, SectionCard, StatCard, TableShell } from '../../components/ui'
+import { getAccessToken } from '../auth/auth-storage'
 import { dashboardApi } from './dashboard-api'
 import type { AdminDashboardData, LibraryProfile } from './types'
+
+type AccountSummary = { activeUsers: number; cleared: number; notCleared: number; unknown: number; generatedAt: string }
 
 const peso = (value: number) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value)
 const count = (value: number) => new Intl.NumberFormat('en-PH').format(value)
@@ -50,14 +53,24 @@ function todayHours(profile: LibraryProfile) {
 
 export function AdminDashboardPage() {
   const [data, setData] = useState<AdminDashboardData | null>(null)
+  const [accounts, setAccounts] = useState<AccountSummary | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
-    try { setData(await dashboardApi.admin()) }
-    catch (value) { setError(value instanceof Error ? value.message : 'The dashboard could not be loaded.') }
+    try {
+      const ops = await dashboardApi.admin()
+      setData(ops)
+      try {
+        const response = await fetch('/api/v1/admin/account-dashboard', {
+          headers: { Authorization: `Bearer ${getAccessToken() ?? ''}`, Accept: 'application/json' },
+        })
+        const payload = await response.json() as { data?: AccountSummary }
+        if (response.ok && payload.data) setAccounts(payload.data)
+      } catch { /* Ops dashboard remains usable if account cards fail. */ }
+    } catch (value) { setError(value instanceof Error ? value.message : 'The dashboard could not be loaded.') }
     finally { setLoading(false) }
   }, [])
   useEffect(() => { void load() }, [load])
@@ -84,6 +97,19 @@ export function AdminDashboardPage() {
       </div>}
     />
     {error ? <div role="alert" className="mb-5 rounded-2xl bg-[#FFF200] px-4 py-3 text-sm font-semibold text-[#0b5ea2]">{error}</div> : null}
+
+    <section aria-labelledby="account-overview" className="mb-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h2 id="account-overview" className="font-display text-lg font-bold text-[#0b5ea2]">Account overview</h2>
+        <Link to="/librarian/approvals" className="text-sm font-bold text-[#0b5ea2] underline">Open approvals</Link>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <Link to="/librarian/users?status=Active"><StatCard label="Active users" value={accounts?.activeUsers ?? '—'} icon={Users} /></Link>
+        <Link to="/librarian/clearance?status=Cleared&active=1"><StatCard label="Cleared active students" value={accounts?.cleared ?? '—'} icon={BadgeCheck} /></Link>
+        <Link to="/librarian/clearance?status=Not%20Cleared&active=1"><StatCard label="Not-cleared active students" value={accounts?.notCleared ?? '—'} icon={UserRoundX} /></Link>
+      </div>
+      {accounts ? <p className="mt-2 text-xs text-[#0b5ea2]/60">{accounts.unknown} active students have an unknown clearance state. Updated {new Date(accounts.generatedAt).toLocaleString('en-PH')}.</p> : null}
+    </section>
 
     <section aria-labelledby="needs-attention" className="mb-5">
       <h2 id="needs-attention" className="font-display text-lg font-bold text-[#0b5ea2]">Needs attention</h2>

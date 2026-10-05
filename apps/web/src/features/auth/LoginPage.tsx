@@ -3,7 +3,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ThemeToggle } from '../theme/ThemeToggle'
 import { login, AuthenticationError } from './auth-api'
-import { dashboardForRole, getCurrentClaims, saveAccessToken } from './auth-storage'
+import { clearAccessToken, dashboardForRole, getCurrentClaims, saveAccessToken } from './auth-storage'
 
 const SCHOOL_ID = /^[A-Z0-9][A-Z0-9._-]{2,49}$/
 
@@ -47,6 +47,10 @@ export function LoginPage() {
     setBusy(true); setErrors({}); setMessage('')
     try {
       const result = await login(normalizedSchoolId, 'Student', password)
+      if (result.user.role === 'Librarian' || result.user.role === 'Admin' || result.user.role === 'Staff') {
+        clearAccessToken()
+        throw new AuthenticationError('The School ID or password is incorrect.', 'INVALID_CREDENTIALS')
+      }
       saveAccessToken(result.token)
       const state = location.state as { returnTo?: string } | null
       navigate(safeReturnPath(state?.returnTo) ?? dashboardForRole(result.user.role), { replace: true })
@@ -133,7 +137,7 @@ export function LoginPage() {
                   autoFocus 
                   value={schoolId} 
                   onChange={(event) => setSchoolId(event.target.value)} 
-                  placeholder="Enter your Student, Faculty, or Staff ID" 
+                  placeholder="Enter your Student or Faculty ID" 
                   className="h-12 w-full rounded-xl border border-zinc-200 bg-white pl-11 pr-4 text-sm uppercase text-zinc-900 outline-none transition placeholder:normal-case placeholder:text-zinc-400 focus:border-[#0b5ea2] focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-zinc-800 dark:bg-zinc-900 dark:text-white dark:focus:border-[#FFF200] dark:focus:ring-[#FFF200]/10" 
                 />
               </span>

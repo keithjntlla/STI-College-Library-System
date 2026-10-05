@@ -72,6 +72,6 @@ The manuscript operating window is 8:00 AM–5:00 PM, Monday–Saturday. Due-dat
 
 The running app does not yet match every target above. Do not describe these as already done:
 
-- Admin and Librarian are still separate logins, routes, and dashboards. The target rule is one Librarian (Admin) role.
+- Apply Supabase migration `020_merge_admin_into_librarian.sql` on each environment so legacy `Admin` account rows become `Librarian`.
 - Due-date logic still uses a 7:00 AM opening. The manuscript target is 8:00 AM. Do not change the clock until that policy change is scheduled.
 - The native Android client (Kotlin, Jetpack Compose) is not in this repo.

@@ -6,7 +6,7 @@ import { excluded, isPostgres } from '../../config/sql-dialect.js'
 import { HttpError } from '../../core/http-error.ts'
 import { removePrintDocument, resolvePrintDocument, storePrintDocument } from './printing.storage.ts'
 import { inspectPrintDocument } from './printing.document.ts'
-import { parseFinanceFilters, parseNewInkStock, parsePrintRequest, parseQueueFilters, parseRestock, parseServiceStatus, parseStatusUpdate, parseStockMovement } from './printing.validation.ts'
+import { parseFinanceFilters, parseLowStockThreshold, parseNewInkStock, parseNewPaperStock, parsePrintRequest, parseQueueFilters, parseRestock, parseServiceStatus, parseStatusUpdate, parseStockMovement } from './printing.validation.ts'
 import { PrintingRepository, printingRepository } from './printing.repository.ts'
 
 type Actor = { schoolId?: string; role?: string }
@@ -35,7 +35,12 @@ export function createPrintingService(pool: Pool = db, repository: PrintingRepos
     revenueEntries:(query:Record<string,unknown>)=>repository.revenueEntries(parseFinanceFilters(query)),
     expenseSummary:(query:Record<string,unknown>)=>repository.expenseSummary(parseFinanceFilters(query)),
     restockHistory:(query:Record<string,unknown>)=>repository.restockHistory(parseFinanceFilters(query)),
-    stockUsageHistory:(limit:unknown)=>repository.stockUsageHistory(Number(limit)||100),
+    stockUsageHistory:(query:Record<string,unknown>)=>{
+      const hasPeriod = query.period != null || query.date != null || query.month != null
+      const filters = hasPeriod ? parseFinanceFilters(query) : null
+      return repository.stockUsageHistory(filters, Number(query.limit) || 20)
+    },
+    reportPackage:(query:Record<string,unknown>)=>repository.reportPackage(parseFinanceFilters(query), Number(query.limit) || 20),
 
     async quote(actor:Actor, body:Record<string,unknown>, file?:Express.Multer.File) {
       await actorUserId(actor.schoolId)
@@ -132,6 +137,49 @@ export function createPrintingService(pool: Pool = db, repository: PrintingRepos
     async downloadDocument(actor:Actor,requestIdValue:unknown,metadata:{sourceIp?:string;userAgent?:string}){const staffId=await actorUserId(actor.schoolId),requestId=Number(requestIdValue);if(!Number.isSafeInteger(requestId)||requestId<1)throw new HttpError(422,'PRINT_REQUEST_INVALID','The print request ID is invalid.');const[rows]=await pool.execute<RowDataPacket[]>(`SELECT request_id,file_name,file_path FROM print_requests WHERE request_id=? LIMIT 1`,[requestId]);const row=rows[0];if(!row)throw new HttpError(404,'PRINT_REQUEST_NOT_FOUND','The print request was not found.');const contents=await resolvePrintDocument(String(row.file_path));await pool.execute(`INSERT INTO print_file_download_audit(request_id,downloaded_by_user_id,source_ip,user_agent) VALUES (?,?,?,?)`,[requestId,staffId,String(metadata.sourceIp??'').slice(0,45)||null,String(metadata.userAgent??'').slice(0,255)||null]);const fileName=String(row.file_name),mime=fileName.toLowerCase().endsWith('.pdf')?'application/pdf':'application/vnd.openxmlformats-officedocument.wordprocessingml.document';return{contents,fileName,mime}},
 
     async createInkStock(actor:Actor,body:Record<string,unknown>){const staffId=await actorUserId(actor.schoolId),input=parseNewInkStock(body),connection=await pool.getConnection();try{await connection.beginTransaction();const[result]=await connection.execute<ResultSetHeader>(`INSERT INTO ink_repository(printer_id,cartridge_type,color_variation,available_bottles,low_stock_threshold_bottles,cost_per_bottle,remaining_fluid_percentage,low_ink_threshold,last_replenished_at) VALUES (NULL,?,?,?,?,?,100,20,CASE WHEN ?>0 THEN NOW() ELSE NULL END)`,[input.cartridgeType,input.color,input.bottles,input.threshold,input.cost,input.bottles]);await connection.execute(`INSERT INTO ink_stock_movements(ink_id,movement_type,activity_code,quantity_bottles,unit_cost_per_bottle,expense_amount,balance_before,balance_after,recorded_by_user_id,notes) VALUES (?,'Restock','Restock',?,?,?,?,?,?, 'Initial bottle stock')`,[result.insertId,input.bottles,input.cost,Number((input.cost*input.bottles).toFixed(2)),0,input.bottles,staffId]);await connection.commit();return{ink_id:Number(result.insertId),...input,total_expense:Number((input.cost*input.bottles).toFixed(2))}}catch(error){await connection.rollback();throw error}finally{connection.release()}},
+
+    async createPaperStock(actor:Actor,body:Record<string,unknown>){
+      const staffId=await actorUserId(actor.schoolId),input=parseNewPaperStock(body),connection=await pool.getConnection()
+      try{
+        await connection.beginTransaction()
+        const[existing]=await connection.execute<RowDataPacket[]>(`SELECT paper_stock_id FROM bond_paper_stocks WHERE paper_size_dimension=? LIMIT 1`,[input.size])
+        if(existing[0])throw new HttpError(422,'PAPER_SIZE_EXISTS',`${input.size} bond paper is already on the supply list. Use Restock to add reams.`)
+        const[result]=await connection.execute<ResultSetHeader>(
+          `INSERT INTO bond_paper_stocks(paper_size_dimension,remaining_reams,unopened_reams,low_stock_threshold_reams,average_expense_cost) VALUES (?,?,?,?,?)`,
+          [input.size,input.reams,input.reams,input.threshold,input.cost],
+        )
+        await connection.execute(
+          `INSERT INTO paper_stock_movements(paper_stock_id,movement_type,activity_code,quantity_reams,unit_cost_per_ream,expense_amount,balance_before,balance_after,recorded_by_user_id,notes) VALUES (?,'Restock','Restock',?,?,?,?,?,?, 'Initial ream stock')`,
+          [result.insertId,input.reams,input.cost,input.totalExpense,0,input.reams,staffId],
+        )
+        await connection.execute(
+          `INSERT INTO paper_replenishments(paper_stock_id,recorded_by_user_id,replenishment_date,quantity_added_reams,expense_cost,notes) VALUES (?,?,NOW(),?,?, 'Initial ream stock')`,
+          [result.insertId,staffId,input.reams,input.totalExpense],
+        )
+        await connection.commit()
+        return{paper_stock_id:Number(result.insertId),paper_size_dimension:input.size,unopened_reams:input.reams,low_stock_threshold_reams:input.threshold,unit_cost_per_ream:input.cost,total_expense:input.totalExpense}
+      }catch(error){await connection.rollback();throw error}finally{connection.release()}
+    },
+
+    async updateInkThreshold(actor:Actor,inkIdValue:unknown,body:Record<string,unknown>){
+      await actorUserId(actor.schoolId)
+      const inkId=Number(inkIdValue)
+      if(!Number.isSafeInteger(inkId)||inkId<1)throw new HttpError(422,'INK_STOCK_INVALID','The ink stock item ID is invalid.')
+      const{threshold}=parseLowStockThreshold(body,'bottles')
+      const[result]=await pool.execute<ResultSetHeader>(`UPDATE ink_repository SET low_stock_threshold_bottles=?,updated_at=NOW() WHERE ink_id=?`,[threshold,inkId])
+      if(!result.affectedRows)throw new HttpError(404,'INK_STOCK_NOT_FOUND','The ink stock item was not found.')
+      return{ink_id:inkId,low_stock_threshold_bottles:threshold}
+    },
+
+    async updatePaperThreshold(actor:Actor,paperIdValue:unknown,body:Record<string,unknown>){
+      await actorUserId(actor.schoolId)
+      const paperId=Number(paperIdValue)
+      if(!Number.isSafeInteger(paperId)||paperId<1)throw new HttpError(422,'PAPER_STOCK_INVALID','The paper stock item ID is invalid.')
+      const{threshold}=parseLowStockThreshold(body,'reams')
+      const[result]=await pool.execute<ResultSetHeader>(`UPDATE bond_paper_stocks SET low_stock_threshold_reams=?,updated_at=NOW() WHERE paper_stock_id=?`,[threshold,paperId])
+      if(!result.affectedRows)throw new HttpError(404,'PAPER_STOCK_NOT_FOUND','The paper stock item was not found.')
+      return{paper_stock_id:paperId,low_stock_threshold_reams:threshold}
+    },
 
     async restockInk(actor:Actor,inkIdValue:unknown,body:Record<string,unknown>){const staffId=await actorUserId(actor.schoolId),inkId=Number(inkIdValue),input=parseRestock(body,'bottles'),connection=await pool.getConnection();try{await connection.beginTransaction();const[rows]=await connection.execute<RowDataPacket[]>(`SELECT available_bottles FROM ink_repository WHERE ink_id=? FOR UPDATE`,[inkId]);if(!rows[0])throw new HttpError(404,'INK_STOCK_NOT_FOUND','The ink stock item was not found.');const current=Number(rows[0].available_bottles),next=current+input.quantity;await connection.execute(`UPDATE ink_repository SET available_bottles=?,cost_per_bottle=?,last_replenished_at=NOW(),updated_at=NOW() WHERE ink_id=?`,[next,input.unitCost,inkId]);await connection.execute(`INSERT INTO ink_stock_movements(ink_id,movement_type,activity_code,quantity_bottles,unit_cost_per_bottle,expense_amount,balance_before,balance_after,recorded_by_user_id) VALUES (?,'Restock','Restock',?,?,?,?,?,?)`,[inkId,input.quantity,input.unitCost,input.totalExpense,current,next,staffId]);await connection.commit();return{ink_id:inkId,available_bottles:next,unit_cost_per_bottle:input.unitCost,total_expense:input.totalExpense}}catch(error){await connection.rollback();throw error}finally{connection.release()}},
 

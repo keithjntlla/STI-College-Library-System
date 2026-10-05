@@ -23,6 +23,25 @@ test('new ink stores required unit cost and calculated expense with matching pre
   assert.ok(calls.some(call=>call.sql.includes('unit_cost_per_bottle')&&call.values.includes(150)&&call.values.includes(300)))
 })
 
+test('new paper stores whole reams and calculated expense',async()=>{
+  const calls:Array<{sql:string;values:unknown[]}>=[]
+  const connection={
+    beginTransaction:async()=>undefined,commit:async()=>undefined,rollback:async()=>undefined,release:()=>undefined,
+    execute:async(sql:string,values:unknown[]=[] )=>{
+      calls.push({sql,values})
+      if(sql.includes('SELECT paper_stock_id'))return[[],[]]
+      if(sql.includes('INSERT INTO bond_paper_stocks'))return[{insertId:4},[]]
+      return[{},[]]
+    },
+  }
+  const pool={getConnection:async()=>connection} as unknown as Pool
+  const repository={userBySchoolId:async()=>({user_id:5,account_status:'Active'})} as unknown as PrintingRepository
+  const service=createPrintingService(pool,repository)
+  const result=await service.createPaperStock({schoolId:'ADMIN-PORTAL-001'},{paper_size_dimension:'Long',unopened_reams:2,low_stock_threshold_reams:1,cost_per_ream:200})
+  assert.equal(result.total_expense,400)
+  assert.ok(calls.some(call=>call.sql.includes('INSERT INTO bond_paper_stocks')&&call.values.includes('Long')&&call.values.includes(2)))
+})
+
 test('paper restock adds whole unopened reams and records server-calculated expense',async()=>{
   const{service,calls}=serviceFixture({unopened_reams:4,average_expense_cost:'100.00'})
   const result=await service.restockPaper({schoolId:'ADMIN-PORTAL-001'},1,{quantity:3,unit_cost:120})

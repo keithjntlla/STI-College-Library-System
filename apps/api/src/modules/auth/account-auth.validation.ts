@@ -2,7 +2,7 @@ import type { JwtRole } from './jwt-auth.service.ts'
 
 export type FieldErrors = Record<string, string>
 
-const ROLES = new Set<JwtRole>(['Admin', 'Librarian', 'Student', 'Faculty', 'Staff'])
+const PUBLIC_REGISTRATION_ROLES = new Set<JwtRole>(['Student', 'Faculty'])
 const SCHOOL_ID_PATTERN = /^[A-Z0-9][A-Z0-9._-]{2,49}$/
 const SCHOOL_EMAIL_PATTERN = /^[^\s@]+@ormoc\.sti\.edu\.ph$/i
 const COLLEGE_PROGRAMS = new Set([
@@ -27,7 +27,7 @@ export function normalizeSchoolId(value: unknown) {
 export function normalizeRole(value: unknown): JwtRole | '' {
   if (typeof value !== 'string') return ''
   const candidate = value.trim().toLowerCase()
-  return ([...ROLES].find((role) => role.toLowerCase() === candidate) ?? '') as JwtRole | ''
+  return ([...PUBLIC_REGISTRATION_ROLES].find((role) => role.toLowerCase() === candidate) ?? '') as JwtRole | ''
 }
 
 export function validateAccountRegistration(body: unknown) {
@@ -64,8 +64,10 @@ export function validateAccountRegistration(body: unknown) {
     if (yearGradeLevel.length > 100) errors.year_grade_level = 'Year or grade level must not exceed 100 characters.'
   }
 
-  if (!requestedRole) errors.role = 'The selected role is invalid.'
-  else if (requestedRole === 'Admin') errors.role = 'Administrator accounts cannot be registered publicly.'
+  if (!requestedRole) errors.role = 'Public registration accepts Student or Faculty only. Librarian and Staff accounts are provisioned by the librarian.'
+  else if (!PUBLIC_REGISTRATION_ROLES.has(requestedRole)) {
+    errors.role = 'Public registration accepts Student or Faculty only. Librarian and Staff accounts are provisioned by the librarian.'
+  }
 
   if (!password) errors.password = 'Password is required.'
   else if (password.length < 8) errors.password = 'Password must contain at least 8 characters.'

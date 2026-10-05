@@ -1,4 +1,4 @@
-import { AlertTriangle, BadgeCheck, Clock3, Download, Eye, RefreshCw, ShieldCheck, X } from 'lucide-react'
+import { BadgeCheck, Clock3, Download, Eye, RefreshCw, ShieldCheck, X } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Button, ConfirmModal, PageHeader, StatusModal, SectionCard, StatCard, StatusBadge } from '../../components/ui'
 import { getAccessToken } from '../auth/auth-storage'
@@ -30,6 +30,10 @@ export function AdminClearancePage() {
   const [revocationFormOpen, setRevocationFormOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [confirmLoss, setConfirmLoss] = useState<{ reportId: number; quotedAmount: number | null } | null>(null)
+  const [confirmCharge, setConfirmCharge] = useState<{ reportId: number; quotedAmount: number } | null>(null)
+  const [waiveDialog, setWaiveDialog] = useState<{ reportId: number; title: string } | null>(null)
+  const [waiveReason, setWaiveReason] = useState('')
+  const [waiveError, setWaiveError] = useState('')
   const load = useCallback(async (term = search) => { try { setData(await clearanceApi.list(term, statusFilter, activeOnly)); setError('') } catch (reason) { setError(reason instanceof Error ? reason.message : 'Clearance records are unavailable.') } }, [search, statusFilter, activeOnly])
   useEffect(() => { void load('') }, [statusFilter, activeOnly]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -45,27 +49,34 @@ export function AdminClearancePage() {
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [isLibrarian, load, search])
+  function closeResolutionDialogs() {
+    setConfirmLoss(null)
+    setConfirmCharge(null)
+    setWaiveDialog(null)
+    setWaiveReason('')
+    setWaiveError('')
+  }
   function closeSelected() {
     setSelected(null)
     setOverrideFormOpen(false)
     setRevocationFormOpen(false)
     setHistoryOpen(false)
-    setConfirmLoss(null)
+    closeResolutionDialogs()
   }
 
   useEffect(() => {
     if (!selected) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      if (confirmLoss) {
-        setConfirmLoss(null)
+      if (confirmLoss || confirmCharge || waiveDialog) {
+        closeResolutionDialogs()
         return
       }
       closeSelected()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selected, confirmLoss])
+  }, [selected, confirmLoss, confirmCharge, waiveDialog])
 
   async function open(userId: number) {
     try {
@@ -116,14 +127,31 @@ export function AdminClearancePage() {
     }
   }
   async function settle(reportId: number) { setBusy(true); try { await clearanceApi.settleLost(reportId); if (selected) await open(selected.student.userId); await load() } catch (cause) { setError(cause instanceof Error ? cause.message : 'The replacement payment could not be recorded.') } finally { setBusy(false) } }
-  async function resolve(reportId: number, action: 'Charge' | 'Waive', quotedAmount: number | null) {
-    const reason = action === 'Waive' ? window.prompt('Document the non-monetary resolution (at least 10 characters):')?.trim() : ''
-    if (action === 'Waive' && (!reason || reason.length < 10)) return
-    if (action === 'Charge' && (!quotedAmount || !window.confirm(`Assess ${money(quotedAmount)} from the current supplier quotation?`))) return
+  async function resolve(reportId: number, action: 'Charge' | 'Waive', reason = '') {
     setBusy(true)
-    try { await clearanceApi.resolveLost(reportId, action, reason); if (selected) await open(selected.student.userId); await load() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'The loss resolution could not be recorded.') }
-    finally { setBusy(false) }
+    try {
+      await clearanceApi.resolveLost(reportId, action, reason)
+      closeResolutionDialogs()
+      if (selected) await open(selected.student.userId)
+      await load()
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'The loss resolution could not be recorded.'
+      if (action === 'Waive') setWaiveError(message)
+      else setError(message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  function submitWaive(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!waiveDialog || busy) return
+    const reason = waiveReason.trim()
+    if (reason.length < 10) {
+      setWaiveError('Explain the non-monetary resolution in at least 10 characters.')
+      return
+    }
+    setWaiveError('')
+    void resolve(waiveDialog.reportId, 'Waive', reason)
   }
   async function exportCsv() {
     const headers = new Headers({ Accept: 'text/csv' }); const token = getAccessToken(); if (token) headers.set('Authorization', `Bearer ${token}`)
@@ -165,7 +193,7 @@ export function AdminClearancePage() {
             </div>
       <SectionCard className="p-4"><h3 className="font-bold text-[#0b5ea2]">Blocking details</h3><p className="mt-1 text-sm text-[#0b5ea2]/70">{selected.reason}</p><div className="mt-4 space-y-2">{selected.loans.map((loan) => <div key={loan.transactionId} className="rounded-xl bg-[#0b5ea2]/5 p-3 text-sm text-[#0b5ea2]"><strong>{loan.title}</strong> · due {date(loan.dueAt)} · {loan.overdueHours} overdue hours · {money(loan.currentFine)}</div>)}</div></SectionCard>
       {selected.lostBooks.length && isLibrarian ? <SectionCard className="p-4"><h3 className="font-bold text-[#0b5ea2]">Lost-book reports</h3><div className="mt-3 space-y-3">{selected.lostBooks.map((item) => <div key={item.lostBookReportId} className="rounded-xl border border-[#0b5ea2]/15 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-[#0b5ea2]">{item.title}</strong><p className="text-xs text-[#0b5ea2]/60">Reported {date(item.reportedAt)} · {item.status} · {lostResolution(item)} · {item.paymentStatus}</p></div><strong className="text-[#0b5ea2]">{item.status === 'Pending' ? item.quotedAmount ? `Quotation: ${money(item.quotedAmount)}` : 'Awaiting quotation' : item.status === 'Rejected' || lostResolution(item) === 'Waived' ? 'No charge' : lostResolution(item) === 'Awaiting Quotation' ? 'Awaiting quotation' : money(item.replacementCharge)}</strong></div><div className="mt-3 flex flex-wrap gap-2">{item.status === 'Pending' ? <><Button disabled={busy || !item.chargeResolution} onClick={() => setConfirmLoss({ reportId: item.lostBookReportId, quotedAmount: item.quotedAmount })}>Confirm loss</Button><Button variant="secondary" disabled={busy} onClick={() => void decide(item.lostBookReportId, 'Rejected')}>Reject report</Button>{!item.quotationId ? isLibrarian ? <a href={quotationCatalogHref(item.titleId, item.title)} className="self-center text-xs font-bold text-[#0b5ea2] underline">Attach quotation in catalog</a> : <span className="self-center text-xs text-[#0b5ea2]/70">Ask a Librarian to attach a quotation.</span> : null}</> : null}{item.status === 'Confirmed' && lostResolution(item) === 'Quoted' && item.paymentStatus === 'Unpaid' ? <Button disabled={busy} onClick={() => void settle(item.lostBookReportId)}>Record replacement payment</Button> : null}</div></div>)}</div></SectionCard> : null}
-      {(isLibrarian ? selected.lostBooks : []).filter((item) => item.status === 'Confirmed' && lostResolution(item) === 'Awaiting Quotation').map((item) => <SectionCard key={`resolution-${item.lostBookReportId}`} className="p-4"><h3 className="font-bold text-[#0b5ea2]">Resolve {item.title}</h3><p className="mt-1 text-sm text-[#0b5ea2]/70">The loss is confirmed, but no replacement charge has been assessed.</p><div className="mt-3 flex flex-wrap gap-2">{item.quotedAmount ? <Button disabled={busy} onClick={() => void resolve(item.lostBookReportId, 'Charge', item.quotedAmount)}>Confirm quotation charge {money(item.quotedAmount)}</Button> : isLibrarian ? <a href={quotationCatalogHref(item.titleId, item.title)} className="self-center text-sm font-bold underline">Upload supplier quotation</a> : <span className="self-center text-sm">Ask a Librarian to upload a supplier quotation.</span>}<Button variant="secondary" disabled={busy} onClick={() => void resolve(item.lostBookReportId, 'Waive', null)}>Document non-monetary resolution</Button></div></SectionCard>)}
+      {(isLibrarian ? selected.lostBooks : []).filter((item) => item.status === 'Confirmed' && lostResolution(item) === 'Awaiting Quotation').map((item) => <SectionCard key={`resolution-${item.lostBookReportId}`} className="p-4"><h3 className="font-bold text-[#0b5ea2]">Resolve {item.title}</h3><p className="mt-1 text-sm text-[#0b5ea2]/70">The loss is confirmed, but no replacement charge has been assessed.</p><div className="mt-3 flex flex-wrap gap-2">{item.quotedAmount ? <Button disabled={busy} onClick={() => setConfirmCharge({ reportId: item.lostBookReportId, quotedAmount: item.quotedAmount! })}>Confirm quotation charge {money(item.quotedAmount)}</Button> : isLibrarian ? <a href={quotationCatalogHref(item.titleId, item.title)} className="self-center text-sm font-bold underline">Upload supplier quotation</a> : <span className="self-center text-sm">Ask a Librarian to upload a supplier quotation.</span>}<Button variant="secondary" disabled={busy} onClick={() => { setWaiveDialog({ reportId: item.lostBookReportId, title: item.title }); setWaiveReason(''); setWaiveError('') }}>Document non-monetary resolution</Button></div></SectionCard>)}
       <SectionCard className="p-4">
         <div>
           <h3 className="font-bold text-[#0b5ea2]">Clearance exception</h3>
@@ -219,6 +247,40 @@ export function AdminClearancePage() {
         onCancel={() => setConfirmLoss(null)}
         onConfirm={() => void decide(confirmLoss.reportId, 'Confirmed')}
       />
+    ) : null}
+    {confirmCharge ? (
+      <ConfirmModal
+        title="Assess quotation charge?"
+        description={`Assess ${money(confirmCharge.quotedAmount)} from the current supplier quotation as the replacement charge?`}
+        confirmText="Yes, assess charge"
+        cancelText="Cancel"
+        onCancel={() => setConfirmCharge(null)}
+        onConfirm={() => void resolve(confirmCharge.reportId, 'Charge')}
+      />
+    ) : null}
+    {waiveDialog ? (
+      <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-[#001133]/40 p-4 backdrop-blur-sm lg:left-[var(--sidebar-offset,0px)]" role="dialog" aria-modal="true" aria-labelledby="waive-resolution-title">
+        <form onSubmit={submitWaive} className="w-full max-w-md rounded-3xl border border-white/10 bg-[#FFFFFF] p-6 shadow-2xl dark:bg-[#001a4d]">
+          <h3 id="waive-resolution-title" className="font-display text-xl font-bold text-[#0b5ea2] dark:text-white">Document non-monetary resolution</h3>
+          <p className="mt-2 text-sm text-[#0b5ea2]/70 dark:text-white/60">
+            Close the confirmed loss for <strong>{waiveDialog.title}</strong> without a replacement charge. Record why no fee applies (at least 10 characters).
+          </p>
+          {waiveError ? <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">{waiveError}</p> : null}
+          <label htmlFor="waive-resolution-reason" className="mt-4 block text-sm font-bold text-[#0b5ea2] dark:text-white">Resolution reason</label>
+          <textarea
+            id="waive-resolution-reason"
+            value={waiveReason}
+            onChange={(event) => { setWaiveReason(event.target.value); if (waiveError) setWaiveError('') }}
+            rows={4}
+            placeholder="Example: Head Librarian waived charge; replacement copy donated by the program."
+            className={`${field} mt-2 h-28 py-3 dark:border-white/20 dark:bg-[#001133] dark:text-white`}
+          />
+          <div className="mt-6 flex justify-end gap-3">
+            <button type="button" disabled={busy} onClick={closeResolutionDialogs} className="h-10 rounded-xl px-4 text-sm font-bold text-[#0b5ea2] hover:bg-zinc-100 transition-colors disabled:opacity-40 dark:text-white/80 dark:hover:bg-white/10">Cancel</button>
+            <button type="submit" disabled={busy} className="h-10 rounded-xl bg-[#0b5ea2] px-4 text-sm font-bold text-[#FFFFFF] hover:bg-[#004488] transition-colors disabled:opacity-40">{busy ? 'Saving…' : 'Record resolution'}</button>
+          </div>
+        </form>
+      </div>
     ) : null}
   </>
 }

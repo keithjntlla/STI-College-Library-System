@@ -15,7 +15,7 @@ const DUMMY_BCRYPT_HASH = '$2b$12$k1Pc4Uvw2o.7wwBZ1hQwHu5vTfEfRPRgRhhcaawYWpPJez
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid school ID or password.'
 
 export function dashboardForJwtRole(role: JwtRole) {
-  return ({ Admin: '/admin/dashboard', Librarian: '/librarian/dashboard', Faculty: '/faculty/dashboard', Student: '/student/dashboard', Staff: '/staff/dashboard' })[role]
+  return ({ Admin: '/librarian/dashboard', Librarian: '/librarian/dashboard', Faculty: '/faculty/dashboard', Student: '/student/dashboard', Staff: '/staff/dashboard' })[role]
 }
 
 function isLegacyEmailLogin(body: unknown) {
@@ -86,7 +86,7 @@ export function createJwtAuthService(database: Pool = db, passwordHasher = bcryp
         const pendingRequest = requests[0]
         if (pendingRequest?.password_hash && await passwordHasher.compare(validation.password, pendingRequest.password_hash)) {
           if (pendingRequest.status === 'PendingEmail') throw new HttpError(403, 'EMAIL_VERIFICATION_REQUIRED', 'Verify the code sent to your school email before signing in.')
-          if (pendingRequest.status === 'PendingApproval') throw new HttpError(403, 'ACCOUNT_APPROVAL_PENDING', 'Your school email is verified. An administrator must approve your account before you can sign in.')
+          if (pendingRequest.status === 'PendingApproval') throw new HttpError(403, 'ACCOUNT_APPROVAL_PENDING', 'Your school email is verified. A librarian must approve your account before you can sign in.')
         }
       }
       const matches = await passwordHasher.compare(validation.password, account?.password_hash ?? DUMMY_BCRYPT_HASH)

@@ -66,6 +66,21 @@ export function parseNewInkStock(body: Record<string, unknown>) {
   return{cartridgeType,color,bottles,threshold,cost}
 }
 
+export function parseNewPaperStock(body: Record<string, unknown>) {
+  const size = String(body.paper_size_dimension ?? '')
+  if (!['Short', 'A4', 'Long'].includes(size)) throw new HttpError(422, 'PAPER_SIZE_INVALID', 'Choose Short, A4, or Long bond paper.')
+  const reams = integer(body.unopened_reams, 'unopened_reams', 1, 10000)
+  const threshold = integer(body.low_stock_threshold_reams ?? 2, 'low_stock_threshold_reams', 0, 10000)
+  const cost = Number(body.cost_per_ream)
+  if (!Number.isFinite(cost) || cost <= 0 || cost > 1000000) throw new HttpError(422, 'PAPER_COST_INVALID', 'Cost per ream is required and must be greater than zero.')
+  return { size, reams, threshold, cost, totalExpense: Number((reams * cost).toFixed(2)) }
+}
+
+export function parseLowStockThreshold(body: Record<string, unknown>, unit: 'bottles' | 'reams') {
+  const field = unit === 'bottles' ? 'low_stock_threshold_bottles' : 'low_stock_threshold_reams'
+  return { threshold: integer(body[field] ?? body.threshold, field, 0, 10000) }
+}
+
 export function parseRestock(body: Record<string, unknown>, unit: 'bottles' | 'reams') {
   const quantity = Number(body.quantity)
   if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10000) {

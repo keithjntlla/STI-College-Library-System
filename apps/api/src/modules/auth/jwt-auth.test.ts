@@ -10,7 +10,7 @@ import { createJwtAuthService, type JwtRole } from './jwt-auth.service.ts'
 import { createActiveJwtAccountGuard, verifyAccessToken } from './jwt-auth.middleware.ts'
 
 const redirects: Record<JwtRole, string> = {
-  Admin: '/admin/dashboard', Librarian: '/librarian/dashboard', Faculty: '/faculty/dashboard', Student: '/student/dashboard', Staff: '/staff/dashboard',
+  Admin: '/librarian/dashboard', Librarian: '/librarian/dashboard', Faculty: '/faculty/dashboard', Student: '/student/dashboard', Staff: '/staff/dashboard',
 }
 
 test('authenticates all four roles, signs the required claims, and returns the correct redirect', async () => {
@@ -57,7 +57,7 @@ test('correct pending role credentials explain the approval wait without issuing
     (error: unknown) => error instanceof HttpError && error.code === 'ACCOUNT_APPROVAL_PENDING')
 })
 
-test('rejects valid credentials when login_as does not match the stored role', async () => {
+test('looks up accounts by school ID without requiring login_as to match', async () => {
   let queryValues: unknown[] = []
   const database = { execute: async (_sql: string, values: unknown[]) => { queryValues = values; return [[]] } } as never
   const service = createJwtAuthService(database, { compare: async () => false } as never, jwt)
@@ -66,10 +66,10 @@ test('rejects valid credentials when login_as does not match the stored role', a
     service.login({ login_as: 'Faculty', school_id: 'STI-2026-0042', password: 'CorrectHorse1' }),
     (error: unknown) => error instanceof HttpError && error.status === 401 && error.code === 'INVALID_CREDENTIALS',
   )
-  assert.deepEqual(queryValues, ['STI-2026-0042', 'Faculty'])
+  assert.deepEqual(queryValues, ['STI-2026-0042'])
 })
 
-test('blocks a Student bearer token from the Admin dashboard data endpoint', async () => {
+test('blocks a Student bearer token from the Librarian dashboard data endpoint', async () => {
   const token = jwt.sign(
     { userId: 77, schoolId: 'STI-2026-0077', role: 'Student' }, env.jwt.secret,
     { algorithm: 'HS256', expiresIn: 900, issuer: env.jwt.issuer, audience: env.jwt.audience, subject: '77' },

@@ -108,7 +108,7 @@ Use role-based authorization on the server for every protected endpoint.
 - `library_staff`: the limited second admin. Circulation, reservations, printing, and attendance only. No user administration and no destructive policy changes.
 - `librarian`: the library Admin. One role, held by the librarian (Ma'am Juday), with full policy, catalog, circulation, inventory, attendance, printing, fines, archive, clearance, user-state, and reporting controls. Do not keep a second library-policy admin.
 
-The running app still has separate Admin and Librarian logins, routes, and dashboards. That split stays until a later build. The manuscript names a technical system administrator in one requirements sentence. That means hosting and maintenance, not a second library boss and not a separate library-policy login.
+The app uses one Librarian (Admin) library-policy role with a combined portal (see ADR-002). Apply migration `020` so legacy Admin account rows become Librarian. The manuscript names a technical system administrator in one requirements sentence. That means hosting and maintenance, not a second library boss and not a separate library-policy login.
 
 Never trust role, fine amount, due date, book availability, or print cost values sent by the client. Calculate and enforce these on the server.
 

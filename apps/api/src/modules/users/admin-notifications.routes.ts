@@ -27,10 +27,10 @@ export async function listAdminNotifications(database: Pick<typeof db, 'execute'
     ...registrations.map(row => ({ id: `registration-${row.request_id}`, kind: 'registration' as const,
       title: 'Account registration awaiting approval',
       body: `${row.first_name} ${row.last_name} (${row.school_id}) requested ${row.requested_role} access.`,
-      createdAt: timestamp(row.created_at), actionPath: '/admin/approvals' })),
+      createdAt: timestamp(row.created_at), actionPath: '/librarian/approvals' })),
     ...pictures.map(row => ({ id: `avatar-${row.submission_id}`, kind: 'avatar' as const,
       title: 'Profile picture awaiting approval', body: `${row.full_name} (${row.school_id}) submitted a new picture.`,
-      createdAt: timestamp(row.submitted_at), actionPath: '/admin/approvals' })),
+      createdAt: timestamp(row.submitted_at), actionPath: '/librarian/approvals' })),
   ].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const activity: Notice[] = events.map(row => {
     const profile = row.action_code === 'ProfileEdited'
@@ -41,7 +41,7 @@ export async function listAdminNotifications(database: Pick<typeof db, 'execute'
       body: profile ? `${row.full_name} (${row.school_id}) changed ${fields.join(', ') || 'profile details'}.`
         : `${row.full_name} (${row.school_id}) was ${deactivated ? 'deactivated' : 'reactivated'}.`,
       createdAt: timestamp(row.created_at),
-      actionPath: row.account_status === 'Active' ? '/admin/users' : '/admin/user-archive' }
+      actionPath: row.account_status === 'Active' ? '/librarian/users' : '/librarian/user-archive' }
   })
   return { pendingCount: Number(registrationCount[0]?.total ?? 0) + Number(pictureCount[0]?.total ?? 0), pending, activity }
 }

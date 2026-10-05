@@ -183,7 +183,8 @@ export function createRegistrationService(
     },
 
     async pendingApprovals() {
-      requireSupabase()
+      // Local MySQL has no registration queue; return empty so Approvals can still load picture reviews.
+      if (activeDriver !== 'postgres') return []
       const [rows] = await database.execute<RowDataPacket[]>(
         `SELECT request_id,school_id,email,first_name,last_name,requested_role,email_verified_at,created_at
            FROM registration_requests WHERE status='PendingApproval' ORDER BY created_at ASC LIMIT 100`, [],

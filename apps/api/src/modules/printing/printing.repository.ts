@@ -150,16 +150,33 @@ export class PrintingRepository {
     return rows
   }
 
-  async stockUsageHistory(limit=100) {
-    const safeLimit=Math.min(500,Math.max(1,limit))
-    const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT * FROM (
+  async stockUsageHistory(filters: FinanceFilters | null = null, limit = 20) {
+    const safeLimit = Math.min(500, Math.max(1, limit))
+    const periodClause = filters
+      ? ` AND m.created_at>=? AND m.created_at<${dayAfter()}`
+      : ''
+    const values = filters ? [filters.from, filters.to, filters.from, filters.to] : []
+    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT * FROM (
       SELECT m.created_at,'Ink' supply_type,CONCAT(i.cartridge_type,' · ',i.color_variation) supply_name,m.activity_code,m.quantity_bottles quantity,'bottle' unit,m.balance_before,m.balance_after,u.full_name recorded_by
-      FROM ink_stock_movements m JOIN ink_repository i ON i.ink_id=m.ink_id LEFT JOIN users u ON u.user_id=m.recorded_by_user_id WHERE m.activity_code='LoadedIntoPrinter'
+      FROM ink_stock_movements m JOIN ink_repository i ON i.ink_id=m.ink_id LEFT JOIN users u ON u.user_id=m.recorded_by_user_id
+      WHERE m.activity_code='LoadedIntoPrinter'${periodClause}
       UNION ALL
       SELECT m.created_at,'Paper',CONCAT(p.paper_size_dimension,' bond paper'),m.activity_code,m.quantity_reams,'ream',m.balance_before,m.balance_after,u.full_name
-      FROM paper_stock_movements m JOIN bond_paper_stocks p ON p.paper_stock_id=m.paper_stock_id LEFT JOIN users u ON u.user_id=m.recorded_by_user_id WHERE m.activity_code='OpenedReam'
-    ) usages ORDER BY created_at DESC LIMIT ${safeLimit}`)
+      FROM paper_stock_movements m JOIN bond_paper_stocks p ON p.paper_stock_id=m.paper_stock_id LEFT JOIN users u ON u.user_id=m.recorded_by_user_id
+      WHERE m.activity_code='OpenedReam'${periodClause}
+    ) usages ORDER BY created_at DESC LIMIT ${safeLimit}`, values)
     return rows
+  }
+
+  async reportPackage(filters: FinanceFilters, usageLimit = 20) {
+    const [revenue, revenue_entries, expenses, restocks, usage] = await Promise.all([
+      this.revenueSummary(filters),
+      this.revenueEntries(filters),
+      this.expenseSummary(filters),
+      this.restockHistory(filters),
+      this.stockUsageHistory(filters, usageLimit),
+    ])
+    return { revenue, revenue_entries, expenses, restocks, usage }
   }
 
   async *revenueReportRows(filters: FinanceFilters) { for(const row of await this.revenueEntries(filters))yield row }

@@ -139,3 +139,40 @@ test('paid quoted loss no longer blocks clearance', async () => {
   assert.equal(result.summary.unpaidReplacementCharges, 0)
   assert.equal(result.reason, 'No library obligations')
 })
+
+test('resolveLost waive writes Waived resolution and lost_book_resolved admin notice', async () => {
+  const statements: string[] = []
+  const connection = {
+    async beginTransaction() {},
+    async commit() {},
+    async rollback() {},
+    release() {},
+    async execute(sql: string) {
+      statements.push(sql)
+      if (sql.includes('FROM lost_book_reports l') && sql.includes('FOR UPDATE')) {
+        return [[{
+          lost_book_report_id: 12, transaction_id: 20, user_id: 7, report_status: 'Confirmed',
+          charge_resolution: 'Awaiting Quotation', title: 'Emma',
+          current_quotation_id: null, current_quotation_amount: null,
+        }]]
+      }
+      if (sql.includes('FROM accounts') && sql.includes('user_id')) {
+        return [[{ user_id: 99 }]]
+      }
+      return [{ affectedRows: 1 }]
+    },
+  }
+  const database = {
+    async getConnection() { return connection },
+  } as unknown as Pool
+
+  const result = await createClearanceService(database).resolveLost(
+    { accountId: 1, role: 'Librarian' },
+    12,
+    { action: 'Waive', reason: 'Replacement copy donated by the program.' },
+  )
+
+  assert.deepEqual(result, { lostBookReportId: 12, chargeResolution: 'Waived' })
+  assert.ok(statements.some((sql) => sql.includes("charge_resolution='Waived'") && sql.includes('resolution_reason')))
+  assert.ok(statements.some((sql) => sql.includes("'lost_book_resolved'") && sql.includes('admin_notifications')))
+})

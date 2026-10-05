@@ -16,13 +16,15 @@ test('registration validator trims identity fields and accepts the mobile form c
   assert.equal(result.schoolEmail, 'juan.1234@ormoc.sti.edu.ph')
 })
 
-test('nonstudent registration accepts optional academic fields but requires school email', () => {
+test('Faculty registration accepts optional academic fields but requires school email', () => {
   const result = validateAccountRegistration({
-    role: 'Staff', school_id: 'STAFF-104', school_email: 'staff.104@ormoc.sti.edu.ph',
-    first_name: 'Library', last_name: 'Assistant', password: 'LibraryPass9', confirm_password: 'LibraryPass9',
+    role: 'Faculty', school_id: 'FAC-104', school_email: 'faculty.104@ormoc.sti.edu.ph',
+    first_name: 'Campus', last_name: 'Faculty', password: 'LibraryPass9', confirm_password: 'LibraryPass9',
   })
   assert.equal(result.isValid, true)
-  assert.equal(result.role, 'Staff')
+  assert.equal(result.role, 'Faculty')
+  assert.equal(validateAccountRegistration({ ...result, role: 'Staff' }).isValid, false)
+  assert.equal(validateAccountRegistration({ ...result, role: 'Librarian' }).isValid, false)
   assert.equal(validateAccountRegistration({ ...result, role: 'Admin' }).isValid, false)
 })
 
@@ -38,10 +40,9 @@ test('registration validator returns field errors for missing data and mismatche
   assert.equal(result.errors.confirm_password, 'Password confirmation does not match.')
 })
 
-test('login validator requires an explicit supported role, school ID, and password', () => {
-  const invalid = validateRoleLogin({ login_as: 'Visitor', school_id: '', password: '' })
+test('login validator requires school ID and password', () => {
+  const invalid = validateRoleLogin({ school_id: '', password: '' })
   assert.equal(invalid.isValid, false)
-  assert.ok(invalid.errors.login_as)
   assert.ok(invalid.errors.school_id)
   assert.ok(invalid.errors.password)
 })

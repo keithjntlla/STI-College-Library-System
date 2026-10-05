@@ -16,26 +16,26 @@ function appFor(role: string) {
   return app
 }
 
-test('Admin cannot use Librarian lost-book finance actions', async () => {
+test('Staff cannot use Librarian lost-book finance actions', async () => {
   for (const [method, path] of [
     ['patch', '/clearance/lost-books/1'],
     ['patch', '/clearance/lost-books/1/resolution'],
     ['patch', '/clearance/lost-books/1/payment'],
     ['post', '/clearance/lost-books/loans/1/report'],
   ] as const) {
-    const response = await request(appFor('Admin'))[method](path).send({})
+    const response = await request(appFor('Staff'))[method](path).send({})
     assert.equal(response.status, 403, `${method} ${path}`)
     assert.equal(response.body.code, 'JWT_ROLE_FORBIDDEN')
   }
 })
 
-test('profile-picture approval requests are visible only to Admin', async () => {
+test('profile-picture approval requests are visible only to Librarian', async () => {
   const response = await request(appFor('Staff')).get('/profile/avatar/submissions')
   assert.equal(response.status, 403)
   assert.equal(response.body.code, 'JWT_ROLE_FORBIDDEN')
 })
 
-test('Admin has no route to edit another account profile', async () => {
-  const response = await request(appFor('Admin')).patch('/admin/users/9/profile').send({ first_name: 'Changed' })
+test('Librarian has no route to edit another account profile', async () => {
+  const response = await request(appFor('Librarian')).patch('/admin/users/9/profile').send({ first_name: 'Changed' })
   assert.equal(response.status, 404)
 })

@@ -1,0 +1,13 @@
+---
+description: Hard rules for public vs staff login and privileged URL exposure
+alwaysApply: true
+---
+
+# Auth and privileged surfaces
+
+- Public Student/Faculty surfaces (`/`, `/login`, `/register`, public catalog) must never link to, mention, hint at, or advertise privileged entry points such as `/admin/login`, staff portals, or Librarian/Staff-only workflows.
+- Privileged login paths may exist but stay unlinked from public UI. Staff learn the URL through operational channels, not the student login page.
+- Wrong-role or unauthorized attempts on public login return generic credential errors only. Never say "use the staff portal" or name a hidden path.
+- API authorization remains mandatory; hiding a URL is not enough, but public discovery of staff entry points is still forbidden.
+- Librarian (Admin) and Staff use `/admin/login`. Students and Faculty use `/login`. Do not blur those entry points in UI copy or links.
+- Before shipping auth/role/UI changes, check: privileged URL exposure, least privilege, error-message leaks, and whether ADRs already decided otherwise. If any check fails, stop and fix or ask.

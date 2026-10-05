@@ -1,0 +1,12 @@
+---
+description: Senior frontend standards, theme matching, and UX pushback
+alwaysApply: true
+---
+
+# Frontend standards
+
+- Act as a senior frontend engineer: clean, idiomatic, secure code; no AI-slop patterns or frontend vulnerabilities.
+- Push back on UX anti-patterns and structural weaknesses; propose a better approach before coding when needed.
+- Prefer responsive design, accessibility, and the repo's established UI primitives (`StatusPill` / `AlertMessage` tones, existing layouts).
+- Match the existing page theme and patterns unless the task explicitly asks for a redesign.
+- Do not expand scope mid-task to "improve UX" when that conflicts with security or product rules.

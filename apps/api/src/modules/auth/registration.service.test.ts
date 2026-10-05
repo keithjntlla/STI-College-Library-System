@@ -4,8 +4,8 @@ import { HttpError } from '../../core/http-error.ts'
 import { createRegistrationService } from './registration.service.ts'
 
 const application = {
-  role: 'Staff', school_id: 'STAFF-123', school_email: 'staff.123@ormoc.sti.edu.ph',
-  first_name: 'Library', last_name: 'Worker', password: 'GoodPassword123', confirm_password: 'GoodPassword123',
+  role: 'Faculty', school_id: 'FAC-123', school_email: 'faculty.123@ormoc.sti.edu.ph',
+  first_name: 'Campus', last_name: 'Faculty', password: 'GoodPassword123', confirm_password: 'GoodPassword123',
 }
 
 function fakeDatabase() {
@@ -41,7 +41,7 @@ function fakeDatabase() {
   return { state, database: { execute, getConnection: async () => connection } as never }
 }
 
-test('Staff registration verifies email before Admin approval creates an account', async () => {
+test('Faculty registration verifies email before Librarian approval creates an account', async () => {
   const { state, database } = fakeDatabase()
   let delivered = ''
   const service = createRegistrationService(database, async (_email, code) => { delivered = code }, { hash: async () => 'secure-hash' } as never, 'postgres')
@@ -66,7 +66,7 @@ test('Staff registration verifies email before Admin approval creates an account
   assert.equal(state.writes.some(sql => sql.startsWith('INSERT INTO users')), true)
 })
 
-test('Student and Faculty registrations also wait for Admin approval after email verification', async () => {
+test('Student and Faculty registrations also wait for Librarian approval after email verification', async () => {
   for (const role of ['Student', 'Faculty'] as const) {
     const { state, database } = fakeDatabase()
     let delivered = ''
@@ -82,7 +82,7 @@ test('Student and Faculty registrations also wait for Admin approval after email
   }
 })
 
-test('rejecting a verified registration creates no account and stores the Admin decision', async () => {
+test('rejecting a verified registration creates no account and stores the Librarian decision', async () => {
   const { state, database } = fakeDatabase()
   let delivered = ''
   const service = createRegistrationService(database, async (_email, code) => { delivered = code }, { hash: async () => 'secure-hash' } as never, 'postgres')
@@ -105,4 +105,10 @@ test('registration refuses MySQL even when a sender is available', async () => {
   const { database } = fakeDatabase()
   const service = createRegistrationService(database, async () => undefined, { hash: async () => 'secure-hash' } as never, 'mysql')
   await assert.rejects(service.register(application), (error: unknown) => error instanceof HttpError && error.code === 'SUPABASE_REQUIRED')
+})
+
+test('pending registration list is empty on MySQL so Approvals can still load pictures', async () => {
+  const { database } = fakeDatabase()
+  const service = createRegistrationService(database, async () => undefined, { hash: async () => 'secure-hash' } as never, 'mysql')
+  assert.deepEqual(await service.pendingApprovals(), [])
 })

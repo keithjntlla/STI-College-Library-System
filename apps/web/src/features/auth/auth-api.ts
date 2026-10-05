@@ -18,13 +18,13 @@ export type LoginResult = {
 }
 
 export type StudentRegistrationInput = {
-  role?: Exclude<AuthRole, 'Admin'>
+  role?: Extract<AuthRole, 'Student' | 'Faculty'>
   school_id: string
   school_email?: string
   first_name: string
   last_name: string
-  program_strand: string
-  year_grade_level: string
+  program_strand?: string
+  year_grade_level?: string
   password: string
   confirm_password: string
 }

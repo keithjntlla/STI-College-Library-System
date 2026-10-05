@@ -8,7 +8,7 @@ const field = 'h-10 w-full rounded-xl border border-[#0b5ea2]/20 bg-white px-3 t
 const initial: UserFilters = { q: '', role: '', program: '', clearance: '', status: 'Active', page: 1, limit: 25 }
 
 export function AdminUsersPage({ archive = false }: { archive?: boolean }) {
-  const canManage = getCurrentIdentity()?.role === 'Admin'
+  const canManage = ['Librarian', 'Admin'].includes(getCurrentIdentity()?.role ?? '')
   const [filters, setFilters] = useState<UserFilters>(() => ({ ...initial, status: archive ? 'Inactive' : 'Active' }))
   const [refresh, setRefresh] = useState(0)
   const [summary, setSummary] = useState<UserSummary | null>(null)
@@ -72,7 +72,7 @@ export function AdminUsersPage({ archive = false }: { archive?: boolean }) {
     <SectionCard className="mb-5 p-4"><div className="grid gap-3 md:grid-cols-5">
       <label className={`${field} flex items-center gap-2`}><Search size={15} /><input aria-label="Search users" className="w-full outline-none" placeholder="Name, ID, or email" value={filters.q} onChange={event => update({ q: event.target.value })} /></label>
       <select aria-label="Account status" className={field} value={filters.status} onChange={event => update({ status: event.target.value })}>{archive ? <><option value="Inactive">Deactivated and archived</option><option>Deactivated</option><option>Archived</option></> : <><option>Active</option><option value="">All statuses</option><option>Deactivated</option><option>Archived</option></>}</select>
-      <select aria-label="User role" className={field} value={filters.role} onChange={event => update({ role: event.target.value })}><option value="">All roles</option>{['Student', 'Faculty', 'Librarian', 'Staff', 'Admin'].map(role => <option key={role}>{role}</option>)}</select>
+      <select aria-label="User role" className={field} value={filters.role} onChange={event => update({ role: event.target.value })}><option value="">All roles</option>{['Student', 'Faculty', 'Librarian', 'Staff'].map(role => <option key={role}>{role}</option>)}</select>
       <select aria-label="Program" className={field} value={filters.program} onChange={event => update({ program: event.target.value })}><option value="">All programs</option>{programs.map(program => <option key={program}>{program}</option>)}</select>
       <select aria-label="Clearance" className={field} value={filters.clearance} onChange={event => update({ clearance: event.target.value })}><option value="">All clearance states</option><option>Cleared</option><option>Not Cleared</option></select>
     </div></SectionCard>
@@ -86,7 +86,7 @@ export function AdminUsersPage({ archive = false }: { archive?: boolean }) {
       {error && <p role="alert" className="mt-4 rounded-xl bg-[#FFF200] p-3 text-sm font-bold">{error}</p>}
       {notice && <p role="status" className="mt-4 rounded-xl border border-[#0b5ea2]/20 p-3 text-sm font-bold">{notice}</p>}
       <div className="mt-6 grid gap-3 sm:grid-cols-2"><h3 className="sm:col-span-2 font-bold">Profile details</h3>{([['School email', detail.email], ['First name', detail.first_name], ['Last name', detail.last_name], ['Program / strand', detail.program_strand], ['Year / grade level', detail.year_grade_level]] as const).map(([label, value]) => <p key={label} className="rounded-xl border border-[#0b5ea2]/15 p-3 text-sm"><span className="block text-xs opacity-70">{label}</span>{value || '—'}</p>)}</div>
-      {canManage && detail.role !== 'Admin' ? <>
+      {canManage && detail.role !== 'Librarian' && detail.role !== 'Admin' ? <>
         <div className="mt-6 border-t border-[#0b5ea2]/15 pt-5"><h3 className="font-bold">Account status</h3><p className="mt-1 text-sm">Deactivating prevents sign-in and moves this account to User Archive. All records remain available here.</p><div className="mt-3 flex flex-wrap gap-2">{(detail.account_status === 'Active' ? ['Deactivated'] : ['Active']).map(status => <button key={status} onClick={() => { setNextStatus(status as AccountStatus); setStatusReason('') }} className="rounded-xl border border-[#0b5ea2] px-3 py-2 text-sm font-bold">{status === 'Active' ? 'Reactivate' : 'Deactivate'}</button>)}</div>
           {nextStatus && <div className="mt-4 rounded-xl border border-[#0b5ea2]/20 p-4"><p className="font-bold">Confirm {nextStatus.toLowerCase()} status</p><label className="mt-2 block text-xs font-bold">Audit reason<input className={`${field} mt-1`} value={statusReason} onChange={event => setStatusReason(event.target.value)} placeholder="Why is this status changing?" /></label><div className="mt-3 flex gap-2"><Button disabled={saving || statusReason.trim().length < 3} onClick={() => void saveStatus()}>Confirm</Button><Button variant="secondary" onClick={() => setNextStatus(null)}>Cancel</Button></div></div>}
         </div>

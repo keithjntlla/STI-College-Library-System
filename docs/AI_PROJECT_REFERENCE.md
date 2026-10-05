@@ -193,6 +193,7 @@ The following areas have implementation and schema support in the repository. Ex
 - Admin staff view/search receipts from the printing queue.
 - Printing receipts are deliberately separate from fine-payment receipts and do not affect fines or clearance.
 - Ink is tracked by whole unopened bottles; paper is tracked by whole unopened reams.
+- Print supplies are a manual staff log only; the product does not read printer hardware or assign stock to physical printers.
 - Revenue and stock expenses are kept separate.
 
 ### 8.8 Attendance QR system

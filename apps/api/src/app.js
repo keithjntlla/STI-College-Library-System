@@ -36,7 +36,7 @@ import { authorizedJobToken, jobRunnerStatus, runOperationalJobs } from './modul
 import { adminInvoiceRouter, userInvoiceRouter } from './modules/invoices/invoice.routes.ts'
 import { usersRepository } from './modules/users/users.repository.ts'
 import { clearanceService } from './modules/clearance/clearance.service.ts'
-import { profileAvatarRouter } from './modules/users/profile-avatar.routes.ts'
+import { profileAvatarRouter, serveLocalAvatarFile } from './modules/users/profile-avatar.routes.ts'
 import { adminNotificationsRouter } from './modules/users/admin-notifications.routes.ts'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
@@ -104,10 +104,12 @@ export function createApp() {
     } catch (e) { next(e) }
   });
 
+  // HMAC-signed local avatar bytes for <img> tags (no Bearer header).
+  app.get('/api/v1/profile/avatar/file', serveLocalAvatarFile)
   app.use('/api/v1', authenticateJwt, ensureActiveJwtAccount)
   app.use('/api/v1/profile/avatar', profileAvatarRouter)
   app.use('/api/v1/profile', selfProfileRouter)
-  app.get('/api/v1/admin/account-dashboard', requireJwtRoles('Admin'), async (_request, response, next) => {
+  app.get('/api/v1/admin/account-dashboard', requireJwtRoles('Librarian', 'Admin'), async (_request, response, next) => {
     try {
       const [accounts, clearance] = await Promise.all([usersRepository.summary(), clearanceService.activeStudentSummary()])
       response.set('Cache-Control', 'private, no-store').json({ success: true, data: {
@@ -135,15 +137,15 @@ export function createApp() {
   app.use('/api/v1/admin/reservations', authenticateJwt, requireJwtRoles('Librarian', 'Staff'), adminReservationsV1Router)
   app.use('/api/v1/admin/attendance', authenticateJwt, requireJwtRoles('Librarian', 'Staff'), adminAttendanceV1Router)
   app.use('/api/v1/attendance', authenticateJwt, requireJwtRoles('Librarian', 'Student', 'Faculty'), userAttendanceV1Router)
-  app.use('/api/v1/admin/users', authenticateJwt, requireJwtRoles('Admin'), adminUsersV1Router)
-  app.use('/api/v1/admin/notifications', requireJwtRoles('Admin'), adminNotificationsRouter)
+  app.use('/api/v1/admin/users', authenticateJwt, requireJwtRoles('Librarian', 'Admin'), adminUsersV1Router)
+  app.use('/api/v1/admin/notifications', requireJwtRoles('Librarian', 'Admin'), adminNotificationsRouter)
   app.use('/api/v1/printing', authenticateJwt, requireJwtRoles('Student', 'Faculty'), userPrintingV1Router)
   app.use('/api/v1/clearance', authenticateJwt, requireJwtRoles('Student', 'Faculty'), userClearanceV1Router)
   app.use('/api/v1/fines', authenticateJwt, requireJwtRoles('Student', 'Faculty'), userFinesV1Router)
   app.use('/api/v1/notifications', authenticateJwt, requireJwtRoles('Student', 'Faculty', 'Librarian', 'Staff'), userNotificationsV1Router)
   app.use('/api/v1/dashboard', authenticateJwt, requireJwtRoles('Student', 'Faculty'), userDashboardV1Router)
   app.use('/api/v1/admin/printing', authenticateJwt, requireJwtRoles('Librarian', 'Staff'), adminPrintingV1Router)
-  app.use('/api/v1/admin/clearance', authenticateJwt, requireJwtRoles('Admin', 'Librarian'), adminClearanceV1Router)
+  app.use('/api/v1/admin/clearance', authenticateJwt, requireJwtRoles('Librarian', 'Admin'), adminClearanceV1Router)
   app.use('/api/v1/admin/fines', authenticateJwt, requireJwtRoles('Librarian'), adminFinesV1Router)
   app.use('/api/v1/admin/announcements', authenticateJwt, requireJwtRoles('Librarian', 'Staff'), adminAnnouncementsV1Router)
   app.use('/api/v1/admin/dashboard', authenticateJwt, requireJwtRoles('Librarian'), adminDashboardV1Router)

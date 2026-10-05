@@ -953,7 +953,7 @@ CREATE TABLE IF NOT EXISTS `announcement_revisions` (
 
 CREATE TABLE IF NOT EXISTS `admin_notifications` (
   `admin_notification_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `event_type` ENUM('reservation_requested','reservation_cancelled','borrow_request_submitted','borrow_request_cancelled','checkout_confirmed','return_completed','overdue_detected','lost_book_reported','lost_book_confirmed') NOT NULL,
+  `event_type` ENUM('reservation_requested','reservation_cancelled','borrow_request_submitted','borrow_request_cancelled','checkout_confirmed','return_completed','overdue_detected','lost_book_reported','lost_book_confirmed','lost_book_resolved','weeding_review') NOT NULL,
   `actor_user_id` BIGINT UNSIGNED DEFAULT NULL,
   `reservation_id` BIGINT UNSIGNED DEFAULT NULL,
   `borrow_transaction_id` BIGINT UNSIGNED DEFAULT NULL,

@@ -41,7 +41,7 @@ export function decodeAccessToken(token: string): AccessTokenClaims | null {
 
 export function dashboardForRole(role: AuthRole) {
   return ({
-    Admin: '/admin/dashboard',
+    Admin: '/librarian/dashboard',
     Librarian: '/librarian/dashboard',
     Faculty: '/faculty/dashboard',
     Student: '/student/dashboard',

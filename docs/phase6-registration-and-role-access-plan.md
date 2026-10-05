@@ -24,10 +24,10 @@ Rename the heading, side panel, and login link to **Account Registration** / **C
 
 | Selected role | Identity fields shown | Academic fields | Result after submitting |
 | --- | --- | --- | --- |
-| Student | School ID and required school email for verification | Program/Strand and Year/Grade shown for students; required only where the school policy says they apply | Pending email verification, then Admin account approval |
-| Faculty | School ID and required school email | Optional | Pending email verification, then Admin account approval |
-| Librarian | School ID and required school email | Optional | Pending email verification, then Admin account approval; no Librarian access before approval |
-| Staff | School ID and required school email | Optional | Pending email verification, then Admin account approval; no Staff access before approval |
+| Student | School ID and required school email for verification | Program/Strand and Year/Grade shown and required | Pending Outlook OTP verification, then Librarian account approval |
+| Faculty | School ID and required school email | Hidden on the public form | Pending Outlook OTP verification, then Librarian account approval |
+| Librarian | Not offered on public registration | — | Provisioned by an existing Librarian (or CLI bootstrap for the first account) |
+| Staff | Not offered on public registration | — | Provisioned by the Librarian from Users |
 
 School email is required for every **new** role because every new account must receive a verification code. Do not collect or edit Contact Number in registration or Admin Users. Preserve any historical values in existing accounts until a separate data-retention decision. Keep school ID and school email unique after normalization, and never allow the client to choose Admin/System Administrator.
 
@@ -63,8 +63,7 @@ The screen navigation, route guards, API authorization, and row-level data acces
 
 | Role | Workspace / allowed modules | Deliberate exclusions |
 | --- | --- | --- |
-| Admin (System Administrator) | Dedicated Admin dashboard with active-user and student-clearance summaries; Users, Clearance, User Archive, and profile-picture approval notifications/worklist; protected Librarian/Staff provisioning inside Users | No catalog, circulation, reservations, fines, invoices, inventory, floor plan, printing, attendance operations, announcements publishing, or broad reports through the Admin role |
-| Librarian | Current administrative dashboard; Books & Research, Book Archive, Categories, Borrow & Return, Reservations, Fines, Invoices, Inventory, Floor Plan, Printing Queue, Print Supplies, Attendance, Clearance, Announcements | No Users, User Archive, or profile-picture approval by default; no unlisted Reports/Settings until explicitly assigned |
+| Librarian (Admin) | Combined librarian portal: operations dashboard plus account overview; Books & Research, Book Archive, Categories, Borrow & Return, Reservations, Fines, Invoices, Inventory, Reports, Floor Plan, Printing Queue, Print Supplies, Users, User Archive, Approvals, Account alerts, Attendance, Clearance, Announcements. Supersedes the interim separate Admin workspace (see ADR-002). | No second library-policy Admin login; technical hosting stays outside this role |
 | Staff | Dedicated Staff dashboard showing only permitted queue/attendance/announcement data; Borrow & Return, Reservations, Printing Queue, Attendance, Announcements | No catalog mutation, archiving, categories, finance management, inventory, user management, clearance override, settings, or reports |
 | Student | Existing self-service portal and personal records | No operational or account-administration routes |
 | Faculty | Student-style self-service portal and personal records, with the existing faculty borrowing policy | No operational or account-administration routes |
