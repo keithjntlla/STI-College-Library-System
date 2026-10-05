@@ -5,7 +5,7 @@ import { HttpError } from '../../core/http-error.ts'
 import { createCirculationService } from './circulation.service.ts'
 
 function cartPool(role: 'Student' | 'Faculty', activeCount: number, firstCondition = 'Good', waitingReservation = false) {
-  const state = { commits: 0, rollbacks: 0, inserts: 0, copiesReserved: 0, materialsReserved: 0, adminAlerts: 0 }
+  const state = { commits: 0, rollbacks: 0, inserts: 0, copiesReserved: 0, materialsReserved: 0, adminAlerts: 0, capacitySql: '' }
   const copies = [
     { title_id: 10, title: 'Database Systems', physical_copy_id: 100, material_id: 200, accession_number: 'ACC-100', barcode: 'BC-100', condition_status: firstCondition, availability_status: 'Available', lifecycle_status: 'Active', material_type: 'Book' },
     { title_id: 11, title: 'Computer Networks', physical_copy_id: 101, material_id: 201, accession_number: 'ACC-101', barcode: 'BC-101', condition_status: 'Fair', availability_status: 'Available', lifecycle_status: 'Active', material_type: 'Book' },
@@ -15,7 +15,10 @@ function cartPool(role: 'Student' | 'Faculty', activeCount: number, firstConditi
     async execute(sql: string) {
       if (sql.includes('SELECT user_id FROM accounts')) return [[{ user_id: 7 }]]
       if (sql.includes('FROM users u INNER JOIN roles')) return [[{ user_id: 7, full_name: 'Library User', institutional_id: 'STI-7', school_id: 'STI-7', role_name: role, account_status: 'Active' }]]
-      if (sql.includes('COUNT(DISTINCT activity.title_id)')) return [[{ active_count: activeCount, requested_active_count: 0 }]]
+      if (sql.includes('COUNT(DISTINCT activity.title_id)')) {
+        state.capacitySql = sql
+        return [[{ active_count: activeCount, requested_active_count: 0 }]]
+      }
       if (sql.includes('FROM titles t') && sql.includes('FOR UPDATE')) return [copies]
       if (sql.includes('FROM reservations r INNER JOIN titles t')) return [waitingReservation ? [{
         reservation_id: 88, book_title_id: 10, user_id: 99, queue_position: 1,
@@ -47,6 +50,7 @@ test('student with one active commitment cannot submit two additional cart items
   assert.equal(state.inserts, 0)
   assert.equal(state.commits, 0)
   assert.equal(state.rollbacks, 1)
+  assert.match(state.capacitySql, /lost_confirmed_at IS NULL/)
 })
 
 test('faculty with three active commitments can submit two more books atomically', async () => {

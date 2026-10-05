@@ -1,4 +1,4 @@
-import type { Category, CategoryPayload, CategorySaveResult, CategoryShelfSync } from './types'
+import type { CampusProgram, Category, CategoryPayload, CategorySaveResult, CategoryShelfSync } from './types'
 import { getAccessToken } from '../auth/auth-storage'
 
 export class CategoryApiError extends Error {
@@ -41,6 +41,7 @@ async function request<T>(url: string, options: RequestInit = {}) {
 
 export const categoryApi = {
   list: () => request<Category[]>('/api/categories'),
+  listPrograms: () => request<CampusProgram[]>('/api/categories/programs'),
   listShelves: () => request<Array<{ id: number; label: string; columnCount: number; rowCount: number }>>('/api/categories/shelves'),
   addShelf: (label: string) => request<{ id: number; label: string }>('/api/categories/shelves', { method: 'POST', body: JSON.stringify({ label }) }),
   create: (payload: CategoryPayload) => request<CategorySaveResult>('/api/categories', { method: 'POST', body: JSON.stringify(payload) }),

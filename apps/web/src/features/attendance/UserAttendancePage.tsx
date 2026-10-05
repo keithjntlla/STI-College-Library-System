@@ -1,6 +1,6 @@
 import { Clock3, Download, LibraryBig, QrCode, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { Button, PageHeader, SectionCard, StatCard } from '../../components/ui'
+import { Button, MobileList, MobileListItem, PageHeader, SectionCard, StatCard, TableShell } from '../../components/ui'
 import { attendanceApi, type AttendancePass } from './attendance-api'
 
 function presenceBadge(presence: string) {
@@ -96,34 +96,43 @@ export function UserAttendancePage() {
               <StatCard label="Today's check-in" value={pass.summary.todayCheckIn ?? '—'} icon={Clock3} />
               <StatCard label="Most common purpose" value={pass.summary.commonPurpose ?? '—'} icon={QrCode} />
             </div>
-            <SectionCard>
-              <div className="border-b border-[#0b5ea2]/15 p-5">
-                <h2 className="font-display font-bold">Attendance history</h2>
-                <p className="mt-1 text-xs text-[#0b5ea2]/65">Your recent library visits. Auto time-outs after closing show as Closed at library hours.</p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[620px] text-left text-sm">
-                  <thead className="bg-[#0b5ea2] text-white">
-                    <tr>{['Date', 'Time in', 'Time out', 'Purpose', 'Status'].map((header) => <th key={header} className="px-5 py-3 text-xs">{header}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {pass.history.length ? pass.history.map((item) => (
-                      <tr key={item.log_id} className="border-b border-[#0b5ea2]/10">
-                        <td className="px-5 py-4 font-semibold">{item.attendance_date}</td>
-                        <td className="px-5 py-4">{item.time_in}</td>
-                        <td className="px-5 py-4">{item.time_out ?? '—'}</td>
-                        <td className="px-5 py-4">{item.purpose}</td>
-                        <td className="px-5 py-4">
-                          <span className={`rounded-full px-2 py-1 text-xs font-bold ${presenceBadge(item.presence)}`}>{item.presence}</span>
-                        </td>
-                      </tr>
-                    )) : (
-                      <tr><td colSpan={5} className="p-10 text-center font-semibold">No attendance records yet.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </SectionCard>
+            <TableShell
+              title="Attendance history"
+              subtitle="Your recent library visits. Auto time-outs after closing show as Closed at library hours."
+              mobileRows={(
+                <MobileList empty={!pass.history.length ? <p className="p-10 text-center font-semibold text-[#0b5ea2]">No attendance records yet.</p> : null}>
+                  {pass.history.map((item) => (
+                    <MobileListItem
+                      key={item.log_id}
+                      title={item.attendance_date}
+                      meta={`${item.time_in} – ${item.time_out ?? '—'} · ${item.purpose}`}
+                      status={<span className={`rounded-full px-2 py-1 text-xs font-bold ${presenceBadge(item.presence)}`}>{item.presence}</span>}
+                    />
+                  ))}
+                </MobileList>
+              )}
+            >
+              <table className="w-full min-w-[620px] text-left text-sm">
+                <thead className="bg-[#0b5ea2] text-white">
+                  <tr>{['Date', 'Time in', 'Time out', 'Purpose', 'Status'].map((header) => <th key={header} className="px-5 py-3 text-xs">{header}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {pass.history.length ? pass.history.map((item) => (
+                    <tr key={item.log_id} className="border-b border-[#0b5ea2]/10">
+                      <td className="px-5 py-4 font-semibold">{item.attendance_date}</td>
+                      <td className="px-5 py-4">{item.time_in}</td>
+                      <td className="px-5 py-4">{item.time_out ?? '—'}</td>
+                      <td className="px-5 py-4">{item.purpose}</td>
+                      <td className="px-5 py-4">
+                        <span className={`rounded-full px-2 py-1 text-xs font-bold ${presenceBadge(item.presence)}`}>{item.presence}</span>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan={5} className="p-10 text-center font-semibold">No attendance records yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </TableShell>
           </div>
         </div>
       ) : null}

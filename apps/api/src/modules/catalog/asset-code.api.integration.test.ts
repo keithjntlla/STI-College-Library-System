@@ -84,6 +84,7 @@ test('catalog copy payload exposes the barcode image and omits every QR field', 
   const app = express()
   const assets = createAssetCodeController(createAssetCodeService(fakeDatabase()))
   const books = {
+    programs: (_request: express.Request, response: express.Response) => response.json({}),
     categories: (_request: express.Request, response: express.Response) => response.json({}),
     list: (_request: express.Request, response: express.Response) => response.json({}),
     reserve: (_request: express.Request, response: express.Response) => response.json({}),

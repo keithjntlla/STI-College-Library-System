@@ -7,16 +7,22 @@ import {
   queryBookCategories,
   queryBookOverview,
   queryBookCopyDetails,
+  queryCatalogPrograms,
   queryReservationTarget,
   queryViewerActiveBookCount,
 } from './book-catalog.repository.ts'
-import { parseBookCatalogFilters, parseBookTitleId } from './book-catalog.validation.ts'
+import { parseBookCatalogFilters, parseBookTitleId, positiveIntegerFromQuery } from './book-catalog.validation.ts'
 
 export type CatalogViewer = { accountId: number; role: 'Admin' | 'Librarian' | 'Student' | 'Faculty' }
 
 export function createBookCatalogService(database: Pool = db) {
   return {
-    categories: () => queryBookCategories(database),
+    programs: () => queryCatalogPrograms(database),
+
+    categories(query: Record<string, unknown> = {}) {
+      const programId = positiveIntegerFromQuery(query.program_id ?? query.programId, 'program_id')
+      return queryBookCategories(database, programId)
+    },
 
     async list(query: Record<string, unknown>, viewer: CatalogViewer) {
       const [catalog, activeBookCount] = await Promise.all([

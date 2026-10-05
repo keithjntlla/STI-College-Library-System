@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Archive, Search, X } from 'lucide-react'
-import { SectionCard } from '../../components/ui'
+import { MobileList, MobileListItem, SectionCard, TableShell } from '../../components/ui'
 import { catalogApi } from './catalog-api'
 
 type Entry = Awaited<ReturnType<typeof catalogApi.archivedBooks>>[number]
@@ -31,11 +31,69 @@ export function BookArchivePage() {
     catch (cause) { setError(cause instanceof Error ? cause.message : 'The archived record could not be loaded.') }
   }
 
+  const entryKey = (entry: Entry) => `${entry.recordKind}-${entry.copyId ?? entry.titleId}`
+  const entryCopyLine = (entry: Entry) => entry.accession ? `${entry.accession} · ${entry.barcode}` : `${entry.copyCount} retained copies`
+  const entryArchivedAt = (entry: Entry) => entry.archivedAt ? new Date(entry.archivedAt).toLocaleString() : 'Legacy date unavailable'
+  const labelClass = 'font-semibold uppercase text-[#0b5ea2]/50'
+
+  const entryMobileRows = (
+    <MobileList empty={loading
+      ? <p className="p-8 text-center text-[#0b5ea2]">Loading archive…</p>
+      : !entries.length ? <p className="p-8 text-center text-[#0b5ea2]">No archived books match.</p> : null}
+    >
+      {loading ? null : entries.map((entry) => (
+        <MobileListItem
+          key={entryKey(entry)}
+          title={entry.title}
+          meta={`${entry.authors || 'Author not recorded'} · ${entry.isbn || 'No ISBN'}`}
+          status={<span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0b5ea2]"><Archive size={14} />{entry.recordKind}</span>}
+          detail={(
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+              <div className="col-span-2 min-w-0"><dt className={labelClass}>Copy</dt><dd className="mt-0.5 font-mono">{entryCopyLine(entry)}</dd></div>
+              <div className="min-w-0"><dt className={labelClass}>Archived</dt><dd className="mt-0.5">{entryArchivedAt(entry)}</dd></div>
+              <div className="min-w-0"><dt className={labelClass}>Staff</dt><dd className="mt-0.5">{entry.archivedBy || 'Legacy actor unavailable'}</dd></div>
+              <div className="col-span-2 min-w-0"><dt className={labelClass}>Reason</dt><dd className="mt-0.5">{entry.reason || 'Legacy reason unavailable'}</dd></div>
+            </dl>
+          )}
+          actions={<button onClick={() => void open(entry)} className="h-10 rounded-xl bg-[#FFF200] px-4 text-sm font-bold text-[#0b5ea2]">View record</button>}
+        />
+      ))}
+    </MobileList>
+  )
+
+  const snapshotMobileRows = (
+    <MobileList empty={loading
+      ? <p className="p-6 text-center text-[#0b5ea2]">Loading records…</p>
+      : !deletedSnapshots.length ? <p className="p-6 text-center text-[#0b5ea2]">No deleted-copy snapshots match.</p> : null}
+    >
+      {loading ? null : deletedSnapshots.map((item) => (
+        <MobileListItem
+          key={item.eventId}
+          title={<span className="font-mono">{item.barcode}</span>}
+          meta={new Date(item.deletedAt).toLocaleString()}
+          detail={(
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+              <div className="min-w-0"><dt className={labelClass}>Last known state</dt><dd className="mt-0.5">{[item.lastCondition, item.lastAvailability].filter(Boolean).join(' · ') || 'Not recorded'}</dd></div>
+              <div className="min-w-0"><dt className={labelClass}>Staff</dt><dd className="mt-0.5">{item.staffLabel}</dd></div>
+              <div className="col-span-2 min-w-0"><dt className={labelClass}>Reason</dt><dd className="mt-0.5">{item.reason || 'Not recorded'}</dd></div>
+            </dl>
+          )}
+        />
+      ))}
+    </MobileList>
+  )
+
   return <>
     {error ? <p role="alert" className="mb-4 rounded-xl bg-[#FFF200] p-4 text-[#0b5ea2]">{error}</p> : null}
-    <SectionCard className="mb-5 p-5"><label className="flex items-center gap-2"><Search className="text-[#0b5ea2]" size={18} /><input aria-label="Search book archive" value={query} onChange={(event) => { setLoading(true); setQuery(event.target.value) }} placeholder="Title, ISBN, barcode, or accession" className="h-11 w-full rounded-xl border border-[#0b5ea2]/20 px-3 text-sm text-[#0b5ea2]" /></label></SectionCard>
-    <SectionCard className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[#0b5ea2] text-white"><tr><th className="p-4">Record</th><th className="p-4">Book</th><th className="p-4">Archived</th><th className="p-4">Reason</th><th className="p-4">Staff</th><th className="p-4">Action</th></tr></thead><tbody>{loading ? <tr><td colSpan={6} className="p-8 text-center text-[#0b5ea2]">Loading archive…</td></tr> : entries.length ? entries.map(entry => <tr key={`${entry.recordKind}-${entry.copyId ?? entry.titleId}`} className="border-b border-[#0b5ea2]/10 text-[#0b5ea2]"><td className="p-4"><span className="inline-flex items-center gap-2 font-bold"><Archive size={16} />{entry.recordKind}</span>{entry.accession ? <p className="mt-1 text-xs">{entry.accession} · {entry.barcode}</p> : <p className="mt-1 text-xs">{entry.copyCount} retained copies</p>}</td><td className="p-4"><strong>{entry.title}</strong><p className="text-xs opacity-70">{entry.authors || 'Author not recorded'} · {entry.isbn || 'No ISBN'}</p></td><td className="p-4">{entry.archivedAt ? new Date(entry.archivedAt).toLocaleString() : 'Legacy date unavailable'}</td><td className="p-4">{entry.reason || 'Legacy reason unavailable'}</td><td className="p-4">{entry.archivedBy || 'Legacy actor unavailable'}</td><td className="p-4"><button onClick={() => void open(entry)} className="rounded-xl bg-[#FFF200] px-3 py-2 font-bold">View record</button></td></tr>) : <tr><td colSpan={6} className="p-8 text-center text-[#0b5ea2]">No archived books match.</td></tr>}</tbody></table></SectionCard>
-    <SectionCard className="mt-5 overflow-x-auto"><div className="p-5"><h2 className="font-bold text-[#0b5ea2]">Older deleted-copy records</h2><p className="mt-1 text-sm text-[#0b5ea2]/70">These are audit snapshots of unused copies deleted before archiving. The original book and copy cannot be opened or restored from this record.</p></div><table className="w-full min-w-[650px] text-left text-sm"><thead className="bg-[#0b5ea2] text-white"><tr><th className="p-4">Barcode</th><th className="p-4">Deleted</th><th className="p-4">Last known state</th><th className="p-4">Reason</th><th className="p-4">Staff</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="p-6 text-center text-[#0b5ea2]">Loading records…</td></tr> : deletedSnapshots.length ? deletedSnapshots.map(item => <tr key={item.eventId} className="border-b border-[#0b5ea2]/10 text-[#0b5ea2]"><td className="p-4 font-bold">{item.barcode}</td><td className="p-4">{new Date(item.deletedAt).toLocaleString()}</td><td className="p-4">{[item.lastCondition, item.lastAvailability].filter(Boolean).join(' · ') || 'Not recorded'}</td><td className="p-4">{item.reason || 'Not recorded'}</td><td className="p-4">{item.staffLabel}</td></tr>) : <tr><td colSpan={5} className="p-6 text-center text-[#0b5ea2]">No deleted-copy snapshots match.</td></tr>}</tbody></table></SectionCard>
+    <SectionCard className="mb-5 p-5"><label className="flex items-center gap-2"><Search className="shrink-0 text-[#0b5ea2]" size={18} /><input aria-label="Search book archive" value={query} onChange={(event) => { setLoading(true); setQuery(event.target.value) }} placeholder="Title, ISBN, barcode, or accession" className="h-11 w-full rounded-xl border border-[#0b5ea2]/20 px-3 text-sm text-[#0b5ea2] sm:max-w-md" /></label></SectionCard>
+    <TableShell title="Archived books" mobileRows={entryMobileRows}>
+      <table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[#0b5ea2] text-white"><tr><th className="p-4">Record</th><th className="p-4">Book</th><th className="p-4">Archived</th><th className="p-4">Reason</th><th className="p-4">Staff</th><th className="p-4">Action</th></tr></thead><tbody>{loading ? <tr><td colSpan={6} className="p-8 text-center text-[#0b5ea2]">Loading archive…</td></tr> : entries.length ? entries.map(entry => <tr key={entryKey(entry)} className="border-b border-[#0b5ea2]/10 text-[#0b5ea2]"><td className="p-4"><span className="inline-flex items-center gap-2 font-bold"><Archive size={16} />{entry.recordKind}</span><p className="mt-1 text-xs">{entryCopyLine(entry)}</p></td><td className="p-4"><strong>{entry.title}</strong><p className="text-xs opacity-70">{entry.authors || 'Author not recorded'} · {entry.isbn || 'No ISBN'}</p></td><td className="p-4">{entryArchivedAt(entry)}</td><td className="p-4">{entry.reason || 'Legacy reason unavailable'}</td><td className="p-4">{entry.archivedBy || 'Legacy actor unavailable'}</td><td className="p-4"><button onClick={() => void open(entry)} className="rounded-xl bg-[#FFF200] px-3 py-2 font-bold">View record</button></td></tr>) : <tr><td colSpan={6} className="p-8 text-center text-[#0b5ea2]">No archived books match.</td></tr>}</tbody></table>
+    </TableShell>
+    <div className="mt-5">
+      <TableShell title="Older deleted-copy records" subtitle="These are audit snapshots of unused copies deleted before archiving. The original book and copy cannot be opened or restored from this record." mobileRows={snapshotMobileRows}>
+        <table className="w-full min-w-[650px] text-left text-sm"><thead className="bg-[#0b5ea2] text-white"><tr><th className="p-4">Barcode</th><th className="p-4">Deleted</th><th className="p-4">Last known state</th><th className="p-4">Reason</th><th className="p-4">Staff</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="p-6 text-center text-[#0b5ea2]">Loading records…</td></tr> : deletedSnapshots.length ? deletedSnapshots.map(item => <tr key={item.eventId} className="border-b border-[#0b5ea2]/10 text-[#0b5ea2]"><td className="p-4 font-bold">{item.barcode}</td><td className="p-4">{new Date(item.deletedAt).toLocaleString()}</td><td className="p-4">{[item.lastCondition, item.lastAvailability].filter(Boolean).join(' · ') || 'Not recorded'}</td><td className="p-4">{item.reason || 'Not recorded'}</td><td className="p-4">{item.staffLabel}</td></tr>) : <tr><td colSpan={5} className="p-6 text-center text-[#0b5ea2]">No deleted-copy snapshots match.</td></tr>}</tbody></table>
+      </TableShell>
+    </div>
     {detail ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b5ea2]/75 p-4">
       <div role="dialog" aria-modal="true" aria-label="Archived book record" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 text-[#0b5ea2]">
         <div className="flex justify-between gap-4"><div><p className="text-xs font-bold uppercase">Retained catalog record</p><h2 className="text-2xl font-black">{detail.title}</h2><p>{detail.authors || 'Author not recorded'} · {detail.isbn || 'No ISBN'}</p></div><button aria-label="Close archived record" onClick={() => setDetail(null)}><X /></button></div>

@@ -1,6 +1,6 @@
 import { BadgeCheck, RefreshCw, Search, UserCheck, Users, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Button, PageHeader, SectionCard, StatCard } from '../../components/ui'
+import { Button, MobileList, MobileListItem, PageHeader, SectionCard, StatCard, StatusBadge, TableShell } from '../../components/ui'
 import { getCurrentIdentity } from '../auth/auth-storage'
 import { usersApi, type AccountStatus, type ActiveUser, type Pagination, type UserDetail, type UserFilters, type UserSummary } from './users-api'
 
@@ -68,19 +68,33 @@ export function AdminUsersPage({ archive = false }: { archive?: boolean }) {
     <PageHeader eyebrow="Access management" title={archive ? 'User archive' : 'Library users'} action={<Button variant="secondary" onClick={() => setRefresh(value => value + 1)}><RefreshCw size={15} /> Refresh</Button>} />
     {error && <p role="alert" className="mb-4 rounded-xl bg-[#FFF200] p-3 text-sm font-bold text-[#0b5ea2]">{error}</p>}
     {notice && <p role="status" className="mb-4 rounded-xl border border-[#0b5ea2]/20 p-3 text-sm font-bold text-[#0b5ea2]">{notice}</p>}
-    <div className="mb-5 grid gap-3 sm:grid-cols-3"><StatCard label="Active accounts" value={String(summary?.active_accounts ?? 0)} icon={UserCheck} /><StatCard label="Deactivated" value={String(summary?.deactivated_accounts ?? 0)} icon={Users} /><StatCard label="Archived" value={String(summary?.archived_accounts ?? 0)} icon={BadgeCheck} /></div>
-    <SectionCard className="mb-5 p-4"><div className="grid gap-3 md:grid-cols-5">
+    <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3"><StatCard label="Active accounts" value={String(summary?.active_accounts ?? 0)} icon={UserCheck} /><StatCard label="Deactivated" value={String(summary?.deactivated_accounts ?? 0)} icon={Users} /><StatCard label="Archived" value={String(summary?.archived_accounts ?? 0)} icon={BadgeCheck} /></div>
+    <SectionCard className="mb-5 p-4"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
       <label className={`${field} flex items-center gap-2`}><Search size={15} /><input aria-label="Search users" className="w-full outline-none" placeholder="Name, ID, or email" value={filters.q} onChange={event => update({ q: event.target.value })} /></label>
       <select aria-label="Account status" className={field} value={filters.status} onChange={event => update({ status: event.target.value })}>{archive ? <><option value="Inactive">Deactivated and archived</option><option>Deactivated</option><option>Archived</option></> : <><option>Active</option><option value="">All statuses</option><option>Deactivated</option><option>Archived</option></>}</select>
       <select aria-label="User role" className={field} value={filters.role} onChange={event => update({ role: event.target.value })}><option value="">All roles</option>{['Student', 'Faculty', 'Librarian', 'Staff'].map(role => <option key={role}>{role}</option>)}</select>
       <select aria-label="Program" className={field} value={filters.program} onChange={event => update({ program: event.target.value })}><option value="">All programs</option>{programs.map(program => <option key={program}>{program}</option>)}</select>
       <select aria-label="Clearance" className={field} value={filters.clearance} onChange={event => update({ clearance: event.target.value })}><option value="">All clearance states</option><option>Cleared</option><option>Not Cleared</option></select>
     </div></SectionCard>
-    <SectionCard><div className="border-b border-[#0b5ea2]/15 p-5"><h2 className="font-bold text-[#0b5ea2]">{archive ? 'Deactivated and archived accounts' : 'Account directory'}</h2><p className="text-xs text-[#0b5ea2]/65">{pagination.total} matching accounts · Profile details are edited by account owners</p></div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-[#0b5ea2] text-white"><tr>{['User', 'School ID', 'Role', 'Program / unit', 'Year / level', 'Clearance', 'Status', 'Action'].map(label => <th key={label} className="px-5 py-3 text-xs">{label}</th>)}</tr></thead><tbody>
+    <TableShell
+      title={archive ? 'Deactivated and archived accounts' : 'Account directory'}
+      subtitle={`${pagination.total} matching accounts · Profile details are edited by account owners`}
+      mobileRows={<MobileList empty={loading ? <p className="px-5 py-10 text-center text-[#0b5ea2] dark:text-white">Loading users…</p> : rows.length === 0 ? <p className="px-5 py-10 text-center text-[#0b5ea2] dark:text-white">No accounts match these filters.</p> : null}>
+        {loading ? null : rows.map(user => <MobileListItem
+          key={user.id}
+          title={user.full_name}
+          meta={`${user.school_id} · ${user.role}`}
+          status={<StatusBadge status={user.account_status} />}
+          detail={<div className="space-y-1 text-xs"><p className="truncate">{user.email}</p><p>{[user.program, user.year_or_unit].filter(Boolean).join(' · ') || '—'}</p><p>Clearance: {user.clearance_status}</p></div>}
+          actions={<Button variant="secondary" onClick={() => void open(user)}>View record</Button>}
+        />)}
+      </MobileList>}
+    >
+      <table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-[#0b5ea2] text-white"><tr>{['User', 'School ID', 'Role', 'Program / unit', 'Year / level', 'Clearance', 'Status', 'Action'].map(label => <th key={label} className="px-5 py-3 text-xs">{label}</th>)}</tr></thead><tbody>
         {loading ? <tr><td colSpan={8} className="p-10 text-center text-[#0b5ea2]">Loading users…</td></tr> : rows.length === 0 ? <tr><td colSpan={8} className="p-10 text-center text-[#0b5ea2]">No accounts match these filters.</td></tr> : rows.map(user => <tr key={user.id} className="border-b border-[#0b5ea2]/10 text-[#0b5ea2]"><td className="px-5 py-4"><b>{user.full_name}</b><p className="text-xs opacity-70">{user.email}</p></td><td className="px-5 py-4 font-mono text-xs">{user.school_id}</td><td className="px-5 py-4">{user.role}</td><td className="px-5 py-4">{user.program}</td><td className="px-5 py-4">{user.year_or_unit}</td><td className="px-5 py-4">{user.clearance_status}</td><td className="px-5 py-4"><span className="rounded-full bg-[#0b5ea2] px-2 py-1 text-xs font-bold text-white">{user.account_status}</span></td><td className="px-5 py-4"><button className="font-bold underline" onClick={() => void open(user)}>View record</button></td></tr>)}
-      </tbody></table></div><div className="flex justify-end gap-2 p-4"><Button variant="secondary" disabled={filters.page <= 1} onClick={() => update({ page: filters.page - 1 })}>Previous</Button><span className="self-center text-xs font-bold text-[#0b5ea2]">Page {pagination.page} of {Math.max(1, pagination.total_pages)}</span><Button variant="secondary" disabled={filters.page >= pagination.total_pages} onClick={() => update({ page: filters.page + 1 })}>Next</Button></div>
-    </SectionCard>
+      </tbody></table>
+    </TableShell>
+    <div className="mt-3 flex justify-end gap-2"><Button variant="secondary" disabled={filters.page <= 1} onClick={() => update({ page: filters.page - 1 })}>Previous</Button><span className="self-center text-xs font-bold text-[#0b5ea2]">Page {pagination.page} of {Math.max(1, pagination.total_pages)}</span><Button variant="secondary" disabled={filters.page >= pagination.total_pages} onClick={() => update({ page: filters.page + 1 })}>Next</Button></div>
     {detail && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b5ea2]/75 p-4"><div role="dialog" aria-modal="true" aria-label="Account record" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 text-[#0b5ea2]">
       <div className="flex justify-between gap-4"><div><p className="text-xs font-bold uppercase">{detail.role} account · {detail.account_status}</p><h2 className="text-2xl font-black">{detail.full_name}</h2><p className="text-sm">{detail.school_id}</p></div><button aria-label="Close account record" onClick={() => setDetail(null)}><X /></button></div>
       {error && <p role="alert" className="mt-4 rounded-xl bg-[#FFF200] p-3 text-sm font-bold">{error}</p>}

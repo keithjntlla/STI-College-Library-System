@@ -320,39 +320,39 @@ export function PublicCatalog() {
             <p className="mt-2 text-zinc-500 dark:text-zinc-400">We couldn't find anything matching "{query}".</p>
           </div>
         ) : (
-          <div className={`mt-8 grid gap-8 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 transition-opacity duration-300 ${isFetching ? "opacity-40 pointer-events-none" : "opacity-100"}`}>
+          <div className={`mt-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 lg:gap-6 xl:grid-cols-5 transition-opacity duration-300 ${isFetching ? "opacity-40 pointer-events-none" : "opacity-100"}`}>
             {(viewAll || query ? books : books.slice(0, 5)).map(book => (
               <article 
                 key={book.titleId} 
                 onClick={() => setSelectedBook(book)}
-                className="cursor-pointer group relative flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 transition-all duration-300 hover:shadow-xl dark:bg-zinc-900 dark:ring-zinc-800"
+                className="cursor-pointer group relative flex min-w-0 flex-col overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 transition-all duration-300 hover:shadow-xl dark:bg-zinc-900 dark:ring-zinc-800 sm:rounded-2xl"
               >
                 <div className="aspect-[3/4] w-full bg-zinc-100 dark:bg-zinc-800 relative overflow-hidden">
                   {book.coverImagePath ? (
                     <img src={book.coverImagePath} alt={book.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = `https://placehold.co/400x600/f4f4f5/a1a1aa?text=${encodeURIComponent(book.title)}`; }} />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-zinc-300">
-                      <Book size={48} />
+                      <Book size={32} className="sm:h-12 sm:w-12" />
                     </div>
                   )}
                 </div>
-                <div className="flex flex-1 flex-col justify-between p-5">
+                <div className="flex flex-1 flex-col justify-between p-3 sm:p-5">
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                       <span className={`inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider ${book.availableCopies > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
+                    <div className="mb-1.5 flex items-center justify-between sm:mb-2">
+                       <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider sm:gap-1.5 sm:text-xs ${book.availableCopies > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
                          <span className={`h-1.5 w-1.5 rounded-full ${book.availableCopies > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
                          {book.availableCopies > 0 ? 'Available' : 'Waitlist'}
                        </span>
                     </div>
-                    <h3 className="font-display text-lg font-bold leading-tight line-clamp-2 text-zinc-900 dark:text-white">
+                    <h3 className="font-display text-sm font-bold leading-tight line-clamp-2 text-zinc-900 dark:text-white sm:text-lg">
                       {book.title}
                     </h3>
-                    <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400 line-clamp-1">
+                    <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-1 sm:mt-1 sm:text-sm">
                       {book.authors?.join(', ') || 'Unknown'}
                     </p>
                   </div>
-                  <div className="mt-5 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                    <span className="block w-full text-center text-sm font-bold text-[#0b5ea2] group-hover:text-[#002266] dark:text-[#FFF200] dark:group-hover:text-yellow-400 transition-colors">
+                  <div className="mt-3 border-t border-zinc-100 pt-2.5 dark:border-zinc-800 sm:mt-5 sm:pt-4">
+                    <span className="block w-full text-center text-[11px] font-bold text-[#0b5ea2] transition-colors group-hover:text-[#002266] dark:text-[#FFF200] dark:group-hover:text-yellow-400 sm:text-sm">
                       View details
                     </span>
                   </div>

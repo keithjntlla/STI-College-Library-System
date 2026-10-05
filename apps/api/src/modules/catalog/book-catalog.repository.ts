@@ -94,6 +94,21 @@ export function buildBookCatalogQuery(filters: BookCatalogFilters) {
   if (filters.categoryId !== null) {
     where.push('t.category_id = ?')
     parameters.push(filters.categoryId)
+    if (filters.programId !== null) {
+      where.push(`EXISTS (
+        SELECT 1 FROM program_categories program_link
+         WHERE program_link.category_id = t.category_id
+           AND program_link.program_id = ?
+      )`)
+      parameters.push(filters.programId)
+    }
+  } else if (filters.programId !== null) {
+    where.push(`t.category_id IN (
+      SELECT program_link.category_id
+        FROM program_categories program_link
+       WHERE program_link.program_id = ?
+    )`)
+    parameters.push(filters.programId)
   }
   if (filters.categoryName) {
     where.push('LOWER(c.category_name) = LOWER(?)')
@@ -193,15 +208,45 @@ export async function queryBookCatalog(database: Pool, filters: BookCatalogFilte
   }
 }
 
-export async function queryBookCategories(database: Pool) {
-  const [rows] = await database.execute<RowDataPacket[]>(
-    `SELECT c.category_id, c.category_name
-       FROM categories c
-      ORDER BY c.category_name ASC`,
-  )
+export async function queryBookCategories(database: Pool, programId: number | null = null) {
+  const [rows] = programId === null
+    ? await database.execute<RowDataPacket[]>(
+      `SELECT c.category_id, c.category_name
+         FROM categories c
+        ORDER BY c.category_name ASC`,
+    )
+    : await database.execute<RowDataPacket[]>(
+      `SELECT c.category_id, c.category_name
+         FROM categories c
+         JOIN program_categories pc ON pc.category_id = c.category_id
+        WHERE pc.program_id = ?
+        ORDER BY c.category_name ASC`,
+      [programId],
+    )
   return rows.map((row) => ({
     categoryId: Number(row.category_id),
     categoryName: String(row.category_name),
+  }))
+}
+
+export async function queryCatalogPrograms(database: Pool) {
+  const [rows] = await database.execute<RowDataPacket[]>(
+    `SELECT program_id, program_name, program_group
+       FROM programs
+      WHERE is_active = ${isPostgres ? 'TRUE' : '1'}
+      ORDER BY
+        CASE program_group
+          WHEN 'College' THEN 1
+          WHEN 'SHS Academic' THEN 2
+          WHEN 'SHS TechPro' THEN 3
+          ELSE 4
+        END,
+        program_name ASC`,
+  )
+  return rows.map((row) => ({
+    programId: Number(row.program_id),
+    programName: String(row.program_name),
+    programGroup: String(row.program_group),
   }))
 }
 
@@ -247,6 +292,7 @@ export async function queryViewerActiveBookCount(database: Pool, accountId: numb
              ON borrowed_copy.physical_copy_id = bt.physical_copy_id
              OR (bt.physical_copy_id IS NULL AND borrowed_copy.material_id = bt.material_id)
           WHERE bt.transaction_status IN ('Pending', 'Borrowed', 'Overdue')
+            AND bt.lost_confirmed_at IS NULL
          UNION ALL
          SELECT r.user_id, r.material_id, COALESCE(r.book_title_id, reserved_copy.title_id) AS title_id
            FROM reservations r

@@ -23,6 +23,10 @@ export function createCategoryController(service: CategoryService = categoryServ
       response.set('Cache-Control', 'private, no-store')
       response.json({ success: true, data: await service.list() })
     }),
+    programs: asyncController(async (_request, response) => {
+      response.set('Cache-Control', 'private, no-store')
+      response.json({ success: true, data: await service.programs() })
+    }),
     create: asyncController(async (request, response) => {
       response.status(201).json({ success: true, message: 'Category created successfully.', data: await service.create(request.body) })
     }),

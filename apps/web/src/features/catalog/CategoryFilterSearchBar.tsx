@@ -6,6 +6,7 @@ import type { BookCategory } from './book-catalog-types'
 type CategoryFilterSearchBarProps = {
   query: string
   selectedCategoryId: number | null
+  programId?: number | null
   onQueryChange: (query: string) => void
   onCategoryChange: (categoryId: number | null) => void
 }
@@ -13,6 +14,7 @@ type CategoryFilterSearchBarProps = {
 export function CategoryFilterSearchBar({
   query,
   selectedCategoryId,
+  programId = null,
   onQueryChange,
   onCategoryChange,
 }: CategoryFilterSearchBarProps) {
@@ -27,14 +29,14 @@ export function CategoryFilterSearchBar({
     const controller = new AbortController()
     setLoading(true)
     setError('')
-    fetchBookCategories(controller.signal)
+    fetchBookCategories(controller.signal, programId)
       .then((rows) => setCategories(rows))
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Categories could not be loaded.')
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [])
+  }, [programId])
 
   useEffect(() => {
     if (!loading && selectedCategoryId !== null && !categories.some((category) => category.categoryId === selectedCategoryId)) {
@@ -119,6 +121,11 @@ export function CategoryFilterSearchBar({
                   </li>
                 )
               })}
+              {!loading && programId !== null && categories.length === 0 ? (
+                <li className="px-3.5 py-2.5 text-xs font-semibold text-[#0b5ea2]/55 dark:text-white/45">
+                  No categories linked to this course yet.
+                </li>
+              ) : null}
             </ul>
           ) : null}
         </div>

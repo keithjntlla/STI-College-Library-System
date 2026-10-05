@@ -1,6 +1,6 @@
 import { AlertTriangle, BookOpen, BookText, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, MapPin, QrCode, RefreshCw, ScanBarcode, Search, UserCircle, X } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, ConfirmModal, SectionCard, StatCard, StatusBadge } from '../../components/ui'
+import { Button, ConfirmModal, MobileList, MobileListItem, SectionCard, StatCard, StatusBadge, TableShell } from '../../components/ui'
 import { attendanceApi } from '../attendance/attendance-api'
 import { BookCoverThumbnail } from '../catalog/BookCoverThumbnail'
 import { catalogApi } from '../catalog/catalog-api'
@@ -9,7 +9,7 @@ import { CancelBorrowRequestDialog } from './CancelBorrowRequestDialog'
 import { CirculationScannerModal } from './CirculationScannerModal'
 import { ReportLostDialog } from './ReportLostDialog'
 import { circulationApi } from './circulation-api'
-import type { CirculationMonitorData, LoanMode, ReadyReservation } from './types'
+import type { CheckoutEligibility, CirculationMonitorData, LoanMode, ReadyReservation } from './types'
 
 type MonitorItem = CirculationMonitorData['items'][number]
 type MonitorTab = 'pending' | 'active' | 'overdue'
@@ -564,6 +564,59 @@ export function AdminCirculationMonitor() {
 
   const statusMessage = error || success
   const statusTone = error ? 'error' : 'success'
+  const monitorEmpty = deskSearch.trim() ? 'No monitor rows match this search.' : tabEmpty
+
+  const renderItemStatus = (item: MonitorItem) => (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <StatusBadge status={item.status === 'Pending' ? 'Pending claim' : item.status} />
+      {item.lostReportStatus ? <StatusBadge status={lostReportLabel(item.lostReportStatus)} /> : null}
+    </div>
+  )
+
+  const renderItemActions = (item: MonitorItem, mobile = false) => {
+    const pad = mobile ? 'px-3 py-2.5' : 'px-3 py-2'
+    return item.status === 'Pending' ? (
+      <>
+        <button type="button" onClick={() => void loadPendingClaim(item)} className={`rounded-lg border border-[#0b5ea2]/20 bg-[#FFFFFF] ${pad} text-xs font-bold text-[#0b5ea2]`}>Verify borrower</button>
+        <button type="button" disabled={busyId === item.transactionId} onClick={() => { setCancelError(''); setCancelTarget(item) }} className={`rounded-lg border border-[#0b5ea2]/20 bg-[#FFFFFF] ${pad} text-xs font-bold text-[#0b5ea2] disabled:opacity-40`}>Cancel</button>
+      </>
+    ) : (
+      <>
+        {item.status === 'Overdue' ? (
+          <button type="button" disabled={busyId === item.transactionId} onClick={() => void penalty(item.transactionId)} className={`rounded-lg bg-[#FFF200] ${pad} text-xs font-bold text-[#0b5ea2] disabled:opacity-40`}>Calculate penalty</button>
+        ) : null}
+        {['Borrowed', 'Overdue', 'Active'].includes(item.status) && (!item.lostReportStatus || item.lostReportStatus === 'Rejected') ? (
+          <button type="button" disabled={busyId === item.transactionId} onClick={() => { setLostError(''); setLostTarget(item) }} className={`rounded-lg border border-[#0b5ea2]/20 ${pad} text-xs font-bold text-[#0b5ea2] disabled:opacity-40`}>Report lost</button>
+        ) : null}
+        <button type="button" disabled={busyId === item.transactionId} onClick={() => void openReturnScanner(item)} className={`rounded-lg bg-[#0b5ea2] ${pad} text-xs font-bold text-[#FFFFFF] disabled:opacity-40`}>Process return</button>
+      </>
+    )
+  }
+
+  const monitorMobileRows = (
+    <MobileList empty={!filteredLaneItems.length ? (
+      <p className="px-5 py-10 text-center font-semibold text-[#0b5ea2]">{monitorEmpty}</p>
+    ) : null}
+    >
+      {filteredLaneItems.map((item) => (
+        <div key={item.transactionId} className={selectedClaimId === item.transactionId ? 'bg-[#FFF200]/25' : undefined}>
+          <MobileListItem
+            title={item.title}
+            meta={<>{item.userName} · {item.schoolId} · {item.role}</>}
+            status={renderItemStatus(item)}
+            detail={(
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <div className="min-w-0"><dt className="font-semibold uppercase text-[#0b5ea2]/50">Copy</dt><dd className="mt-0.5 break-all font-mono">{item.accessionNumber ?? item.barcode}</dd></div>
+                <div className="min-w-0"><dt className="font-semibold uppercase text-[#0b5ea2]/50">Due</dt><dd className="mt-0.5 font-semibold">{formatDate(item.dueDate)}</dd></div>
+                <div className="col-span-2 min-w-0"><dt className="font-semibold uppercase text-[#0b5ea2]/50">Requested / borrowed</dt><dd className="mt-0.5">{formatDate(item.borrowDate ?? item.requestedAt)}</dd></div>
+              </dl>
+            )}
+            actions={renderItemActions(item, true)}
+          />
+        </div>
+      ))}
+    </MobileList>
+  )
 
   return <>
     <div className="mb-5 flex flex-col gap-5 xl:flex-row">
@@ -784,7 +837,7 @@ export function AdminCirculationMonitor() {
       </div>
     </div>
 
-    <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       <StatCard label="Pending claim" value={data?.summary.pendingClaims ?? 0} icon={ScanBarcode} tone="orange" />
       <StatCard label="Active claims" value={data?.summary.activeLoans ?? 0} icon={BookOpen} tone="blue" />
       <StatCard label="Due today" value={data?.summary.dueToday ?? 0} icon={CalendarClock} tone="orange" />
@@ -795,14 +848,14 @@ export function AdminCirculationMonitor() {
     {loading && !data ? (
       <SectionCard className="p-10 text-center font-semibold text-[#0b5ea2]">Loading circulation monitor…</SectionCard>
     ) : (
-      <SectionCard className="overflow-hidden">
-        <div className="sticky top-0 z-10 space-y-3 border-b border-[#0b5ea2]/15 bg-white/95 px-5 py-4 backdrop-blur">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="font-bold text-[#0b5ea2]">Circulation monitor</h2>
-              <p className="text-xs text-[#0b5ea2]/60">Search or scan — do not scroll the full queue looking for a borrower.</p>
-            </div>
-            <label className="relative block w-full max-w-md">
+      <>
+      <TableShell
+        title="Circulation monitor"
+        subtitle="Search or scan — do not scroll the full queue looking for a borrower."
+        mobileRows={monitorMobileRows}
+        controls={(
+          <div className="flex w-full flex-col gap-3 sm:max-w-sm lg:max-w-md">
+            <label className="relative block w-full">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#0b5ea2]/45" />
               <span className="sr-only">Search monitor by school ID, name, title, or barcode</span>
               <input
@@ -812,33 +865,32 @@ export function AdminCirculationMonitor() {
                 className="h-10 w-full rounded-xl border border-[#0b5ea2]/20 bg-white py-2 pl-9 pr-3 text-sm font-semibold text-[#0b5ea2] outline-none focus:ring-2 focus:ring-[#0b5ea2]/10"
               />
             </label>
+            <div className="flex flex-wrap gap-2" role="tablist" aria-label="Monitor lanes">
+              {([
+                ['pending', `Pending claim (${lanes.pending.length})`],
+                ['active', `Active loans (${lanes.active.length})`],
+                ['overdue', `Overdue (${lanes.overdue.length})`],
+              ] as const).map(([tab, label]) => (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={monitorTab === tab}
+                  onClick={() => setMonitorTab(tab)}
+                  className={`rounded-xl px-3 py-2 text-xs font-bold transition ${monitorTab === tab ? 'bg-[#0b5ea2] text-white' : 'border border-[#0b5ea2]/15 bg-white text-[#0b5ea2] hover:bg-zinc-50'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs font-semibold text-[#0b5ea2]/65">
+              Showing {filteredLaneItems.length} {tabLabel.toLowerCase()} record{filteredLaneItems.length === 1 ? '' : 's'}
+              {deskSearch.trim() ? ' matching search' : ''}
+              {data?.pagination ? ` · Page ${data.pagination.page} of ${Math.max(data.pagination.totalPages, 1)}` : ''}
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Monitor lanes">
-            {([
-              ['pending', `Pending claim (${lanes.pending.length})`],
-              ['active', `Active loans (${lanes.active.length})`],
-              ['overdue', `Overdue (${lanes.overdue.length})`],
-            ] as const).map(([tab, label]) => (
-              <button
-                key={tab}
-                type="button"
-                role="tab"
-                aria-selected={monitorTab === tab}
-                onClick={() => setMonitorTab(tab)}
-                className={`rounded-xl px-3 py-2 text-xs font-bold transition ${monitorTab === tab ? 'bg-[#0b5ea2] text-white' : 'border border-[#0b5ea2]/15 bg-white text-[#0b5ea2] hover:bg-zinc-50'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs font-semibold text-[#0b5ea2]/65">
-            Showing {filteredLaneItems.length} {tabLabel.toLowerCase()} record{filteredLaneItems.length === 1 ? '' : 's'}
-            {deskSearch.trim() ? ' matching search' : ''}
-            {data?.pagination ? ` · Page ${data.pagination.page} of ${Math.max(data.pagination.totalPages, 1)}` : ''}
-          </p>
-        </div>
-
-        <div className="overflow-x-auto">
+        )}
+      >
           <table className="w-full min-w-[920px] text-left text-sm">
             <thead className="bg-[#0b5ea2] text-[#FFFFFF]">
               <tr>
@@ -866,42 +918,20 @@ export function AdminCirculationMonitor() {
                   </td>
                   <td className="px-4 py-4 text-xs text-[#0b5ea2]">{formatDate(item.borrowDate ?? item.requestedAt)}</td>
                   <td className="px-4 py-4 text-xs font-semibold text-[#0b5ea2]">{formatDate(item.dueDate)}</td>
+                  <td className="px-4 py-4">{renderItemStatus(item)}</td>
                   <td className="px-4 py-4">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <StatusBadge status={item.status === 'Pending' ? 'Pending claim' : item.status} />
-                      {item.lostReportStatus ? <StatusBadge status={lostReportLabel(item.lostReportStatus)} /> : null}
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex justify-end gap-2">
-                      {item.status === 'Pending' ? (
-                        <>
-                          <button type="button" onClick={() => void loadPendingClaim(item)} className="rounded-lg border border-[#0b5ea2]/20 bg-[#FFFFFF] px-3 py-2 text-xs font-bold text-[#0b5ea2]">Verify borrower</button>
-                          <button type="button" disabled={busyId === item.transactionId} onClick={() => { setCancelError(''); setCancelTarget(item) }} className="rounded-lg border border-[#0b5ea2]/20 bg-[#FFFFFF] px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:opacity-40">Cancel</button>
-                        </>
-                      ) : (
-                        <>
-                          {item.status === 'Overdue' ? (
-                            <button type="button" disabled={busyId === item.transactionId} onClick={() => void penalty(item.transactionId)} className="rounded-lg bg-[#FFF200] px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:opacity-40">Calculate penalty</button>
-                          ) : null}
-                          {['Borrowed', 'Overdue', 'Active'].includes(item.status) && (!item.lostReportStatus || item.lostReportStatus === 'Rejected') ? (
-                            <button type="button" disabled={busyId === item.transactionId} onClick={() => { setLostError(''); setLostTarget(item) }} className="rounded-lg border border-[#0b5ea2]/20 px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:opacity-40">Report lost</button>
-                          ) : null}
-                          <button type="button" disabled={busyId === item.transactionId} onClick={() => void openReturnScanner(item)} className="rounded-lg bg-[#0b5ea2] px-3 py-2 text-xs font-bold text-[#FFFFFF] disabled:opacity-40">Process return</button>
-                        </>
-                      )}
-                    </div>
+                    <div className="flex justify-end gap-2">{renderItemActions(item)}</div>
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={6} className="px-4 py-10 text-center font-semibold text-[#0b5ea2]">{deskSearch.trim() ? 'No monitor rows match this search.' : tabEmpty}</td></tr>
+                <tr><td colSpan={6} className="px-4 py-10 text-center font-semibold text-[#0b5ea2]">{monitorEmpty}</td></tr>
               )}
             </tbody>
           </table>
-        </div>
+      </TableShell>
 
         {data && data.pagination.totalPages > 1 ? (
-          <nav className="flex items-center justify-center gap-3 border-t border-[#0b5ea2]/10 px-5 py-4" aria-label="Monitor pages">
+          <nav className="mt-4 flex items-center justify-center gap-3" aria-label="Monitor pages">
             <button type="button" disabled={page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))} className="rounded-xl border border-[#0b5ea2]/15 p-2 text-[#0b5ea2] disabled:opacity-40" aria-label="Previous page">
               <ChevronLeft size={18} />
             </button>
@@ -911,7 +941,7 @@ export function AdminCirculationMonitor() {
             </button>
           </nav>
         ) : null}
-      </SectionCard>
+      </>
     )}
 
     {statusMessage && !showConfirmCheckout ? (

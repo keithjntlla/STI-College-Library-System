@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { BookCatalog } from './BookCatalog'
 import type { BookCatalogItem } from './book-catalog-types'
@@ -7,6 +7,7 @@ import type { BookCatalogItem } from './book-catalog-types'
 const api = vi.hoisted(() => ({
   fetchBookCatalog: vi.fn(),
   fetchBookCategories: vi.fn(),
+  fetchCatalogPrograms: vi.fn(),
   fetchBookOverview: vi.fn(),
   reserveBookTitle: vi.fn(),
 }))
@@ -45,6 +46,27 @@ function response(book: BookCatalogItem) {
 }
 
 describe('BookCatalog availability refresh', () => {
+  beforeEach(() => {
+    api.fetchCatalogPrograms.mockResolvedValue([
+      { programId: 1, programName: 'Bachelor of Science in Information Technology', programGroup: 'College' },
+    ])
+  })
+
+  it('starts on All courses and can narrow by course', async () => {
+    api.fetchBookCategories.mockResolvedValue([{ categoryId: 2, categoryName: 'Database' }])
+    api.fetchBookCatalog.mockImplementation(() => response(baseBook))
+    render(<MemoryRouter><BookCatalog /></MemoryRouter>)
+
+    const courseFilter = await screen.findByRole('combobox', { name: 'Filter by course' }) as HTMLSelectElement
+    expect(courseFilter.value).toBe('')
+
+    fireEvent.change(courseFilter, { target: { value: '1' } })
+    await waitFor(() => {
+      expect(api.fetchBookCategories).toHaveBeenCalledWith(expect.any(AbortSignal), 1)
+      expect(api.fetchBookCatalog).toHaveBeenCalledWith(expect.objectContaining({ programId: 1 }))
+    })
+  })
+
   it('opens a cover-first overview with catalog details below the image', async () => {
     const coveredBook = {
       ...baseBook,
@@ -113,7 +135,9 @@ describe('BookCatalog availability refresh', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Request' }))
 
-    expect((await screen.findByRole('alert')).textContent).toContain('already have 2 of 2 active book commitments')
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toContain('Borrowing limit reached')
+    expect(dialog.textContent).toContain('already have 2 of 2 active book commitments')
     expect(api.reserveBookTitle).not.toHaveBeenCalled()
   })
 

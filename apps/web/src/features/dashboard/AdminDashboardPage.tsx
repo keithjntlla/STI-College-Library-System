@@ -1,7 +1,7 @@
 import { BadgeCheck, CalendarClock, ClipboardCheck, Download, Printer, QrCode, RefreshCw, RotateCcw, UserRoundX, Users } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, PageHeader, SectionCard, StatCard, TableShell } from '../../components/ui'
+import { Button, MobileList, MobileListItem, PageHeader, SectionCard, StatCard, TableShell } from '../../components/ui'
 import { getAccessToken } from '../auth/auth-storage'
 import { dashboardApi } from './dashboard-api'
 import type { AdminDashboardData, LibraryProfile } from './types'
@@ -185,7 +185,22 @@ export function AdminDashboardPage() {
         </SectionCard>
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
-        <TableShell title="Recent circulation">
+        <TableShell
+          title="Recent circulation"
+          mobileRows={(
+            <MobileList empty={!data.recentCirculation.length ? <Empty text="No circulation activity yet." /> : null}>
+              {data.recentCirculation.map((item) => (
+                <MobileListItem
+                  key={item.id}
+                  title={<Link to="/librarian/circulation" className="underline-offset-2 hover:underline">{item.title}</Link>}
+                  meta={`${item.userName} · ${item.schoolId} · ${item.barcode}`}
+                  status={<span className="text-xs font-bold text-[#0b5ea2] dark:text-white">{item.status}</span>}
+                  detail={<span className="text-xs">{item.eventAt}</span>}
+                />
+              ))}
+            </MobileList>
+          )}
+        >
           <table className="w-full min-w-[680px] text-left text-sm">
             <thead className="bg-[#0b5ea2]/5 text-xs uppercase tracking-wider text-[#0b5ea2]/65">
               <tr><th className="px-5 py-3">User and resource</th><th className="px-5 py-3">Activity date</th><th className="px-5 py-3">Status</th></tr>

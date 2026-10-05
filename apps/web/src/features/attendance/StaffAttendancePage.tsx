@@ -1,6 +1,6 @@
 import { Camera, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Button, PageHeader, SectionCard } from '../../components/ui'
+import { Button, MobileList, MobileListItem, PageHeader, SectionCard, TableShell } from '../../components/ui'
 import { AttendanceScannerModal } from './AttendanceScannerModal'
 import { attendanceApi, type AttendanceRow, type Capacity } from './attendance-api'
 
@@ -63,7 +63,29 @@ export function StaffAttendancePage() {
 
       {error ? <p role="alert" className="mb-4 rounded-xl bg-[#FFF200] p-4 text-[#0b5ea2]">{error}</p> : null}
 
-      <SectionCard className="overflow-x-auto">
+      <TableShell
+        title="Today's visits"
+        subtitle={`${rows.length} ${rows.length === 1 ? 'record' : 'records'}`}
+        mobileRows={(
+          <MobileList empty={rows.length === 0 ? <p className="px-5 py-10 text-center font-semibold text-[#0b5ea2] dark:text-white">No attendance records yet today.</p> : null}>
+            {rows.map((row) => (
+              <MobileListItem
+                key={row.id}
+                title={row.visitor_name}
+                meta={row.school_id}
+                status={<span className={`rounded-full px-2 py-1 text-xs font-bold text-[#0b5ea2] ${presenceBadge(row.presence)}`}>{row.presence}</span>}
+                detail={(
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <span>In {row.time_in}</span>
+                    <span>Out {row.time_out ?? '—'}</span>
+                    <span className="col-span-2">{row.purpose}</span>
+                  </div>
+                )}
+              />
+            ))}
+          </MobileList>
+        )}
+      >
         <table className="w-full text-left text-sm text-[#0b5ea2]">
           <thead>
             <tr>
@@ -87,7 +109,7 @@ export function StaffAttendancePage() {
             {rows.length === 0 ? <tr><td colSpan={5} className="p-8 text-center font-semibold">No attendance records yet today.</td></tr> : null}
           </tbody>
         </table>
-      </SectionCard>
+      </TableShell>
 
       <AttendanceScannerModal open={scannerOpen} onClose={() => setScannerOpen(false)} onRecorded={() => void load()} />
     </>

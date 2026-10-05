@@ -9,6 +9,7 @@ type CategoryController = ReturnType<typeof createCategoryController>
 export function createCategoryRouter(controller: CategoryController = categoryController) {
   const router = Router()
   router.get('/', controller.list)
+  router.get('/programs', requireCategoryManager, controller.programs)
   router.get('/shelves', requireCategoryManager, async (_request, response, next) => {
     try { response.json({ success: true, data: await floorPlanRepository.shelfDirectory() }) } catch (error) { next(error) }
   })

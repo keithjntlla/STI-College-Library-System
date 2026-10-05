@@ -1,6 +1,6 @@
 import { Activity, Camera, ChevronDown, Clock3, Download, RefreshCw, Search, Settings2, Users } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertMessage, Button, PageHeader, SectionCard, StatCard, StatusPill } from '../../components/ui'
+import { AlertMessage, Button, MobileList, MobileListItem, PageHeader, SectionCard, StatCard, StatusPill, TableShell } from '../../components/ui'
 import { AttendanceScannerModal } from './AttendanceScannerModal'
 import { attendanceApi, type AcademicTerm, type AttendanceAnalytics, type AttendanceFilters, type AttendanceRow, type AttendanceSummary, type Capacity, type Pagination } from './attendance-api'
 
@@ -180,7 +180,7 @@ export function AdminAttendancePage() {
       ) : null}
 
       <SectionCard className="mb-5 p-4">
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <select className={field} value={f.period} onChange={(event) => update({ period: event.target.value as AttendanceFilters['period'] })}>
             <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
@@ -219,7 +219,7 @@ export function AdminAttendancePage() {
         </div>
       </SectionCard>
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Visits" value={String(summary?.total_visits ?? 0)} icon={Users} />
         <StatCard label="Currently inside" value={String(capacity?.current ?? 0)} icon={Activity} />
         <StatCard label="Maximum capacity" value={String(capacity?.capacity ?? 80)} note={`${capacity?.available ?? 0} spaces available`} icon={Users} />
@@ -245,12 +245,11 @@ export function AdminAttendancePage() {
         />
       ) : null}
 
-      <SectionCard className="mb-5">
-        <div className="flex flex-col gap-3 border-b border-[#0b5ea2]/15 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="font-bold">Attendance logs</h2>
-            <p className="text-xs text-[#0b5ea2]/65">{summary?.range.label ?? 'Selected period'} · {pagination.total} records</p>
-          </div>
+      <div className="mb-5">
+      <TableShell
+        title="Attendance logs"
+        subtitle={`${summary?.range.label ?? 'Selected period'} · ${pagination.total} records`}
+        controls={(
           <label className={`${field} flex w-full items-center gap-2 sm:max-w-xs`}>
             <Search size={15} />
             <input
@@ -261,8 +260,33 @@ export function AdminAttendancePage() {
               aria-label="Search attendance logs"
             />
           </label>
-        </div>
-        <div className="overflow-x-auto">
+        )}
+        mobileRows={(
+          <MobileList empty={loading
+            ? <p className="px-5 py-10 text-center">Loading attendance…</p>
+            : rows.length === 0
+              ? <p className="px-5 py-10 text-center font-semibold">No attendance records match these filters.</p>
+              : null}
+          >
+            {loading ? null : rows.map((row) => (
+              <MobileListItem
+                key={row.id}
+                title={row.visitor_name}
+                meta={`${row.school_id} · ${row.role}`}
+                status={<span className={`inline-flex rounded-full px-2 py-1 text-xs font-bold ring-1 ring-inset ${presenceBadge(row.presence)}`}>{row.presence}</span>}
+                detail={(
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <span>{row.attendance_date}</span>
+                    <span>{row.purpose}</span>
+                    <span>In {row.time_in}</span>
+                    <span>Out {row.time_out ?? '—'}</span>
+                  </div>
+                )}
+              />
+            ))}
+          </MobileList>
+        )}
+      >
           <table className="w-full min-w-[850px] text-left text-sm">
             <thead className="bg-[#0b5ea2] text-white">
               <tr>{['Visitor', 'Role', 'Date', 'Time in', 'Time out', 'Purpose', 'Presence'].map((header) => <th key={header} className="px-5 py-3 text-xs">{header}</th>)}</tr>
@@ -285,13 +309,13 @@ export function AdminAttendancePage() {
               ))}
             </tbody>
           </table>
-        </div>
-        <div className="flex justify-end gap-2 p-4">
-          <Button variant="secondary" disabled={f.page <= 1} onClick={() => update({ page: f.page - 1 })}>Previous</Button>
-          <span className="self-center text-xs font-bold">Page {pagination.page} of {Math.max(1, pagination.total_pages)}</span>
-          <Button variant="secondary" disabled={f.page >= pagination.total_pages} onClick={() => update({ page: f.page + 1 })}>Next</Button>
-        </div>
-      </SectionCard>
+      </TableShell>
+      <div className="mt-3 flex justify-end gap-2">
+        <Button variant="secondary" disabled={f.page <= 1} onClick={() => update({ page: f.page - 1 })}>Previous</Button>
+        <span className="self-center text-xs font-bold">Page {pagination.page} of {Math.max(1, pagination.total_pages)}</span>
+        <Button variant="secondary" disabled={f.page >= pagination.total_pages} onClick={() => update({ page: f.page + 1 })}>Next</Button>
+      </div>
+      </div>
 
       <SectionCard className="overflow-hidden">
         <button

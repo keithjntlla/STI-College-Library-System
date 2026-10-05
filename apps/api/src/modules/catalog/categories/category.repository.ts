@@ -10,37 +10,83 @@ export type CategoryRecord = {
   shelfColumn: number
   shelfRow: number
   textbookRecencyRule: boolean
+  programIds: number[]
   totalBooksCount: number
   totalThesisCount: number
   createdAt: Date | string
   updatedAt: Date | string | null
 }
 
-export async function listCategoriesWithCounts(database: Pool): Promise<CategoryRecord[]> {
+export type ProgramRecord = {
+  programId: number
+  programName: string
+  programGroup: string
+}
+
+export async function listActivePrograms(database: Pool): Promise<ProgramRecord[]> {
   const [rows] = await database.execute<RowDataPacket[]>(
-    `SELECT c.category_id, c.category_name, c.description, c.shelf_location, c.shelf_column, c.shelf_row,
-            c.textbook_recency_rule, c.created_at, c.updated_at,
-            COALESCE(book_totals.total_books_count, 0) AS total_books_count,
-            COALESCE(thesis_totals.total_thesis_count, 0) AS total_thesis_count
-       FROM categories c
-       LEFT JOIN (
-         SELECT t.category_id, COUNT(pc.physical_copy_id) AS total_books_count
-           FROM titles t
-           JOIN physical_copies pc ON pc.title_id = t.title_id
-          WHERE t.record_type = 'Book' AND t.lifecycle_status = 'Active'
-            AND pc.lifecycle_status = 'Active'
-          GROUP BY t.category_id
-       ) book_totals ON book_totals.category_id = c.category_id
-       LEFT JOIN (
-         SELECT t.category_id, COUNT(rr.research_record_id) AS total_thesis_count
-           FROM titles t
-           JOIN research_records rr ON rr.title_id = t.title_id
-          WHERE t.record_type = 'Research/Thesis' AND t.lifecycle_status = 'Active'
-            AND rr.viewing_status <> 'Archived'
-          GROUP BY t.category_id
-       ) thesis_totals ON thesis_totals.category_id = c.category_id
-      ORDER BY c.category_name ASC`,
+    `SELECT program_id, program_name, program_group
+       FROM programs
+      WHERE is_active = ${isPostgres ? 'TRUE' : '1'}
+      ORDER BY
+        CASE program_group
+          WHEN 'College' THEN 1
+          WHEN 'SHS Academic' THEN 2
+          WHEN 'SHS TechPro' THEN 3
+          ELSE 4
+        END,
+        program_name ASC`,
   )
+  return rows.map((row) => ({
+    programId: Number(row.program_id),
+    programName: String(row.program_name),
+    programGroup: String(row.program_group),
+  }))
+}
+
+async function listProgramLinksByCategory(database: Pool | PoolConnection) {
+  const [rows] = await database.execute<RowDataPacket[]>(
+    'SELECT category_id, program_id FROM program_categories ORDER BY category_id ASC, program_id ASC',
+  )
+  const map = new Map<number, number[]>()
+  for (const row of rows) {
+    const categoryId = Number(row.category_id)
+    const programId = Number(row.program_id)
+    const current = map.get(categoryId) ?? []
+    current.push(programId)
+    map.set(categoryId, current)
+  }
+  return map
+}
+
+export async function listCategoriesWithCounts(database: Pool): Promise<CategoryRecord[]> {
+  const [[rows], programLinks] = await Promise.all([
+    database.execute<RowDataPacket[]>(
+      `SELECT c.category_id, c.category_name, c.description, c.shelf_location, c.shelf_column, c.shelf_row,
+              c.textbook_recency_rule, c.created_at, c.updated_at,
+              COALESCE(book_totals.total_books_count, 0) AS total_books_count,
+              COALESCE(thesis_totals.total_thesis_count, 0) AS total_thesis_count
+         FROM categories c
+         LEFT JOIN (
+           SELECT t.category_id, COUNT(pc.physical_copy_id) AS total_books_count
+             FROM titles t
+             JOIN physical_copies pc ON pc.title_id = t.title_id
+            WHERE t.record_type = 'Book' AND t.lifecycle_status = 'Active'
+              AND pc.lifecycle_status = 'Active'
+            GROUP BY t.category_id
+         ) book_totals ON book_totals.category_id = c.category_id
+         LEFT JOIN (
+           SELECT t.category_id, COUNT(rr.research_record_id) AS total_thesis_count
+             FROM titles t
+             JOIN research_records rr ON rr.title_id = t.title_id
+            WHERE t.record_type = 'Research/Thesis' AND t.lifecycle_status = 'Active'
+              AND rr.viewing_status <> 'Archived'
+            GROUP BY t.category_id
+         ) thesis_totals ON thesis_totals.category_id = c.category_id
+        ORDER BY c.category_name ASC`,
+    ),
+    listProgramLinksByCategory(database),
+  ])
   return rows.map((row) => ({
     categoryId: Number(row.category_id),
     categoryName: String(row.category_name),
@@ -49,11 +95,42 @@ export async function listCategoriesWithCounts(database: Pool): Promise<Category
     shelfColumn: Number(row.shelf_column),
     shelfRow: Number(row.shelf_row),
     textbookRecencyRule: Boolean(row.textbook_recency_rule),
+    programIds: programLinks.get(Number(row.category_id)) ?? [],
     totalBooksCount: Number(row.total_books_count ?? 0),
     totalThesisCount: Number(row.total_thesis_count ?? 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }))
+}
+
+export async function assertActiveProgramIds(database: Pool | PoolConnection, programIds: number[]) {
+  if (!programIds.length) return
+  const placeholders = programIds.map(() => '?').join(', ')
+  const [rows] = await database.execute<RowDataPacket[]>(
+    `SELECT program_id FROM programs
+      WHERE program_id IN (${placeholders})
+        AND is_active = ${isPostgres ? 'TRUE' : '1'}`,
+    programIds,
+  )
+  if (rows.length !== programIds.length) {
+    const found = new Set(rows.map((row) => Number(row.program_id)))
+    const missing = programIds.filter((id) => !found.has(id))
+    throw Object.assign(new Error('One or more programIds are invalid.'), { code: 'INVALID_PROGRAM_IDS', missing })
+  }
+}
+
+export async function replaceCategoryProgramLinks(
+  connection: PoolConnection,
+  categoryId: number,
+  programIds: number[],
+) {
+  await connection.execute('DELETE FROM program_categories WHERE category_id = ?', [categoryId])
+  for (const programId of programIds) {
+    await connection.execute(
+      'INSERT INTO program_categories (program_id, category_id, created_at) VALUES (?, ?, NOW())',
+      [programId, categoryId],
+    )
+  }
 }
 
 export async function findCategoryByName(database: Pool | PoolConnection, categoryName: string, excludedId: number | null = null) {
@@ -154,13 +231,13 @@ export async function recordCategoryShelfEvent(connection: PoolConnection, actor
   )
 }
 
-export async function insertCategory(database: Pool, input: CategoryInput) {
-  const [result] = await database.execute<ResultSetHeader>(
+export async function insertCategory(connection: Pool | PoolConnection, input: CategoryInput) {
+  const [result] = await connection.execute<ResultSetHeader>(
     `INSERT INTO categories (category_name, description, shelf_location, shelf_column, shelf_row, textbook_recency_rule, created_at)
      VALUES (?, ?, ?, ?, ?, ?, NOW())`,
     [input.categoryName, input.description, input.shelfLocation, input.shelfColumn, input.shelfRow, input.textbookRecencyRule ? 1 : 0],
   )
-  return result.insertId
+  return Number(result.insertId)
 }
 
 export async function lockCategory(connection: PoolConnection, categoryId: number) {

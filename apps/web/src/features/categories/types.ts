@@ -1,3 +1,9 @@
+export type CampusProgram = {
+  programId: number
+  programName: string
+  programGroup: string
+}
+
 export type Category = {
   categoryId: number
   categoryName: string
@@ -6,6 +12,7 @@ export type Category = {
   shelfColumn: number
   shelfRow: number
   textbookRecencyRule: boolean
+  programIds: number[]
   totalBooksCount: number
   totalThesisCount: number
   createdAt: string
@@ -19,6 +26,7 @@ export type CategoryPayload = {
   shelfColumn: number
   shelfRow: number
   textbookRecencyRule: boolean
+  programIds: number[]
 }
 
 export type CategoryShelfSync = {

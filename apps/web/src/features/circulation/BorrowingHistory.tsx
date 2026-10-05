@@ -1,7 +1,7 @@
 import { ViewLocationButton } from '../floor-plan/ViewLocationButton'
 import { AlertTriangle, BookOpen, CalendarClock, ChevronLeft, ChevronRight, Eye, RefreshCw, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, SectionCard, StatCard, StatusBadge, StatusModal } from '../../components/ui'
+import { Button, MobileList, MobileListItem, SectionCard, StatCard, StatusBadge, StatusModal, TableShell } from '../../components/ui'
 import { circulationApi } from './circulation-api'
 import type { BorrowingHistoryData } from './types'
 import { BookDetailDrawer } from '../catalog/BookDetailDrawer'
@@ -26,8 +26,12 @@ function slotValue(summary: BorrowingHistoryData['summary'] | undefined) {
   return `${summary.remainingLoanSlots} of ${summary.loanLimit ?? 2}`
 }
 
+function isConfirmedLoss(item: HistoryItem) {
+  return Boolean(item.lostConfirmedAt) || item.lostReportStatus === 'Confirmed'
+}
+
 function isOpenLoan(item: HistoryItem) {
-  return OPEN_STATUSES.has(item.status)
+  return OPEN_STATUSES.has(item.status) && !isConfirmedLoss(item)
 }
 
 function copyLabel(item: Pick<HistoryItem, 'accessionNumber' | 'transactionId'>) {
@@ -205,61 +209,87 @@ export function BorrowingHistory() {
           </section>
         ) : null}
 
-        <SectionCard className="overflow-hidden">
-          <div className="border-b border-[#0b5ea2]/15 px-5 py-4 dark:border-white/10">
-            <h2 className="font-display text-base font-bold text-[#0b5ea2] dark:text-white">Transaction history</h2>
-            <p className="mt-1 text-xs text-[#0b5ea2]/60 dark:text-white/60">Returned and cancelled loans</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-[#0b5ea2] text-[#FFFFFF]">
-                <tr>
-                  <th scope="col" className="px-5 py-3">Title</th>
-                  <th scope="col" className="px-5 py-3">Borrow date</th>
-                  <th scope="col" className="px-5 py-3">Due date</th>
-                  <th scope="col" className="px-5 py-3">Returned</th>
-                  <th scope="col" className="px-5 py-3">Status</th>
-                  <th scope="col" className="px-5 py-3 text-right">Actions</th>
+        <TableShell
+          title="Transaction history"
+          subtitle="Returned, cancelled, and confirmed lost loans"
+          mobileRows={(
+            <MobileList empty={!history.length ? (
+              <p className="px-5 py-12 text-center font-semibold text-[#0b5ea2] dark:text-white">
+                {openLoans.length > 0 ? 'No returned or cancelled loans on this page.' : 'No borrowing transactions have been recorded.'}
+              </p>
+            ) : null}
+            >
+              {history.map((item) => (
+                <MobileListItem
+                  key={item.transactionId}
+                  title={item.title}
+                  meta={`${item.author} · ${copyLabel(item)}`}
+                  status={<LoanStatus item={item} />}
+                  detail={(
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <span>Borrowed {formatDate(item.borrowDate)}</span>
+                      <span>Due {formatDate(item.dueDate)}</span>
+                      <span className="col-span-2">Returned {formatDate(item.returnDate)}</span>
+                    </div>
+                  )}
+                  actions={item.titleId ? (
+                    <button type="button" onClick={() => setDetail({ titleId: Number(item.titleId), barcode: item.barcode })} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#0b5ea2]/20 px-3 text-xs font-bold text-[#0b5ea2] dark:border-white/20 dark:text-white">
+                      <Eye size={15} /> View details
+                    </button>
+                  ) : undefined}
+                />
+              ))}
+            </MobileList>
+          )}
+        >
+          <table className="w-full text-left text-sm">
+            <thead className="bg-[#0b5ea2] text-[#FFFFFF]">
+              <tr>
+                <th scope="col" className="px-5 py-3">Title</th>
+                <th scope="col" className="px-5 py-3">Borrow date</th>
+                <th scope="col" className="px-5 py-3">Due date</th>
+                <th scope="col" className="px-5 py-3">Returned</th>
+                <th scope="col" className="px-5 py-3">Status</th>
+                <th scope="col" className="px-5 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.length > 0 ? history.map((item) => (
+                <tr key={item.transactionId} className="border-b border-[#0b5ea2]/10 dark:border-white/10">
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <BookCoverThumbnail title={item.title} coverImagePath={item.coverImagePath} className="h-16 w-11 rounded-lg" />
+                      <div className="min-w-0">
+                        <p className="font-bold text-[#0b5ea2] dark:text-white">{item.title}</p>
+                        <p className="mt-0.5 text-xs text-[#0b5ea2]/70 dark:text-white/70">{item.author}</p>
+                        <p className="mt-1 font-mono text-xs text-[#0b5ea2]/60 dark:text-white/55">{copyLabel(item)}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-5 py-4 text-[#0b5ea2] dark:text-white/80">{formatDate(item.borrowDate)}</td>
+                  <td className="px-5 py-4 font-semibold text-[#0b5ea2] dark:text-white">{formatDate(item.dueDate)}</td>
+                  <td className="px-5 py-4 text-[#0b5ea2] dark:text-white/80">{formatDate(item.returnDate)}</td>
+                  <td className="px-5 py-4"><LoanStatus item={item} /></td>
+                  <td className="px-5 py-4">
+                    <div className="flex justify-end">
+                      {item.titleId ? (
+                        <button type="button" onClick={() => setDetail({ titleId: Number(item.titleId), barcode: item.barcode })} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#0b5ea2]/20 px-3 text-xs font-bold text-[#0b5ea2] dark:border-white/20 dark:text-white">
+                          <Eye size={15} /> View details
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {history.length > 0 ? history.map((item) => (
-                  <tr key={item.transactionId} className="border-b border-[#0b5ea2]/10 dark:border-white/10">
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        <BookCoverThumbnail title={item.title} coverImagePath={item.coverImagePath} className="h-16 w-11 rounded-lg" />
-                        <div className="min-w-0">
-                          <p className="font-bold text-[#0b5ea2] dark:text-white">{item.title}</p>
-                          <p className="mt-0.5 text-xs text-[#0b5ea2]/70 dark:text-white/70">{item.author}</p>
-                          <p className="mt-1 font-mono text-xs text-[#0b5ea2]/60 dark:text-white/55">{copyLabel(item)}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 text-[#0b5ea2] dark:text-white/80">{formatDate(item.borrowDate)}</td>
-                    <td className="px-5 py-4 font-semibold text-[#0b5ea2] dark:text-white">{formatDate(item.dueDate)}</td>
-                    <td className="px-5 py-4 text-[#0b5ea2] dark:text-white/80">{formatDate(item.returnDate)}</td>
-                    <td className="px-5 py-4"><LoanStatus item={item} /></td>
-                    <td className="px-5 py-4">
-                      <div className="flex justify-end">
-                        {item.titleId ? (
-                          <button type="button" onClick={() => setDetail({ titleId: Number(item.titleId), barcode: item.barcode })} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#0b5ea2]/20 px-3 text-xs font-bold text-[#0b5ea2] dark:border-white/20 dark:text-white">
-                            <Eye size={15} /> View details
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                )) : (
-                  <tr>
-                    <td colSpan={6} className="px-5 py-12 text-center font-semibold text-[#0b5ea2] dark:text-white">
-                      {openLoans.length > 0 ? 'No returned or cancelled loans on this page.' : 'No borrowing transactions have been recorded.'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
+              )) : (
+                <tr>
+                  <td colSpan={6} className="px-5 py-12 text-center font-semibold text-[#0b5ea2] dark:text-white">
+                    {openLoans.length > 0 ? 'No returned or cancelled loans on this page.' : 'No borrowing transactions have been recorded.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </TableShell>
 
         {data.pagination.totalPages > 1 ? (
           <nav className="flex items-center justify-center gap-3" aria-label="History pages">
@@ -282,6 +312,16 @@ export function BorrowingHistory() {
 }
 
 function LoanStatus({ item }: { item: HistoryItem }) {
+  if (isConfirmedLoss(item)) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <StatusBadge status="Lost confirmed" />
+        {item.lostReportStatus && item.lostReportStatus !== 'Confirmed'
+          ? <StatusBadge status={lostReportLabel(item.lostReportStatus)} />
+          : null}
+      </div>
+    )
+  }
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <StatusBadge status={item.status} />

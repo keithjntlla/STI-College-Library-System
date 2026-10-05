@@ -5,7 +5,7 @@ import { HttpError } from '../../core/http-error.ts'
 import { createCirculationService } from './circulation.service.ts'
 
 function checkoutPool(role: 'Student' | 'Faculty', activeCount = 0, readyClaim: boolean | 'cart' = false, condition = 'Good') {
-  const state = { commits: 0, rollbacks: 0, borrowInserts: 0, queueCompactions: 0, notifications: 0 }
+  const state = { commits: 0, rollbacks: 0, borrowInserts: 0, queueCompactions: 0, notifications: 0, capacitySql: '' }
   const connection = {
     async beginTransaction() {}, async commit() { state.commits += 1 }, async rollback() { state.rollbacks += 1 }, release() {},
     async execute(sql: string) {
@@ -14,7 +14,10 @@ function checkoutPool(role: 'Student' | 'Faculty', activeCount = 0, readyClaim: 
       if (sql.includes('FROM physical_copies pc INNER JOIN titles')) return [[{ physical_copy_id: 20, title_id: 10, material_id: 30, accession_number: 'ACC-20', barcode: 'BOOK-20', condition_status: condition, availability_status: 'Available', lifecycle_status: 'Active', title: 'Clean Code', material_type: 'Book' }]]
       if (sql.includes('SELECT transaction_id, user_id, transaction_status')) return [readyClaim ? [{ transaction_id: 54, user_id: 7, transaction_status: 'Pending', request_group_id: 'group-1', reservation_id: readyClaim === true ? 99 : null }] : []]
       if (sql.includes('FROM reservations') && sql.includes('ORDER BY queue_position')) return [readyClaim === true ? [{ reservation_id: 99, user_id: 7, queue_position: 1, reservation_status: 'ready_for_pickup' }] : []]
-      if (sql.includes('COUNT(DISTINCT activity.title_id)')) return [[{ active_count: activeCount, target_already_active: 0 }]]
+      if (sql.includes('COUNT(DISTINCT activity.title_id)')) {
+        state.capacitySql = sql
+        return [[{ active_count: activeCount, target_already_active: 0 }]]
+      }
       if (sql.includes('as unpaid')) return [[{ unpaid: 0 }]]
       if (sql.includes('as overdue')) return [[{ overdue: 0 }]]
       if (sql.includes('FROM library_closed_days')) return [[]]
@@ -39,6 +42,7 @@ test('student checkout at the combined two-item cap rolls back before inserting'
     assert.ok(error instanceof HttpError); assert.equal(error.status, 422); assert.equal(error.code, 'STUDENT_BORROW_LIMIT_REACHED'); return true
   })
   assert.equal(state.borrowInserts, 0); assert.equal(state.commits, 0); assert.equal(state.rollbacks, 1)
+  assert.match(state.capacitySql, /lost_confirmed_at IS NULL/)
 })
 
 test('faculty checkout bypasses the cap and commits synchronized availability and alerts', async () => {

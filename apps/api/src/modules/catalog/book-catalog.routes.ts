@@ -7,6 +7,7 @@ type AssetController = ReturnType<typeof createAssetCodeController>
 
 export function createBookCatalogRouter(controller: Controller = bookCatalogController, assets: AssetController = assetCodeController) {
   const router = Router()
+  router.get('/programs', controller.programs)
   router.get('/categories', controller.categories)
   router.get('/books', controller.list)
   router.get('/copies/:barcode', assets.catalogAsset)

@@ -3,6 +3,7 @@ import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ThemeToggle } from '../theme/ThemeToggle'
 import { AuthenticationError, registerStudent, resendRegistrationCode, verifyRegistration, type StudentRegistrationInput } from './auth-api'
+import { CAMPUS_PROGRAM_GROUPS } from './campus-programs'
 
 const SCHOOL_ID = /^[A-Z0-9][A-Z0-9._-]{2,49}$/
 const SCHOOL_EMAIL = /^[^\s@]+@ormoc\.sti\.edu\.ph$/i
@@ -262,23 +263,11 @@ export function RegistrationPage() {
                   <Field label="Program / Strand" error={errors.program_strand}>
                     <select value={form.program_strand} onChange={(event) => update('program_strand', event.target.value)} className={fieldClass}>
                       <option value="">Select program or pathway</option>
-                      <optgroup label="College">
-                        <option>Bachelor of Science in Information Technology</option>
-                        <option>Bachelor of Science in Tourism Management</option>
-                        <option>Bachelor of Science in Hospitality Management</option>
-                      </optgroup>
-                      <optgroup label="Senior High — Academic">
-                        <option>STEM</option>
-                        <option>ABM</option>
-                        <option>HUMSS</option>
-                        <option>General Academic</option>
-                      </optgroup>
-                      <optgroup label="Senior High — TechPro">
-                        <option>IT in Mobile App and Web Development</option>
-                        <option>Computer and Communications Technology</option>
-                        <option>Tourism Operations</option>
-                        <option>Culinary Arts</option>
-                      </optgroup>
+                      {CAMPUS_PROGRAM_GROUPS.map((group) => (
+                        <optgroup key={group.label} label={group.label}>
+                          {group.options.map((option) => <option key={option}>{option}</option>)}
+                        </optgroup>
+                      ))}
                     </select>
                   </Field>
                   <Field label="Year / Grade Level" error={errors.year_grade_level}>

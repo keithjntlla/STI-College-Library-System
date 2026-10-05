@@ -9,6 +9,7 @@ export type BookCatalogFilters = {
   isbn: string | null
   categoryId: number | null
   categoryName: string | null
+  programId: number | null
   publicationYear: number | null
   availableOnly: boolean
   sort: BookCatalogSort
@@ -24,7 +25,7 @@ function text(value: unknown, maximum = 255) {
   return first(value).trim().slice(0, maximum) || null
 }
 
-function positiveInteger(value: unknown, field: string) {
+export function positiveIntegerFromQuery(value: unknown, field: string) {
   const raw = first(value).trim()
   if (!raw) return null
   const parsed = Number(raw)
@@ -34,6 +35,10 @@ function positiveInteger(value: unknown, field: string) {
     })
   }
   return parsed
+}
+
+function positiveInteger(value: unknown, field: string) {
+  return positiveIntegerFromQuery(value, field)
 }
 
 function parseBooleanFlag(value: unknown) {
@@ -66,6 +71,7 @@ export function parseBookCatalogFilters(query: Record<string, unknown>): BookCat
     isbn: text(query.isbn, 17),
     categoryId: positiveInteger(query.category_id ?? query.categoryId, 'category_id'),
     categoryName: text(query.category_name ?? query.categoryName, 100),
+    programId: positiveInteger(query.program_id ?? query.programId, 'program_id'),
     publicationYear,
     availableOnly: parseBooleanFlag(query.available_only ?? query.availableOnly),
     sort: parseSort(query.sort),

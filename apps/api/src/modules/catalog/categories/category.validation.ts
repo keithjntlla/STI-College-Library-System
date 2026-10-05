@@ -5,6 +5,7 @@ export type CategoryInput = {
   shelfColumn: number
   shelfRow: number
   textbookRecencyRule: boolean
+  programIds: number[]
 }
 export type CategoryValidationResult = { isValid: boolean; data: CategoryInput; errors: Record<string, string> }
 
@@ -53,6 +54,9 @@ export function validateCategoryPayload(body: unknown): CategoryValidationResult
   if (!Number.isSafeInteger(shelfRow) || shelfRow < 1 || shelfRow > 12) errors.shelfRow = 'Shelf row must be between 1 and 12.'
   if (textbookFlag === null) errors.textbookRecencyRule = 'Textbook recency rule must be true or false.'
 
+  const programIds = parseProgramIds(input.programIds ?? input.program_ids)
+  if (programIds.error) errors.programIds = programIds.error
+
   return {
     isValid: Object.keys(errors).length === 0,
     data: {
@@ -62,9 +66,24 @@ export function validateCategoryPayload(body: unknown): CategoryValidationResult
       shelfColumn,
       shelfRow,
       textbookRecencyRule: textbookFlag ?? false,
+      programIds: programIds.value,
     },
     errors,
   }
+}
+
+function parseProgramIds(value: unknown): { value: number[]; error: string | null } {
+  if (value === undefined || value === null) return { value: [], error: null }
+  if (!Array.isArray(value)) return { value: [], error: 'programIds must be an array of positive integers.' }
+  const ids: number[] = []
+  for (const entry of value) {
+    const parsed = Number(entry)
+    if (!Number.isSafeInteger(parsed) || parsed < 1) {
+      return { value: [], error: 'programIds must be an array of positive integers.' }
+    }
+    if (!ids.includes(parsed)) ids.push(parsed)
+  }
+  return { value: ids, error: null }
 }
 
 export function parseCategoryId(value: unknown, field = 'categoryId') {

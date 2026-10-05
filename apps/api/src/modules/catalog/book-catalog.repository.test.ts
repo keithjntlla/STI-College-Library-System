@@ -48,6 +48,24 @@ test('book catalog available_only and available_first sort use stock joins witho
   assert.match(query.countSql, /stock\.available_copies_count/)
 })
 
+test('book catalog program filter constrains titles to linked categories without interpolating the id', () => {
+  const filters = parseBookCatalogFilters({ program_id: '5' })
+  const query = buildBookCatalogQuery(filters)
+  assert.equal(filters.programId, 5)
+  assert.match(query.dataSql, /program_categories program_link/)
+  assert.match(query.dataSql, /program_link\.program_id = \?/)
+  assert.equal(query.dataParameters[0], 5)
+  assert.ok(!query.dataSql.includes('5'), 'program id must not be interpolated into SQL')
+})
+
+test('book catalog program plus category still verifies the category belongs to the program', () => {
+  const filters = parseBookCatalogFilters({ program_id: '5', category_id: '9' })
+  const query = buildBookCatalogQuery(filters)
+  assert.match(query.dataSql, /t\.category_id = \?/)
+  assert.match(query.dataSql, /EXISTS \(\s*SELECT 1 FROM program_categories program_link/)
+  assert.deepEqual(query.dataParameters.slice(0, 2), [9, 5])
+})
+
 test('viewer capacity counts normalized titles instead of duplicate compatibility material rows', async () => {
   let statement = ''
   const database = {
@@ -60,4 +78,5 @@ test('viewer capacity counts normalized titles instead of duplicate compatibilit
   assert.equal(await queryViewerActiveBookCount(database, 12), 1)
   assert.match(statement, /COUNT\(DISTINCT COALESCE\(activity\.title_id, -activity\.material_id\)\)/)
   assert.match(statement, /COALESCE\(r\.book_title_id, reserved_copy\.title_id\)/)
+  assert.match(statement, /bt\.lost_confirmed_at IS NULL/)
 })

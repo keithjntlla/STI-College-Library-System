@@ -19,8 +19,11 @@ function asyncController(handler: (request: Request, response: Response) => Prom
 
 export function createBookCatalogController(service: Service = bookCatalogService) {
   return {
-    categories: asyncController(async (_request, response) => {
-      response.json({ success: true, data: await service.categories() })
+    programs: asyncController(async (_request, response) => {
+      response.json({ success: true, data: await service.programs() })
+    }),
+    categories: asyncController(async (request, response) => {
+      response.json({ success: true, data: await service.categories(request.query as Record<string, unknown>) })
     }),
     list: asyncController(async (request, response) => {
       const result = await service.list(request.query as Record<string, unknown>, viewer(response))

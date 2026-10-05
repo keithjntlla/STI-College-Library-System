@@ -53,3 +53,9 @@ export type BookCategory = {
   categoryId: number
   categoryName: string
 }
+
+export type CatalogProgram = {
+  programId: number
+  programName: string
+  programGroup: string
+}

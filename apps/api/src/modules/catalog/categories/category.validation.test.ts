@@ -12,6 +12,7 @@ test('trims valid category names and physical shelf layouts', () => {
     shelfColumn: 1,
     shelfRow: 1,
     textbookRecencyRule: false,
+    programIds: [],
   })
 })
 

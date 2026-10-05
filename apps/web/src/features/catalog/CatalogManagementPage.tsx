@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Archive, ArrowRightLeft, BookOpen, CheckCircle2, ChevronDown, Download, Eye, FileSpreadsheet, FileText, Layers, MapPin, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
-import { SectionCard, StatusBadge } from '../../components/ui'
+import { MobileList, MobileListItem, SectionCard, StatusBadge, TableShell } from '../../components/ui'
 import { catalogApi } from './catalog-api'
 import type { CatalogFilters, CatalogItem, Category, PhysicalCopy } from './types'
 import { BookOverview } from './BookOverview'
@@ -26,7 +26,9 @@ function CatalogRowActions({
   onChangeCategory,
   onQuotations,
   onArchive,
+  mobile = false,
 }: {
+  mobile?: boolean
   item: CatalogItem
   onViewDetails: () => void
   onViewCodes: () => void
@@ -38,7 +40,7 @@ function CatalogRowActions({
   const menuId = `catalog-actions-${item.titleId}`
 
   return (
-    <div className="flex items-center justify-end gap-1.5">
+    <div className={`flex items-center gap-1.5 ${mobile ? 'w-full' : 'justify-end'}`}>
       {item.recordType === 'Book' ? (
         <button type="button" onClick={onViewDetails} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#0b5ea2] px-2.5 text-xs font-bold text-white hover:bg-[#004488]">
           <Eye size={14} /> View
@@ -61,7 +63,7 @@ function CatalogRowActions({
         <div
           id={menuId}
           role="menu"
-          className="absolute right-0 z-20 mt-1 min-w-[11.5rem] rounded-xl border border-[#0b5ea2]/15 bg-white p-1 shadow-lg dark:border-white/15 dark:bg-[#001a4d]"
+          className={`absolute z-20 min-w-[11.5rem] rounded-xl ${mobile ? 'bottom-full left-0 mb-1' : 'right-0 mt-1'} border border-[#0b5ea2]/15 bg-white p-1 shadow-lg dark:border-white/15 dark:bg-[#001a4d]`}
         >
           <button
             type="button"
@@ -261,6 +263,104 @@ export function CatalogManagementPage() {
   const secondaryButton = `${toolbarButton} border border-[#0b5ea2]/20 bg-white text-[#0b5ea2] hover:bg-zinc-50 dark:border-white/15 dark:bg-[#001a4d] dark:text-[#f2f6ff]`
   const primaryButton = `${toolbarButton} bg-[#0b5ea2] text-white hover:bg-[#004488]`
 
+  const renderRowActions = (item: CatalogItem, mobile = false) => (
+    <CatalogRowActions
+      mobile={mobile}
+      item={item}
+      onViewDetails={() => setOverviewTitleId(item.titleId)}
+      onViewCodes={() => {
+        if (item.research?.researchInventoryId) setResearchAssetId(item.research.researchInventoryId)
+      }}
+      onChangeCategory={() => { setCategoryError(null); setCategoryItem(item) }}
+      onQuotations={() => setQuotationItem({ titleId: item.titleId, title: item.title })}
+      onArchive={() => { setArchiveReason(''); setArchiveItem(item) }}
+    />
+  )
+
+  const emptyCatalog = (
+    <div className="px-3 py-12 text-center">
+      <BookOpen className="mx-auto text-[#0b5ea2]/40" size={32} />
+      <p className="mt-3 font-display text-lg font-bold text-[#0b5ea2] dark:text-white">No records match these filters</p>
+      <p className="mt-1 text-sm text-[#0b5ea2]/60 dark:text-white/55">Import existing stock from CSV or register a single title.</p>
+      <div className="mt-5 flex flex-wrap justify-center gap-2">
+        <button type="button" onClick={() => fileInputRef.current?.click()} className={secondaryButton}><Upload size={16} /> Import CSV</button>
+        <button type="button" onClick={() => setForm('book')} className={primaryButton}><Plus size={16} /> Add book</button>
+      </div>
+    </div>
+  )
+
+  const titleMobileRows = (
+    <MobileList empty={loading
+      ? <p className="px-5 py-8 text-center font-semibold text-[#0b5ea2] dark:text-white">Loading catalog…</p>
+      : !items.length ? emptyCatalog : null}
+    >
+      {loading ? null : items.map((item) => (
+        <MobileListItem
+          key={item.titleId}
+          title={(
+            <div className="flex items-start gap-3">
+              {item.recordType === 'Book' ? <BookCoverThumbnail title={item.title} coverImagePath={item.coverImagePath} className="h-14 w-10 shrink-0 rounded-md" /> : null}
+              <div className="min-w-0">
+                <p className="break-words">{item.title}</p>
+                <p className="mt-0.5 text-xs font-normal text-[#0b5ea2]/60 dark:text-white/55">{item.authors.join(', ')}</p>
+              </div>
+            </div>
+          )}
+          meta={(
+            <span className="inline-block rounded-md bg-[#0b5ea2]/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#0b5ea2] dark:bg-white/10 dark:text-[#f2f6ff]">
+              {item.recordType === 'Book' ? 'Book' : 'Research'}
+            </span>
+          )}
+          status={<StatusBadge status={item.availability} />}
+          detail={(
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+              <div className="min-w-0"><dt className="font-semibold uppercase text-[#0b5ea2]/50 dark:text-white/50">Category</dt><dd className="mt-0.5 font-semibold">{item.categoryName ?? 'Uncategorized'}</dd></div>
+              <div className="min-w-0">
+                <dt className="font-semibold uppercase text-[#0b5ea2]/50 dark:text-white/50">Shelf</dt>
+                <dd className="mt-0.5 font-semibold">
+                  {item.shelfLocation ?? 'Not mapped'}
+                  <span className={`block text-[11px] font-normal ${item.shelfStatus === 'Mismatch' ? 'font-bold text-red-700' : 'text-[#0b5ea2]/55 dark:text-white/45'}`}>
+                    {item.shelfStatus === 'Mapped' ? `${item.activeInventoryCount} active ${item.activeInventoryCount === 1 ? 'copy' : 'copies'}` : item.shelfStatus}
+                  </span>
+                </dd>
+              </div>
+            </dl>
+          )}
+          actions={renderRowActions(item, true)}
+        />
+      ))}
+    </MobileList>
+  )
+
+  const copyMobileRows = (
+    <MobileList empty={!filteredCopies.length ? (
+      <p className="px-5 py-10 text-center font-semibold text-[#0b5ea2] dark:text-white">
+        {copies.length ? 'No physical copies match the current search.' : 'No physical copies are loaded for this view.'}
+      </p>
+    ) : null}
+    >
+      {filteredCopies.map((copy) => (
+        <MobileListItem
+          key={copy.physicalCopyId}
+          title={copy.title}
+          meta={<span className="font-mono font-bold">{copy.accessionNumber}</span>}
+          status={<StatusBadge status={copy.availabilityStatus} />}
+          detail={(
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+              <div className="min-w-0"><dt className="font-semibold uppercase text-[#0b5ea2]/50 dark:text-white/50">Copy ID</dt><dd className="mt-0.5 break-all font-mono">{copy.barcode}</dd></div>
+              <div className="min-w-0"><dt className="font-semibold uppercase text-[#0b5ea2]/50 dark:text-white/50">Shelf</dt><dd className="mt-0.5 font-semibold">{copy.shelfLocation}</dd></div>
+            </dl>
+          )}
+          actions={(
+            <button type="button" onClick={() => setAssetCopyId(copy.physicalCopyId)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#0b5ea2] px-3 text-xs font-bold text-white hover:bg-[#004488]">
+              <Eye size={14} /> View Codes
+            </button>
+          )}
+        />
+      ))}
+    </MobileList>
+  )
+
   return <>
     <input
       ref={fileInputRef}
@@ -317,8 +417,8 @@ export function CatalogManagementPage() {
     </div>
 
     <SectionCard className="mb-5 p-5">
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <label className="relative md:col-span-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <label className="relative sm:col-span-2">
           <Search className="absolute left-3 top-3 text-[#0b5ea2]/50" size={16} />
           <span className="sr-only">Search catalog</span>
           <input
@@ -328,7 +428,7 @@ export function CatalogManagementPage() {
             className={`${fieldClass} pl-9`}
           />
         </label>
-        <div className="flex flex-wrap gap-2 md:col-span-1 xl:col-span-2">
+        <div className="flex flex-wrap gap-2 sm:col-span-1 xl:col-span-2">
           {([
             ['all', 'All'],
             ['books', 'Books'],
@@ -356,7 +456,7 @@ export function CatalogManagementPage() {
       </div>
 
       {advancedOpen ? (
-        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <select value={filters.categoryId} onChange={(event) => setFilters({ ...filters, categoryId: event.target.value })} className={fieldClass} aria-label="Category filter">
             <option value="">All categories</option>
             {categories.map((category) => <option key={category.categoryId} value={category.categoryId}>{category.categoryName}</option>)}
@@ -381,11 +481,8 @@ export function CatalogManagementPage() {
       </div>
     </SectionCard>
 
-    <SectionCard className="mb-5 overflow-hidden">
-      <div className="border-b border-[#0b5ea2]/15 px-5 py-3.5 dark:border-white/10">
-        <h2 className="font-bold text-[#0b5ea2] dark:text-white">Unified catalog results</h2>
-        <p className="mt-1 text-xs font-semibold text-[#0b5ea2]/55 dark:text-white/45">{items.length} titles matching current filters</p>
-      </div>
+    <div className="mb-5">
+    <TableShell title="Unified catalog results" subtitle={`${items.length} titles matching current filters`} mobileRows={titleMobileRows}>
       <div className={tableScrollClass}>
         <table className="w-full min-w-[960px] text-left text-sm">
           <thead className="sticky top-0 z-[2] bg-[#0b5ea2] text-white">
@@ -426,44 +523,24 @@ export function CatalogManagementPage() {
                 <td className="px-3 py-2 text-[#0b5ea2] dark:text-[#f2f6ff]">{item.publicationYear ?? '—'}</td>
                 <td className="px-3 py-2 font-mono text-xs text-[#0b5ea2] dark:text-[#f2f6ff]">{item.isbn ?? item.research?.researchCode ?? '—'}</td>
                 <td className="px-3 py-2"><StatusBadge status={item.availability} /></td>
-                <td className="px-3 py-2">
-                  <CatalogRowActions
-                    item={item}
-                    onViewDetails={() => setOverviewTitleId(item.titleId)}
-                    onViewCodes={() => {
-                      if (item.research?.researchInventoryId) setResearchAssetId(item.research.researchInventoryId)
-                    }}
-                    onChangeCategory={() => { setCategoryError(null); setCategoryItem(item) }}
-                    onQuotations={() => setQuotationItem({ titleId: item.titleId, title: item.title })}
-                    onArchive={() => { setArchiveReason(''); setArchiveItem(item) }}
-                  />
-                </td>
+                <td className="px-3 py-2">{renderRowActions(item)}</td>
               </tr>
             )) : (
               <tr>
-                <td colSpan={7} className="px-3 py-12 text-center">
-                  <BookOpen className="mx-auto text-[#0b5ea2]/40" size={32} />
-                  <p className="mt-3 font-display text-lg font-bold text-[#0b5ea2] dark:text-white">No records match these filters</p>
-                  <p className="mt-1 text-sm text-[#0b5ea2]/60 dark:text-white/55">Import existing stock from CSV or register a single title.</p>
-                  <div className="mt-5 flex flex-wrap justify-center gap-2">
-                    <button type="button" onClick={() => fileInputRef.current?.click()} className={secondaryButton}><Upload size={16} /> Import CSV</button>
-                    <button type="button" onClick={() => setForm('book')} className={primaryButton}><Plus size={16} /> Add book</button>
-                  </div>
-                </td>
+                <td colSpan={7}>{emptyCatalog}</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
-    </SectionCard>
+    </TableShell>
+    </div>
 
-    <SectionCard className="overflow-hidden">
-      <div className="border-b border-[#0b5ea2]/15 px-5 py-3.5 dark:border-white/10">
-        <h2 className="font-bold text-[#0b5ea2] dark:text-white">Physical copy register</h2>
-        <p className="mt-1 text-xs font-semibold text-[#0b5ea2]/55 dark:text-white/45">
-          {filteredCopies.length} of {copies.length} copies{filters.q.trim() ? ' matching search' : ' (latest page)'}
-        </p>
-      </div>
+    <TableShell
+      title="Physical copy register"
+      subtitle={`${filteredCopies.length} of ${copies.length} copies${filters.q.trim() ? ' matching search' : ' (latest page)'}`}
+      mobileRows={copyMobileRows}
+    >
       <div className={tableScrollClass}>
         <table className="w-full min-w-[880px] text-left text-sm">
           <thead className="sticky top-0 z-[2] bg-[#FFF200] text-[#0b5ea2]">
@@ -506,7 +583,7 @@ export function CatalogManagementPage() {
           </tbody>
         </table>
       </div>
-    </SectionCard>
+    </TableShell>
 
     {notice ? (
       <div className="fixed inset-0 z-[110] flex items-center justify-center bg-zinc-900/40 p-4 backdrop-blur-sm dark:bg-black/60 lg:left-[var(--sidebar-offset,0px)]">

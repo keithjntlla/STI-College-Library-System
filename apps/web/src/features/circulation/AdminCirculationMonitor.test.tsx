@@ -38,6 +38,18 @@ const monitor = {
   pagination: { page: 1, limit: 50, total: 1, totalPages: 1 },
 }
 
+function openTypedEntry() {
+  fireEvent.click(screen.getByRole('button', { name: /Type instead/i }))
+}
+
+function schoolIdInput() {
+  return screen.getByPlaceholderText(/Type school ID only if the scanner failed/i) as HTMLInputElement
+}
+
+function bookCodeInput() {
+  return screen.getByPlaceholderText(/Type accession or barcode only if the scanner failed/i) as HTMLInputElement
+}
+
 describe('AdminCirculationMonitor', () => {
   it('submits terminal checkout after confirmation and refreshes the monitor', async () => {
     api.monitor.mockResolvedValue(monitor)
@@ -45,11 +57,12 @@ describe('AdminCirculationMonitor', () => {
     render(<AdminCirculationMonitor />)
     fireEvent.click(await screen.findByRole('tab', { name: /Active loans/i }))
     expect(await screen.findByText('Database Systems')).toBeTruthy()
-    fireEvent.change(screen.getByPlaceholderText(/Manual Accession/i), { target: { value: 'BOOK-5' } })
-    fireEvent.change(screen.getByPlaceholderText(/Manual School ID/i), { target: { value: 'STI-5' } })
+    openTypedEntry()
+    fireEvent.change(bookCodeInput(), { target: { value: 'BOOK-5' } })
+    fireEvent.change(schoolIdInput(), { target: { value: 'STI-5' } })
     fireEvent.click(screen.getByRole('button', { name: /confirm checkout/i }))
     fireEvent.click(screen.getByRole('button', { name: /yes, check out/i }))
-    await waitFor(() => expect(api.confirmCheckout).toHaveBeenCalledWith('BOOK-5', 'STI-5'))
+    await waitFor(() => expect(api.confirmCheckout).toHaveBeenCalledWith('BOOK-5', 'STI-5', 'TakeHome'))
     expect(await screen.findByRole('dialog', { name: 'Success' })).toBeTruthy()
     expect(screen.getByText('Checkout confirmed successfully. The book is now an active loan.')).toBeTruthy()
   })
@@ -78,14 +91,15 @@ describe('AdminCirculationMonitor', () => {
     expect(screen.getByText('Circulation monitor')).toBeTruthy()
     expect(screen.getByRole('tab', { name: /Pending claim/i })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Verify borrower' }))
-    await waitFor(() => expect((screen.getByPlaceholderText(/Manual Accession/i) as HTMLInputElement).value).toBe('BOOK-4'))
-    expect((screen.getByPlaceholderText(/Manual School ID/i) as HTMLInputElement).value).toBe('STI-4')
+    openTypedEntry()
+    await waitFor(() => expect(bookCodeInput().value).toBe('BOOK-4'))
+    expect(schoolIdInput().value).toBe('STI-4')
     expect(await screen.findByAltText('A Student profile photo')).toBeTruthy()
     expect(screen.getByAltText('Computer Networks cover')).toBeTruthy()
     expect(screen.getByText('Shelf N-1')).toBeTruthy()
     expect(await screen.findByRole('dialog', { name: 'Success' })).toBeTruthy()
     expect(screen.getByText(/Confirm checkout after verifying/i)).toBeTruthy()
-    expect(screen.getByRole('button', { name: /open scanner/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Scan student or book/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /refresh/i })).toBeTruthy()
   })
 
@@ -114,10 +128,11 @@ describe('AdminCirculationMonitor', () => {
     render(<AdminCirculationMonitor />)
     expect(await screen.findByText('Clean Code')).toBeTruthy()
     fireEvent.click(screen.getAllByRole('button', { name: 'Verify borrower' })[0])
-    expect(await screen.findByText('Claim queue for this borrower')).toBeTruthy()
+    expect(await screen.findByText('Pending counter claims')).toBeTruthy()
     const claimButtons = screen.getAllByRole('button', { name: /Clean Code/i })
     fireEvent.click(claimButtons[claimButtons.length - 1])
-    await waitFor(() => expect((screen.getByPlaceholderText(/Manual Accession/i) as HTMLInputElement).value).toBe('BOOK-11'))
+    openTypedEntry()
+    await waitFor(() => expect(bookCodeInput().value).toBe('BOOK-11'))
   })
 
   it('filters the active monitor tab with desk search', async () => {
@@ -154,7 +169,7 @@ describe('AdminCirculationMonitor', () => {
       message: 'This student already has 2 active loans, which is the 2-book limit. Checkout is not allowed until a book is returned.',
     })
     render(<AdminCirculationMonitor />)
-    fireEvent.click(await screen.findByRole('button', { name: /open scanner/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Scan student or book/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Simulate student scan' }))
     expect(await screen.findByRole('alertdialog', { name: 'Action needed' })).toBeTruthy()
     expect(screen.getByText('Scanned student')).toBeTruthy()
@@ -162,7 +177,8 @@ describe('AdminCirculationMonitor', () => {
     expect(screen.getByText('STI-7')).toBeTruthy()
     expect(screen.getByText(/Student · BSIT/i)).toBeTruthy()
     expect(screen.getByText(/already has 2 active loans/i)).toBeTruthy()
-    expect((screen.getByPlaceholderText(/Manual School ID/i) as HTMLInputElement).value).toBe('')
+    openTypedEntry()
+    expect(schoolIdInput().value).toBe('')
     await new Promise((resolve) => setTimeout(resolve, 5200))
     expect(screen.getByRole('alertdialog', { name: 'Action needed' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'OK' }))
@@ -191,13 +207,14 @@ describe('AdminCirculationMonitor', () => {
       message: 'This student already has 2 active loans, which is the 2-book limit. Checkout is not allowed until a book is returned.',
     })
     render(<AdminCirculationMonitor />)
-    fireEvent.click(await screen.findByRole('button', { name: /open scanner/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Scan student or book/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Simulate student scan' }))
     expect(await screen.findByRole('dialog', { name: 'Scan book to return' })).toBeTruthy()
     expect(screen.getByText(/already has 2 active loans/i)).toBeTruthy()
     expect(screen.getByText('Clean Code')).toBeTruthy()
-    expect((screen.getByPlaceholderText(/Manual School ID/i) as HTMLInputElement).value).toBe('')
-    expect((screen.getByPlaceholderText(/Manual Accession/i) as HTMLInputElement).value).toBe('')
+    openTypedEntry()
+    expect(schoolIdInput().value).toBe('')
+    expect(bookCodeInput().value).toBe('')
     expect((screen.getByRole('button', { name: /confirm checkout/i }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.queryByRole('alertdialog', { name: 'Action needed' })).toBeNull()
   })
@@ -224,14 +241,15 @@ describe('AdminCirculationMonitor', () => {
       message: 'This student already has 2 active loans, which is the 2-book limit. Checkout is not allowed until a book is returned.',
     })
     render(<AdminCirculationMonitor />)
-    fireEvent.click(await screen.findByRole('button', { name: /open scanner/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Scan student or book/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Simulate student scan' }))
     expect(await screen.findByText('Clean Code')).toBeTruthy()
     expect(screen.getByText('Refactoring')).toBeTruthy()
     expect(screen.queryByRole('dialog', { name: 'Scan book to return' })).toBeNull()
     expect(screen.getAllByRole('button', { name: 'Process return' })).toHaveLength(2)
-    expect((screen.getByPlaceholderText(/Manual School ID/i) as HTMLInputElement).value).toBe('')
-    expect((screen.getByPlaceholderText(/Manual Accession/i) as HTMLInputElement).value).toBe('')
+    openTypedEntry()
+    expect(schoolIdInput().value).toBe('')
+    expect(bookCodeInput().value).toBe('')
     expect((screen.getByRole('button', { name: /confirm checkout/i }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getAllByRole('button', { name: 'Process return' })[0])
     expect(await screen.findByRole('dialog', { name: 'Scan book to return' })).toBeTruthy()
@@ -255,11 +273,12 @@ describe('AdminCirculationMonitor', () => {
       message: null,
     })
     render(<AdminCirculationMonitor />)
-    fireEvent.click(await screen.findByRole('button', { name: /open scanner/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Scan student or book/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Simulate student scan' }))
     expect(await screen.findByText('Scanned student')).toBeTruthy()
     expect(screen.getAllByText('Ada Student').length).toBeGreaterThan(0)
-    expect((screen.getByPlaceholderText(/Manual School ID/i) as HTMLInputElement).value).toBe('STI-7')
+    openTypedEntry()
+    expect(schoolIdInput().value).toBe('STI-7')
     expect(screen.getByRole('dialog', { name: 'Success' })).toBeTruthy()
     await new Promise((resolve) => setTimeout(resolve, 4000))
     expect(screen.getByRole('dialog', { name: 'Success' })).toBeTruthy()

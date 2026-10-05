@@ -2,7 +2,7 @@ import { ViewLocationButton } from '../floor-plan/ViewLocationButton'
 import { Book, Check, ChevronDown, Clipboard, Info, MapPin, ShoppingBag, X } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ConfirmModal } from '../../components/ui'
+import { ConfirmModal, StatusModal } from '../../components/ui'
 import type { AuthRole } from '../auth/auth-storage'
 import { fetchBookCatalog, fetchBookOverview, reserveBookTitle } from './book-catalog-api'
 import { STUDENT_BOOK_LIMIT, validateBookCartAddition, validateStudentBookCommitment } from './book-cart'
@@ -41,6 +41,7 @@ export function BookOverview({
   const [book, setBook] = useState<BookCatalogItem | null>(null)
   const [related, setRelated] = useState<BookCatalogItem[]>([])
   const [error, setError] = useState('')
+  const [limitWarning, setLimitWarning] = useState('')
   const [notice, setNotice] = useState<ReactNode>(null)
   const [citationVisible, setCitationVisible] = useState(false)
   const [copiesOpen, setCopiesOpen] = useState(false)
@@ -111,11 +112,13 @@ export function BookOverview({
     const validation = validateBookCartAddition({ role, activeBookCount, selectedBookCount, alreadySelected, bookLimit })
     if (!validation.allowed) {
       setNotice(null)
-      setError(validation.message ?? 'This book cannot be added to the cart.')
+      setError('')
+      setLimitWarning(validation.message ?? 'This book cannot be added to the cart.')
       return
     }
     if (alreadySelected) {
       setError('')
+      setLimitWarning('')
       setNotice(validation.message ?? 'This book is already in your borrow cart.')
       return
     }
@@ -127,6 +130,7 @@ export function BookOverview({
     onAddToCart(book)
     setConfirmCart(false)
     setError('')
+    setLimitWarning('')
     setNotice(
       <span>
         {book.title} was added to your borrow cart.{' '}
@@ -140,17 +144,24 @@ export function BookOverview({
     const commitment = validateStudentBookCommitment({ role, activeBookCount, selectedBookCount, bookLimit })
     if (!commitment.allowed) {
       setNotice(null)
-      setError(commitment.message ?? 'Reservation blocked.')
+      setError('')
+      setLimitWarning(commitment.message ?? 'Reservation blocked.')
       return
     }
     setReserving(true)
     setError('')
+    setLimitWarning('')
     setNotice(null)
     try {
       const reservation = await reserveBookTitle(book.titleId)
       setNotice(`Reservation submitted. You are number ${reservation.queuePosition} in the queue.`)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'The reservation could not be submitted.')
+      const message = reason instanceof Error ? reason.message : 'The reservation could not be submitted.'
+      if (message.includes('cannot exceed 2 books') || message.includes('active book commitments')) {
+        setLimitWarning(message)
+      } else {
+        setError(message)
+      }
     } finally {
       setReserving(false)
     }
@@ -210,6 +221,14 @@ export function BookOverview({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+          {limitWarning ? (
+            <StatusModal
+              type="warning"
+              title="Borrowing limit reached"
+              description={limitWarning}
+              onClose={() => setLimitWarning('')}
+            />
+          ) : null}
           {error ? <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
           {notice ? <div role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-400">{notice}</div> : null}
 

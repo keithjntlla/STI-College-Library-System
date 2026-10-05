@@ -1,12 +1,13 @@
 import { BookOpen, ChevronLeft, ChevronRight, Eye, LayoutGrid, List, MapPin, RefreshCw, ShoppingBag } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { StatusModal } from '../../components/ui'
 import { getCurrentClaims } from '../auth/auth-storage'
 import { BookOverview } from './BookOverview'
-import { fetchBookCatalog, reserveBookTitle } from './book-catalog-api'
+import { fetchBookCatalog, fetchCatalogPrograms, reserveBookTitle } from './book-catalog-api'
 import { catalogActionLabel, STUDENT_BOOK_LIMIT, validateBookCartAddition, validateStudentBookCommitment } from './book-cart'
 import { useBookCart } from './book-cart-store'
-import type { BookCatalogItem, BookCatalogViewer, Pagination } from './book-catalog-types'
+import type { BookCatalogItem, BookCatalogViewer, CatalogProgram, Pagination } from './book-catalog-types'
 import { BookCoverThumbnail } from './BookCoverThumbnail'
 import { CatalogAvailabilityBadge } from './CatalogAvailabilityBadge'
 import { CategoryFilterSearchBar } from './CategoryFilterSearchBar'
@@ -19,6 +20,8 @@ export function BookCatalog() {
   const claims = getCurrentClaims()
   const [query, setQuery] = useState(() => searchParams.get('query')?.trim() ?? '')
   const [debouncedQuery, setDebouncedQuery] = useState(() => searchParams.get('query')?.trim() ?? '')
+  const [programId, setProgramId] = useState<number | null>(null)
+  const [programs, setPrograms] = useState<CatalogProgram[]>([])
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [availableOnly, setAvailableOnly] = useState(false)
   const [sort, setSort] = useState<'available_first' | 'title'>('available_first')
@@ -33,6 +36,7 @@ export function BookCatalog() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [reserving, setReserving] = useState<number | null>(null)
   const [error, setError] = useState('')
+  const [limitWarning, setLimitWarning] = useState('')
   const [notice, setNotice] = useState<ReactNode>(null)
   const hasBooksRef = useRef(false)
 
@@ -54,6 +58,14 @@ export function BookCatalog() {
     return () => window.clearTimeout(timer)
   }, [query])
 
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchCatalogPrograms(controller.signal)
+      .then((rows) => { if (!controller.signal.aborted) setPrograms(rows) })
+      .catch(() => { if (!controller.signal.aborted) setPrograms([]) })
+    return () => controller.abort()
+  }, [])
+
   const loadBooks = useCallback(async (signal?: AbortSignal) => {
     const soft = hasBooksRef.current
     if (soft) setIsFetching(true)
@@ -63,6 +75,7 @@ export function BookCatalog() {
       const result = await fetchBookCatalog({
         query: debouncedQuery,
         categoryId: categoryId ?? undefined,
+        programId: programId ?? undefined,
         availableOnly,
         sort,
         page,
@@ -81,7 +94,7 @@ export function BookCatalog() {
         setIsFetching(false)
       }
     }
-  }, [availableOnly, categoryId, debouncedQuery, page, sort])
+  }, [availableOnly, categoryId, debouncedQuery, page, programId, sort])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -116,11 +129,13 @@ export function BookCatalog() {
     })
     if (!validation.allowed) {
       setNotice(null)
-      setError(validation.message ?? 'This book cannot be added to the cart.')
+      setError('')
+      setLimitWarning(validation.message ?? 'This book cannot be added to the cart.')
       return
     }
     if (!cartBooks.has(book.titleId)) addItem(book)
     setError('')
+    setLimitWarning('')
     setNotice(
       <span>
         {validation.message ?? `${book.title} was added to your borrow cart.`}{' '}
@@ -138,18 +153,25 @@ export function BookCatalog() {
     })
     if (!commitment.allowed) {
       setNotice(null)
-      setError(commitment.message ?? 'Reservation blocked.')
+      setError('')
+      setLimitWarning(commitment.message ?? 'Reservation blocked.')
       return
     }
     setReserving(book.titleId)
     setError('')
+    setLimitWarning('')
     setNotice(null)
     try {
       const reservation = await reserveBookTitle(book.titleId)
       setNotice(`Reservation submitted. You are number ${reservation.queuePosition} in the queue.`)
       await loadBooks()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'The reservation could not be submitted.')
+      const message = reason instanceof Error ? reason.message : 'The reservation could not be submitted.'
+      if (message.includes('cannot exceed 2 books') || message.includes('active book commitments')) {
+        setLimitWarning(message)
+      } else {
+        setError(message)
+      }
     } finally {
       setReserving(null)
     }
@@ -187,13 +209,41 @@ export function BookCatalog() {
         </div>
       </section>
 
+      {limitWarning ? (
+        <StatusModal
+          type="warning"
+          title="Borrowing limit reached"
+          description={limitWarning}
+          onClose={() => setLimitWarning('')}
+        />
+      ) : null}
       {error ? <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
       {notice ? <div role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-400">{notice}</div> : null}
 
-      <div className="mb-4">
+      <div className="mb-4 space-y-3">
+        <label className="block max-w-md">
+          <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-[#0b5ea2]/70 dark:text-white/55">Course</span>
+          <select
+            aria-label="Filter by course"
+            value={programId ?? ''}
+            onChange={(event) => {
+              const next = event.target.value ? Number(event.target.value) : null
+              setProgramId(Number.isSafeInteger(next) && next !== null && next > 0 ? next : null)
+              setCategoryId(null)
+              setPage(1)
+            }}
+            className="h-11 w-full rounded-xl border border-[#0b5ea2]/15 bg-white px-3 text-sm font-semibold text-[#0b5ea2] outline-none focus:border-[#0b5ea2] focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-white/15 dark:bg-[#001a4d] dark:text-[#f2f6ff]"
+          >
+            <option value="">All courses</option>
+            {programs.map((program) => (
+              <option key={program.programId} value={program.programId}>{program.programName}</option>
+            ))}
+          </select>
+        </label>
         <CategoryFilterSearchBar
           query={query}
           selectedCategoryId={categoryId}
+          programId={programId}
           onQueryChange={setQuery}
           onCategoryChange={(nextCategoryId) => {
             setCategoryId(nextCategoryId)
@@ -272,7 +322,7 @@ export function BookCatalog() {
       ) : null}
 
       {books.length > 0 ? (
-        <div className={`transition-opacity duration-300 ${isFetching ? 'pointer-events-none opacity-40' : 'opacity-100'} ${viewMode === 'grid' ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' : 'grid gap-4'}`}>
+        <div className={`transition-opacity duration-300 ${isFetching ? 'pointer-events-none opacity-40' : 'opacity-100'} ${viewMode === 'grid' ? 'grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' : 'grid gap-4'}`}>
           {books.map((book) => {
             const action = catalogActionLabel(book.availableCopiesCount)
             const inCart = cartBooks.has(book.titleId)

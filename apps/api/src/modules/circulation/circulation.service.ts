@@ -81,7 +81,7 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
       const offset = (filters.page - 1) * filters.limit
       const [[rows], [countRows], [activityRows]] = await Promise.all([
         database.execute<RowDataPacket[]>(
-          `SELECT bt.transaction_id, bt.borrowed_at, bt.due_at, bt.returned_at,
+          `SELECT bt.transaction_id, bt.borrowed_at, bt.due_at, bt.returned_at, bt.lost_confirmed_at,
               CASE WHEN bt.transaction_status = 'Borrowed' AND bt.due_at < NOW() THEN 'Overdue' ELSE bt.transaction_status END AS transaction_status,
               t.title_id, COALESCE(t.title, m.title) AS title, COALESCE(credits.author, m.author, 'Unknown author') AS author,
               t.cover_image_path,
@@ -98,9 +98,9 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
         database.execute<RowDataPacket[]>('SELECT COUNT(*) AS total FROM borrow_transactions WHERE user_id = ?', [userId]),
         database.execute<RowDataPacket[]>(
           `SELECT
-             (SELECT COUNT(*) FROM borrow_transactions WHERE user_id = ? AND transaction_status IN ${ACTIVE_LOANS}) AS active_loans,
+             (SELECT COUNT(*) FROM borrow_transactions WHERE user_id = ? AND transaction_status IN ${ACTIVE_LOANS} AND lost_confirmed_at IS NULL) AS active_loans,
              (SELECT COUNT(*) FROM reservations WHERE user_id = ? AND reservation_status IN ${ACTIVE_RESERVATIONS}) AS active_reservations,
-             (SELECT MIN(due_at) FROM borrow_transactions WHERE user_id = ? AND transaction_status IN ('Borrowed','Overdue')) AS next_due_at`,
+             (SELECT MIN(due_at) FROM borrow_transactions WHERE user_id = ? AND transaction_status IN ('Borrowed','Overdue') AND lost_confirmed_at IS NULL) AS next_due_at`,
           [userId, userId, userId],
         ),
       ])
@@ -114,7 +114,9 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
         items: rows.map((row) => ({ transactionId: Number(row.transaction_id), titleId: row.title_id ? Number(row.title_id) : null, title: row.title ?? 'Catalog title unavailable', author: row.author,
           coverImagePath: row.cover_image_path ? String(row.cover_image_path) : null,
           accessionNumber: row.accession_number ?? null, barcode: row.barcode ?? null, borrowDate: row.borrowed_at, dueDate: row.due_at,
-          returnDate: row.returned_at, status: String(row.transaction_status), lostReportStatus: row.lost_report_status ? String(row.lost_report_status) : null })),
+          returnDate: row.returned_at, status: String(row.transaction_status),
+          lostConfirmedAt: row.lost_confirmed_at ? String(row.lost_confirmed_at) : null,
+          lostReportStatus: row.lost_report_status ? String(row.lost_report_status) : null })),
         pagination: { page: filters.page, limit: filters.limit, total, totalPages: Math.ceil(total / filters.limit) },
       }
     },
@@ -141,6 +143,7 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
                  FROM borrow_transactions bt
                  INNER JOIN physical_copies pc_active ON pc_active.physical_copy_id = bt.physical_copy_id
                 WHERE bt.user_id = ? AND bt.transaction_status IN ${ACTIVE_LOANS}
+                  AND bt.lost_confirmed_at IS NULL
                UNION ALL
                SELECT r.book_title_id
                  FROM reservations r
@@ -557,7 +560,7 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
           const [capacityRows] = await connection.execute<RowDataPacket[]>(
             `SELECT COUNT(DISTINCT activity.title_id) AS active_count, ${isPostgres ? 'COUNT(*) FILTER (WHERE activity.title_id = ?) > 0' : 'MAX(activity.title_id = ?)'} AS target_already_active FROM (
                SELECT pc_active.title_id FROM borrow_transactions bt INNER JOIN physical_copies pc_active ON pc_active.physical_copy_id = bt.physical_copy_id
-                WHERE bt.user_id = ? AND bt.transaction_status IN ${ACTIVE_LOANS}
+                WHERE bt.user_id = ? AND bt.transaction_status IN ${ACTIVE_LOANS} AND bt.lost_confirmed_at IS NULL
                UNION ALL SELECT r.book_title_id FROM reservations r WHERE r.user_id = ? AND r.reservation_status IN ${ACTIVE_RESERVATIONS} AND r.book_title_id IS NOT NULL
              ) activity`, [copy.title_id, borrower.user_id, borrower.user_id],
           )

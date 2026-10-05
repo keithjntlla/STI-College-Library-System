@@ -5,7 +5,7 @@ import { HttpError } from '../../core/http-error.ts'
 import { createReservationService } from './reservation.service.ts'
 
 function reservationPool(role: 'Student' | 'Faculty', activeCount: number, materialType = 'Book', activeBorrowStatus: string | null = null) {
-  const state = { commits: 0, rollbacks: 0, releases: 0, inserted: false, activeCountQueried: false }
+  const state = { commits: 0, rollbacks: 0, releases: 0, inserted: false, activeCountQueried: false, capacitySql: '', conflictSql: '' }
   const connection = {
     async beginTransaction() {}, async commit() { state.commits += 1 }, async rollback() { state.rollbacks += 1 }, release() { state.releases += 1 },
     async execute(sql: string) {
@@ -15,9 +15,16 @@ function reservationPool(role: 'Student' | 'Faculty', activeCount: number, mater
         { physical_copy_id: 31, material_id: 17, availability_status: 'Borrowed' },
         { physical_copy_id: 32, material_id: 18, availability_status: 'Reserved' },
       ]]
-      if (sql.includes('FROM borrow_transactions bt') && sql.includes('borrowed_material')) return [activeBorrowStatus ? [{ transaction_id: 71, transaction_status: activeBorrowStatus }] : []]
+      if (sql.includes('FROM borrow_transactions bt') && sql.includes('borrowed_material')) {
+        state.conflictSql = sql
+        return [activeBorrowStatus ? [{ transaction_id: 71, transaction_status: activeBorrowStatus }] : []]
+      }
       if (sql.includes('SELECT r.reservation_id')) return [[]]
-      if (sql.includes('COUNT(DISTINCT COALESCE(active.title_id')) { state.activeCountQueried = true; return [[{ active_count: activeCount }]] }
+      if (sql.includes('COUNT(DISTINCT COALESCE(active.title_id')) {
+        state.activeCountQueried = true
+        state.capacitySql = sql
+        return [[{ active_count: activeCount }]]
+      }
       if (sql.includes('MAX(r.queue_position)')) return [[{ next_position: 3 }]]
       if (sql.includes('INSERT INTO reservations')) { state.inserted = true; return [{ insertId: 501, affectedRows: 1 }] }
       if (sql.includes('INSERT INTO admin_notifications') || sql.includes('INTO notifications')) return [{ insertId: 900, affectedRows: 1 }]
@@ -39,6 +46,14 @@ test('Student with two active books receives 422 and no third reservation insert
   assert.equal(state.inserted, false)
   assert.equal(state.commits, 0)
   assert.equal(state.rollbacks, 1)
+  assert.match(state.capacitySql, /lost_confirmed_at IS NULL/)
+})
+
+test('Student capacity SQL excludes confirmed losses so a waived loss does not fill a slot', async () => {
+  const { state, database } = reservationPool('Student', 0)
+  await createReservationService(database).create(4, { materialId: 17 })
+  assert.match(state.capacitySql, /lost_confirmed_at IS NULL/)
+  assert.match(state.conflictSql, /lost_confirmed_at IS NULL/)
 })
 
 test('Faculty with ten or more active books bypasses the cap and creates a reservation', async () => {

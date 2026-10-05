@@ -35,6 +35,7 @@ async function findActiveBorrowConflict(connection: import('mysql2/promise').Poo
          OR (bt.physical_copy_id IS NULL AND borrowed_copy.material_id = bt.material_id)
       WHERE bt.user_id = ?
         AND bt.transaction_status IN ('Pending','Borrowed','Overdue')
+        AND bt.lost_confirmed_at IS NULL
         AND (? = 0 OR bt.reservation_id IS NULL OR bt.reservation_id <> ?)
         AND (
           (${nullableId} IS NOT NULL AND borrowed_copy.title_id = ?)
@@ -193,6 +194,7 @@ export function createReservationService(database: Pool = db) {
                      ON bpc.physical_copy_id = bt.physical_copy_id
                      OR (bt.physical_copy_id IS NULL AND bpc.material_id = bt.material_id)
                   WHERE bt.user_id = ? AND bt.transaction_status IN ('Pending','Borrowed','Overdue')
+                    AND bt.lost_confirmed_at IS NULL
                ) active JOIN materials am ON am.material_id = active.material_id
               WHERE am.material_type = 'Book'`, [userId, userId],
           )

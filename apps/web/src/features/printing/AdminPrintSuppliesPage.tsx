@@ -1,6 +1,6 @@
 import { Download, Droplets, PackageOpen, Plus, RefreshCw, Settings2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Button, ConfirmModal, PageHeader, SectionCard, StatCard, StatusBadge, StatusModal } from '../../components/ui'
+import { Button, ConfirmModal, MobileList, MobileListItem, PageHeader, SectionCard, StatCard, StatusBadge, StatusModal, TableShell } from '../../components/ui'
 import {
   printingApi,
   type ExpenseSummary,
@@ -299,9 +299,33 @@ export function AdminPrintSuppliesPage() {
         <StatCard label="Printing revenue" value={money(revenue?.total_revenue)} />
       </div>
 
-      <SectionCard className="mb-5 overflow-hidden">
-        <div className="border-b border-[#0b5ea2]/15 p-5"><h2 className="font-bold text-[#0b5ea2]">Revenue details</h2></div>
-        <div className="overflow-x-auto">
+<div className="mb-5">
+        <TableShell
+          title="Revenue details"
+          mobileRows={(
+            <MobileList empty={reportLoading
+              ? <p className="px-5 py-10 text-center text-[#0b5ea2] dark:text-white">Loading revenue…</p>
+              : revenueEntries.length === 0
+                ? <p className="px-5 py-10 text-center font-semibold text-[#0b5ea2] dark:text-white">No paid printing requests for this period.</p>
+                : null}
+            >
+              {reportLoading ? null : revenueEntries.map((row) => (
+                <MobileListItem
+                  key={row.request_id}
+                  title={`#${row.request_id} · ${row.full_name}`}
+                  meta={`${row.school_id} · ${new Date(row.received_at).toLocaleString()}`}
+                  status={<span className="font-bold text-[#0b5ea2] dark:text-white">{money(row.amount_paid)}</span>}
+                  detail={(
+                    <div className="space-y-1 text-xs">
+                      <p className="truncate font-semibold">{row.file_name}</p>
+                      <p>{row.print_type} · {row.paper_size} · {row.page_count} pages × {row.number_of_copies} ({row.total_sheets} sheets)</p>
+                    </div>
+                  )}
+                />
+              ))}
+            </MobileList>
+          )}
+        >
           <table className="w-full min-w-[1050px] text-left text-sm">
             <thead className="bg-[#0b5ea2] text-[#FFFFFF]"><tr>{['Date', 'Request', 'Student', 'File', 'Type', 'Paper', 'Pages', 'Copies', 'Sheets', 'Revenue'].map((label) => <th key={label} className="px-3 py-3 text-xs uppercase">{label}</th>)}</tr></thead>
             <tbody className="divide-y divide-[#0b5ea2]/10">
@@ -323,8 +347,8 @@ export function AdminPrintSuppliesPage() {
                   ))}
             </tbody>
           </table>
-        </div>
-      </SectionCard>
+        </TableShell>
+      </div>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Restock entries" value={String(expenses?.restock_entries ?? 0)} icon={RefreshCw} />
@@ -333,9 +357,34 @@ export function AdminPrintSuppliesPage() {
         <StatCard label="Total restock expenses" value={money(expenses?.total_expenses)} />
       </div>
 
-      <SectionCard className="mb-5 overflow-hidden">
-        <div className="border-b border-[#0b5ea2]/15 p-5"><h2 className="font-bold text-[#0b5ea2]">Restock history</h2></div>
-        <div className="overflow-x-auto">
+<div className="mb-5">
+        <TableShell
+          title="Restock history"
+          mobileRows={(
+            <MobileList empty={reportLoading
+              ? <p className="px-5 py-10 text-center text-[#0b5ea2] dark:text-white">Loading restock history…</p>
+              : restocks.length === 0
+                ? <p className="px-5 py-10 text-center font-semibold text-[#0b5ea2] dark:text-white">No restocks for this period.</p>
+                : null}
+            >
+              {reportLoading ? null : restocks.map((row, index) => (
+                <MobileListItem
+                  key={`${row.created_at}-${index}`}
+                  title={row.supply_name}
+                  meta={`${row.supply_type} · ${new Date(row.created_at).toLocaleString()}`}
+                  status={<span className="font-bold text-[#0b5ea2] dark:text-white">{money(row.total_expense)}</span>}
+                  detail={(
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <span>{whole(row.quantity)} {row.unit} @ {money(row.unit_cost)}</span>
+                      <span>{whole(row.balance_before, 'Legacy')} → {whole(row.balance_after, 'Legacy')}</span>
+                      <span className="col-span-2">By {row.recorded_by ?? 'System'}</span>
+                    </div>
+                  )}
+                />
+              ))}
+            </MobileList>
+          )}
+        >
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="bg-[#0b5ea2] text-[#FFFFFF]"><tr>{['Date', 'Type', 'Supply', 'Quantity', 'Unit cost', 'Total expense', 'Before', 'After', 'Recorded by'].map((label) => <th key={label} className="px-3 py-3 text-xs uppercase">{label}</th>)}</tr></thead>
             <tbody className="divide-y divide-[#0b5ea2]/10">
@@ -356,15 +405,38 @@ export function AdminPrintSuppliesPage() {
                   ))}
             </tbody>
           </table>
-        </div>
-      </SectionCard>
+        </TableShell>
+      </div>
 
-      <SectionCard className="overflow-hidden">
-        <div className="border-b border-[#0b5ea2]/15 p-5">
-          <h2 className="font-bold text-[#0b5ea2]">Manual stock usage</h2>
-          <p className="mt-1 text-xs text-[#0b5ea2]/65">Bottles and reams staff opened during this period (latest 20).</p>
-        </div>
-        <div className="overflow-x-auto">
+      <TableShell
+        title="Manual stock usage"
+        subtitle="Bottles and reams staff opened during this period (latest 20)."
+        mobileRows={(
+          <MobileList empty={reportLoading
+            ? <p className="px-5 py-10 text-center text-[#0b5ea2] dark:text-white">Loading usage…</p>
+            : usageEntries.length === 0
+              ? <p className="px-5 py-10 text-center font-semibold text-[#0b5ea2] dark:text-white">No bottles or reams were opened in this period.</p>
+              : null}
+          >
+            {reportLoading ? null : usageEntries.map((row, index) => (
+              <MobileListItem
+                key={`${row.created_at}-${index}`}
+                title={row.supply_name}
+                meta={`${row.supply_type} · ${new Date(row.created_at).toLocaleString()}`}
+                status={<span className="text-xs font-bold text-[#0b5ea2] dark:text-white">{row.activity_code === 'LoadedIntoPrinter' ? 'Bottle opened' : 'Ream opened'}</span>}
+                detail={(
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <span>{whole(row.quantity)} {row.unit}</span>
+                    <span>{whole(row.balance_before)} → {whole(row.balance_after)}</span>
+                    <span className="col-span-2">By {row.recorded_by ?? 'System'}</span>
+                  </div>
+                )}
+              />
+            ))}
+          </MobileList>
+        )}
+      >
+        <div>
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="bg-[#0b5ea2] text-[#FFFFFF]"><tr>{['Date', 'Type', 'Supply', 'Action', 'Quantity', 'Before', 'After', 'Recorded by'].map((label) => <th key={label} className="px-3 py-3 text-xs uppercase">{label}</th>)}</tr></thead>
             <tbody className="divide-y divide-[#0b5ea2]/10">
@@ -385,7 +457,7 @@ export function AdminPrintSuppliesPage() {
             </tbody>
           </table>
         </div>
-      </SectionCard>
+      </TableShell>
     </>}
 
     {usage ? (
