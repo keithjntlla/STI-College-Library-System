@@ -30,6 +30,31 @@ function requireLibrarian(actor: ClearanceActor) {
   if (actor.role !== 'Librarian') throw new HttpError(403, 'CLEARANCE_LIBRARIAN_ONLY', 'Only Librarian accounts can manage lost-book charges.')
 }
 
+/** Confirmed losses that still block standing: awaiting quotation, or quoted and unpaid. */
+function isOpenConfirmedLost(row: { report_status?: unknown; charge_resolution?: unknown; payment_status?: unknown }) {
+  if (String(row.report_status) !== 'Confirmed') return false
+  const resolution = String(row.charge_resolution ?? '')
+  if (resolution === 'Waived') return false
+  if (String(row.payment_status) === 'Paid') return false
+  return resolution === 'Awaiting Quotation' || resolution === 'Quoted'
+}
+
+function openConfirmedLostReasons(lostRows: Array<{ report_status?: unknown; charge_resolution?: unknown; payment_status?: unknown; replacement_charge?: unknown }>) {
+  const open = lostRows.filter(isOpenConfirmedLost)
+  const awaitingQuotation = open.filter((row) => String(row.charge_resolution) === 'Awaiting Quotation').length
+  const unpaidQuoted = open.filter((row) => String(row.charge_resolution) === 'Quoted' && String(row.payment_status) === 'Unpaid')
+  const unpaidReplacement = unpaidQuoted.reduce((sum, row) => sum + Number(row.replacement_charge ?? 0), 0)
+  return {
+    openConfirmedLosses: open.length,
+    awaitingQuotation,
+    unpaidReplacement,
+    reasons: [
+      awaitingQuotation ? `${awaitingQuotation} confirmed lost ${awaitingQuotation === 1 ? 'book' : 'books'} awaiting quotation` : '',
+      unpaidReplacement > 0 ? `PHP ${unpaidReplacement.toFixed(2)} unpaid lost-book replacement charges` : '',
+    ].filter(Boolean),
+  }
+}
+
 export function createClearanceService(database: Pool = db) {
   async function aggregateStudents() {
     const [rows] = await database.execute<RowDataPacket[]>(
@@ -37,6 +62,8 @@ export function createClearanceService(database: Pool = db) {
               COALESCE(loans.active_loans,0) AS active_loans,
               COALESCE(fines.unpaid_fines,0) AS unpaid_fines,
               COALESCE(losses.unpaid_replacement,0) AS unpaid_replacement,
+              COALESCE(losses.open_confirmed_losses,0) AS open_confirmed_losses,
+              COALESCE(losses.awaiting_quotation,0) AS awaiting_quotation,
               active_override.clearance_override_id,active_override.override_status,active_override.reason AS override_reason
          FROM users u
          LEFT JOIN (
@@ -55,8 +82,13 @@ export function createClearanceService(database: Pool = db) {
             WHERE f.payment_status IN ('Accruing','Unpaid','Partially Paid') GROUP BY f.user_id
          ) fines ON fines.user_id=u.user_id
          LEFT JOIN (
-           SELECT user_id,SUM(replacement_charge) AS unpaid_replacement FROM lost_book_reports
-            WHERE report_status='Confirmed' AND charge_resolution='Quoted' AND payment_status='Unpaid' GROUP BY user_id
+           SELECT user_id,
+                  SUM(CASE WHEN charge_resolution='Quoted' AND payment_status='Unpaid' THEN replacement_charge ELSE 0 END) AS unpaid_replacement,
+                  SUM(CASE WHEN charge_resolution IN ('Awaiting Quotation','Quoted') AND payment_status<>'Paid' THEN 1 ELSE 0 END) AS open_confirmed_losses,
+                  SUM(CASE WHEN charge_resolution='Awaiting Quotation' THEN 1 ELSE 0 END) AS awaiting_quotation
+             FROM lost_book_reports
+            WHERE report_status='Confirmed' AND charge_resolution<>'Waived'
+            GROUP BY user_id
          ) losses ON losses.user_id=u.user_id
          LEFT JOIN clearance_overrides active_override
            ON active_override.clearance_override_id=(
@@ -71,13 +103,26 @@ export function createClearanceService(database: Pool = db) {
       const activeLoans = Number(row.active_loans ?? 0)
       const unpaidFines = Number(row.unpaid_fines ?? 0)
       const unpaidReplacement = Number(row.unpaid_replacement ?? 0)
-      const computedStatus = activeLoans || unpaidFines > 0 || unpaidReplacement > 0 ? 'Not Cleared' : 'Cleared'
+      const openConfirmedLosses = Number(row.open_confirmed_losses ?? 0)
+      const awaitingQuotation = Number(row.awaiting_quotation ?? 0)
+      const computedStatus = activeLoans || unpaidFines > 0 || openConfirmedLosses > 0 ? 'Not Cleared' : 'Cleared'
       const status = row.override_status ? String(row.override_status) : computedStatus
-      const reasons = [activeLoans ? `${activeLoans} unreturned ${activeLoans === 1 ? 'book' : 'books'}` : '', unpaidFines ? `PHP ${unpaidFines.toFixed(2)} unpaid overdue fines` : '', unpaidReplacement ? `PHP ${unpaidReplacement.toFixed(2)} unpaid lost-book replacement charges` : ''].filter(Boolean)
+      const reasons = [
+        activeLoans ? `${activeLoans} unreturned ${activeLoans === 1 ? 'book' : 'books'}` : '',
+        unpaidFines ? `PHP ${unpaidFines.toFixed(2)} unpaid overdue fines` : '',
+        awaitingQuotation ? `${awaitingQuotation} confirmed lost ${awaitingQuotation === 1 ? 'book' : 'books'} awaiting quotation` : '',
+        unpaidReplacement ? `PHP ${unpaidReplacement.toFixed(2)} unpaid lost-book replacement charges` : '',
+      ].filter(Boolean)
       return {
         student: { userId: Number(row.user_id), schoolId: String(row.school_id), name: String(row.full_name), program: row.course_or_strand ?? null, section: row.section ?? null, accountStatus: String(row.account_status) },
         status, computedStatus, reason: row.override_status ? `Authorized override: ${row.override_reason}` : reasons.join('; ') || 'No library obligations', checkedAt: new Date(),
-        summary: { activeLoans, unpaidOverdueFines: unpaidFines, unpaidReplacementCharges: unpaidReplacement, totalOutstanding: unpaidFines + unpaidReplacement, blockCount: activeLoans + (unpaidFines > 0 ? 1 : 0) + (unpaidReplacement > 0 ? 1 : 0) },
+        summary: {
+          activeLoans,
+          unpaidOverdueFines: unpaidFines,
+          unpaidReplacementCharges: unpaidReplacement,
+          totalOutstanding: unpaidFines + unpaidReplacement,
+          blockCount: activeLoans + (unpaidFines > 0 ? 1 : 0) + openConfirmedLosses,
+        },
         loans: [], fines: [], lostBooks: [], activeOverride: row.clearance_override_id ? { overrideId: Number(row.clearance_override_id), status: String(row.override_status), reason: String(row.override_reason) } : null, overrideHistory: [],
       }
     })
@@ -90,7 +135,9 @@ export function createClearanceService(database: Pool = db) {
            FROM users u WHERE u.user_id = ? AND u.user_role IN ('Student','Faculty') LIMIT 1`, [userId],
       ),
       database.execute<RowDataPacket[]>(
-        `SELECT bt.transaction_id, bt.transaction_status, bt.borrowed_at, bt.due_at,
+        `SELECT bt.transaction_id,
+                CASE WHEN bt.transaction_status = 'Borrowed' AND bt.due_at < NOW() THEN 'Overdue' ELSE bt.transaction_status END AS transaction_status,
+                bt.borrowed_at, bt.due_at,
                 COALESCE(t.title,m.title) AS title, COALESCE(pc.accession_number,m.barcode) AS accession_number,
                 CASE WHEN bt.due_at IS NULL OR bt.due_at >= NOW() THEN 0
                      ELSE CEIL(${timestampDiffSeconds('bt.due_at', 'NOW()')}/3600) END AS overdue_hours,
@@ -151,17 +198,16 @@ export function createClearanceService(database: Pool = db) {
     const user = userRows[0]
     if (!user) throw new HttpError(404, 'CLEARANCE_STUDENT_NOT_FOUND', 'The student profile was not found.')
     const unpaidFines = fineRows.reduce((sum, row) => sum + Number(row.fine_amount ?? 0), 0)
-    const unpaidReplacement = lostRows
-      .filter((row) => row.report_status === 'Confirmed' && row.charge_resolution === 'Quoted' && row.payment_status === 'Unpaid')
-      .reduce((sum, row) => sum + Number(row.replacement_charge ?? 0), 0)
+    const lostStanding = openConfirmedLostReasons(lostRows)
+    const unpaidReplacement = lostStanding.unpaidReplacement
     const activeLoans = loanRows.length
-    const computedStatus = activeLoans || unpaidFines > 0 || unpaidReplacement > 0 ? 'Not Cleared' : 'Cleared'
+    const computedStatus = activeLoans || unpaidFines > 0 || lostStanding.openConfirmedLosses > 0 ? 'Not Cleared' : 'Cleared'
     const activeOverride = overrideRows[0]
     const status = activeOverride?.override_status ? String(activeOverride.override_status) : computedStatus
     const reasons = [
       activeLoans ? `${activeLoans} unreturned ${activeLoans === 1 ? 'book' : 'books'}` : '',
       unpaidFines > 0 ? `PHP ${unpaidFines.toFixed(2)} unpaid overdue fines` : '',
-      unpaidReplacement > 0 ? `PHP ${unpaidReplacement.toFixed(2)} unpaid lost-book replacement charges` : '',
+      ...lostStanding.reasons,
     ].filter(Boolean)
     const reason = activeOverride ? `Authorized override: ${activeOverride.reason}` : reasons.join('; ') || 'No library obligations'
     await database.execute(
@@ -178,7 +224,13 @@ export function createClearanceService(database: Pool = db) {
     return {
       student: { userId: Number(user.user_id), schoolId: String(user.school_id), name: String(user.full_name), program: user.course_or_strand ?? null, section: user.section ?? null, accountStatus: String(user.account_status) },
       status, computedStatus, reason, checkedAt: new Date(),
-      summary: { activeLoans, unpaidOverdueFines: unpaidFines, unpaidReplacementCharges: unpaidReplacement, totalOutstanding: unpaidFines + unpaidReplacement, blockCount: activeLoans + fineRows.length + lostRows.filter((row) => row.report_status === 'Confirmed' && row.charge_resolution === 'Quoted' && row.payment_status === 'Unpaid').length },
+      summary: {
+        activeLoans,
+        unpaidOverdueFines: unpaidFines,
+        unpaidReplacementCharges: unpaidReplacement,
+        totalOutstanding: unpaidFines + unpaidReplacement,
+        blockCount: activeLoans + fineRows.length + lostStanding.openConfirmedLosses,
+      },
       loans: loanRows.map((row) => ({ transactionId: Number(row.transaction_id), title: String(row.title), accessionNumber: row.accession_number, status: String(row.transaction_status), borrowedAt: row.borrowed_at, dueAt: row.due_at, overdueHours: Number(row.overdue_hours ?? 0), currentFine: Number(row.current_fine ?? 0) })),
       fines: fineRows.map((row) => ({ fineId: Number(row.fine_id), transactionId: row.transaction_id ? Number(row.transaction_id) : null, title: String(row.title), amount: Number(row.fine_amount), basis: String(row.calculation_basis), overdueUnits: Number(row.overdue_units), rate: Number(row.rate_applied), appliedAt: row.applied_date, notes: row.notes })),
       lostBooks: lostRows.map((row) => ({ lostBookReportId: Number(row.lost_book_report_id), transactionId: Number(row.transaction_id), titleId: row.title_id ? Number(row.title_id) : null, title: String(row.title), status: String(row.report_status), chargeResolution: String(row.charge_resolution), resolutionReason: row.resolution_reason ? String(row.resolution_reason) : null, quotationId: row.current_quotation_id ? Number(row.current_quotation_id) : null, quotedAmount: row.current_quotation_amount === null ? null : Number(row.current_quotation_amount), replacementCharge: Number(row.replacement_charge), paymentStatus: String(row.payment_status), reportedAt: row.reported_at, verifiedAt: row.verified_at })),

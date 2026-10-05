@@ -52,10 +52,10 @@ export async function lockCategoryShelf(connection: PoolConnection, categoryId: 
 export async function createBulkBookTitle(connection: PoolConnection, input: BulkBookInput, coverImagePath: string | null) {
   const [result] = await connection.execute<ResultSetHeader>(
     `INSERT INTO titles
-       (category_id, record_type, title, normalized_title, isbn, publication_year, publisher, purchase_price,
+       (category_id, record_type, title, normalized_title, isbn, publication_year, copyright_year, publisher, purchase_price,
         call_number, cover_image_path, search_text, lifecycle_status, created_at)
-     VALUES (?, 'Book', ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'Active', NOW())`,
-    [input.categoryId, input.title, input.title.toLocaleLowerCase('en-US'), input.isbn, input.publicationYear,
+     VALUES (?, 'Book', ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'Active', NOW())`,
+    [input.categoryId, input.title, input.title.toLocaleLowerCase('en-US'), input.isbn, input.publicationYear, input.copyrightYear,
       input.publisher, input.callNumber, coverImagePath, `${input.title} ${input.author} ${input.isbn}`.toLocaleLowerCase('en-US')],
   )
   await connection.execute(

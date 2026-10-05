@@ -5,13 +5,21 @@ export type Category = {
   shelfLocation: string
   shelfColumn: number
   shelfRow: number
+  textbookRecencyRule: boolean
   totalBooksCount: number
   totalThesisCount: number
   createdAt: string
   updatedAt: string | null
 }
 
-export type CategoryPayload = { categoryName: string; description: string; shelfLocation: string; shelfColumn: number; shelfRow: number }
+export type CategoryPayload = {
+  categoryName: string
+  description: string
+  shelfLocation: string
+  shelfColumn: number
+  shelfRow: number
+  textbookRecencyRule: boolean
+}
 
 export type CategoryShelfSync = {
   bookCopies: number

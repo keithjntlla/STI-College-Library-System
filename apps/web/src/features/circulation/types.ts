@@ -21,6 +21,15 @@ export type OpenLoan = {
   status: 'Borrowed' | 'Overdue'
 }
 
+export type ReadyReservation = {
+  reservationId: number
+  title: string
+  barcode: string | null
+  accessionNumber: string | null
+  pickupDeadline: string | null
+  status: string
+}
+
 export type CheckoutEligibility = {
   allowed: boolean
   schoolId: string
@@ -28,9 +37,13 @@ export type CheckoutEligibility = {
   role: string
   activeLoans: number
   loanLimit: number | null
+  checkedIn?: boolean
+  readyReservations?: ReadyReservation[]
   openLoans: OpenLoan[]
   message: string | null
 }
+
+export type LoanMode = 'TakeHome' | 'InsideLibrary'
 
 export type CirculationMonitorData = {
   summary: { pendingClaims: number; activeLoans: number; overdueLoans: number; returnedToday: number; dueToday: number }

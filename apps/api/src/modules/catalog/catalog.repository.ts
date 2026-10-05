@@ -99,6 +99,7 @@ export async function insertTitle(
     title: string
     isbn: string | null
     publicationYear: number | null
+    copyrightYear?: number | null
     publisher: string | null
     callNumber: string | null
     searchText: string
@@ -107,9 +108,9 @@ export async function insertTitle(
   const [result] = await connection.execute<ResultSetHeader>(
     `INSERT INTO titles
        (category_id, record_type, title, normalized_title, isbn,
-        publication_year, publisher, call_number, search_text,
+        publication_year, copyright_year, publisher, call_number, search_text,
         lifecycle_status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', NOW())`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', NOW())`,
     [
       input.categoryId,
       input.recordType,
@@ -117,6 +118,7 @@ export async function insertTitle(
       input.title.toLocaleLowerCase('en-US'),
       input.isbn,
       input.publicationYear,
+      input.copyrightYear ?? null,
       input.publisher,
       input.callNumber,
       input.searchText,

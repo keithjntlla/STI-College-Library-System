@@ -22,11 +22,11 @@ export const circulationApi = {
   }),
   monitor: (page = 1, limit = 50) => request<CirculationMonitorData>(`/api/v1/admin/borrowing/monitor?page=${page}&limit=${limit}`),
   checkoutEligibility: (schoolId: string) => request<CheckoutEligibility>(`/api/v1/admin/borrowing/checkout-eligibility?school_id=${encodeURIComponent(schoolId)}`),
-  confirmCheckout: (barcode: string, schoolId: string) => request('/api/v1/admin/borrowing/confirm-checkout', {
-    method: 'POST', body: JSON.stringify({ barcode, school_id: schoolId }),
+  confirmCheckout: (barcode: string, schoolId: string, loanMode: 'TakeHome' | 'InsideLibrary' = 'TakeHome') => request('/api/v1/admin/borrowing/confirm-checkout', {
+    method: 'POST', body: JSON.stringify({ barcode, school_id: schoolId, loan_mode: loanMode }),
   }),
-  fulfillClaim: (barcode: string, schoolId: string) => request('/api/v1/circulation/fulfill-claim', {
-    method: 'POST', body: JSON.stringify({ barcode, school_id: schoolId }),
+  fulfillClaim: (barcode: string, schoolId: string, loanMode: 'TakeHome' | 'InsideLibrary' = 'TakeHome') => request('/api/v1/circulation/fulfill-claim', {
+    method: 'POST', body: JSON.stringify({ barcode, school_id: schoolId, loan_mode: loanMode }),
   }),
   returnBook: (transactionId: number) => request(`/api/v1/admin/borrowing/${transactionId}/return`, { method: 'PUT' }),
   calculatePenalty: (transactionId: number) => request<{ amount: number; currency: string }>(`/api/v1/admin/borrowing/${transactionId}/calculate-penalty`, { method: 'POST' }),

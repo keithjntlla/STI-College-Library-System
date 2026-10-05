@@ -98,10 +98,10 @@ Always know and document:
 | Item | Value |
 | --- | --- |
 | Migrations directory | `database/migrations/` |
-| Latest migration | `20260927_047_phase6_registration_roles.sql` (prepared locally; unapplied) |
-| Latest number | `047` |
-| **Next available number** | **`048`** |
-| Supabase / Postgres files | Product files through `016_phase6_legacy_student_account_links.sql` are applied; next file number **017**. The live ledger also contains `011_advisor_security_lockdown.sql` and `012_performance_advisor_fixes.sql`, which are absent from this checkout and need source reconciliation. The tracked `007` is present. Reconcile the `002`/`005` ledger gaps before whole-directory replay. Apply reviewed individual files with `npm run db:supabase -w @sti-library/api -- filename.sql` when `DATABASE_URL` is set. |
+| Latest migration | `20261005_049_attendance_closing_hours.sql` (prepared locally; unapplied) |
+| Latest number | `049` |
+| **Next available number** | **`050`** |
+| Supabase / Postgres files | Product files through `016` are applied; checkout also has `017`–`019` unapplied locally (`018` loan/weeding, `019` attendance closing hours). Next file number **020**. The live ledger also contains advisor-named files absent from this checkout. Apply reviewed individual files with `npm run db:supabase -w @sti-library/api -- filename.sql` when `DATABASE_URL` is set. |
 
 Naming pattern in this repo:
 
@@ -167,3 +167,5 @@ Prefer simple, readable scripts under a clear folder (for example `tools/` or `s
 | 2026-09-27 | Phase 6 role registration migration prepared locally: MySQL reference `047`, Supabase `015`; both unapplied. Next numbers `048` and `016`. No push or deployment. |
 | 2026-09-28 | Applied reviewed Supabase product files `012`–`015` individually after taking private snapshots of affected rows. Local API schema health is ready; a disposable Staff request passed real-Postgres registration/code verification and was removed. MySQL `047` remains a rollback reference; next numbers remain `048` and `016`. The live ledger has two advisor-named files absent from this checkout. No GitHub push or Vercel deployment. |
 | 2026-09-28 | Applied Supabase `016` to link seven existing Student users to missing sign-in accounts without replacing their operational user IDs or password hashes. Next Postgres file number is `017`; MySQL reference remains `047` / next `048`. |
+| 2026-10-05 | Book panel revisions: MySQL `048` and Supabase `018` add `loan_mode`, `titles.copyright_year`, `categories.textbook_recency_rule`, and `admin_notifications.weeding_review`. Desk scan-first + loan mode + ready claim + weeding exports + `/librarian/reports`. Next numbers `049` / `019`. Unapplied. |
+| 2026-10-05 | Attendance auto time-out + scan UX: MySQL `049` and Supabase `019` set Mon–Sat closing to 19:00. Job runner closes open visits after hours; check-in gated outside hours; desk scanner auto check-out + purpose chips. Next numbers `050` / `020`. Unapplied. |

@@ -1,6 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import { db } from '../../config/db.js'
+import { closeOpenAttendanceAfterHours } from '../attendance/attendance-hours.service.ts'
 import { expireReadyReservations } from '../reservations/reservation-expiration.service.ts'
 import { escalateOverdueTransactions } from '../circulation/circulation-overdue.service.ts'
 import { generateNotifications } from '../notifications/notification.worker.ts'
@@ -32,9 +33,10 @@ export async function runOperationalJobs(now = new Date(), database: Pool = db) 
   try {
     const expiration = await expireReadyReservations(database, now)
     const overdue = await escalateOverdueTransactions(database, now)
+    const attendance = await closeOpenAttendanceAfterHours(database, now)
     const notifications = await generateNotifications(database, now)
     await database.execute('UPDATE library_job_runs SET lease_until=NULL,run_token=NULL,last_success_at=NOW(),last_error=NULL,run_count=run_count+1,last_duration_ms=? WHERE job_name=? AND run_token=?', [Date.now() - started, name, token])
-    return { skipped: false, expiration, overdue, notifications }
+    return { skipped: false, expiration, overdue, attendance, notifications }
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 1000) : 'Unknown scheduled job failure'
     await database.execute('UPDATE library_job_runs SET lease_until=NULL,run_token=NULL,last_error_at=NOW(),last_error=?,failure_count=failure_count+1,last_duration_ms=? WHERE job_name=? AND run_token=?', [message, Date.now() - started, name, token])

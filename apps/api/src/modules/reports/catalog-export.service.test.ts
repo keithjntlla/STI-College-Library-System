@@ -2,16 +2,25 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { once } from 'node:events'
 import type { InventoryExportRow } from './catalog-export.service.ts'
-import { createCsvStream, createInventoryPdf } from './catalog-export.service.ts'
+import { createCsvStream, createInventoryPdf, weedingReviewLabel } from './catalog-export.service.ts'
 import { CSV_INTEGRITY_MARKER, verifyIntegrityProtectedCsv } from './csv-integrity.ts'
 
 async function* rows(): AsyncGenerator<InventoryExportRow> {
   yield {
     recordType: 'Book', title: '=DANGEROUS()', authors: 'A "Quoted" Author', isbn: '9780132350884',
-    category: 'Programming', publicationYear: '2008', accessionNumber: 'ACC-1', barcode: 'BC-1',
+    category: 'Programming', publicationYear: '2008', copyrightYear: '2008', weedingReview: 'Review for weeding',
+    accessionNumber: 'ACC-1', barcode: 'BC-1',
     shelfLocation: 'IT-A1', condition: 'Good', availability: 'Available', researchCode: '', adviser: '',
   }
 }
+
+test('marks textbook titles for weeding review without removing inventory rows', () => {
+  const now = new Date('2026-10-05T00:00:00Z')
+  assert.equal(weedingReviewLabel(2018, true, now), 'Review for weeding')
+  assert.equal(weedingReviewLabel(2024, true, now), '')
+  assert.equal(weedingReviewLabel(2010, false, now), '')
+  assert.equal(weedingReviewLabel(null, true, now), '')
+})
 
 async function collect(stream: NodeJS.ReadableStream) {
   const chunks: Buffer[] = []

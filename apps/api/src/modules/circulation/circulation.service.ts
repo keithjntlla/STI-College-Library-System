@@ -6,13 +6,14 @@ import {
   authorsAgg,
   caseIf,
   currentDate,
+  currentTime,
   excluded,
   isPostgres,
   sumEquals,
 } from '../../config/sql-dialect.js'
 import { HttpError } from '../../core/http-error.ts'
 import { calculateOperatingFine, loadFineContext } from '../fines/fine-calculator.ts'
-import { nextOperatingDueDate } from './due-date.ts'
+import { nextOperatingDueDate, sameDayClosingDueDate } from './due-date.ts'
 import { positiveCirculationId, validateBorrowCart, validateCancellation, validateCheckout, validateHistoryQuery, type BorrowCartInput } from './circulation.validation.ts'
 
 const ACTIVE_LOANS = "('Pending','Borrowed','Overdue')"
@@ -444,13 +445,56 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
           ORDER BY bt.due_at ASC, bt.transaction_id DESC`,
         [borrower.user_id],
       )
+      const [[blockRows], [readyRows], [insideRows]] = await Promise.all([
+        database.execute<RowDataPacket[]>(`SELECT
+            (SELECT COUNT(*) FROM borrow_transactions WHERE user_id=? AND (transaction_status='Overdue' OR (transaction_status='Borrowed' AND due_at<NOW())) AND lost_confirmed_at IS NULL) overdue_count,
+            (SELECT COUNT(*) FROM fines f
+              LEFT JOIN (SELECT x.fine_id,SUM(x.amount_allocated) paid FROM fine_payment_allocations x JOIN fine_payment_receipts r ON r.fine_payment_receipt_id=x.fine_payment_receipt_id AND r.receipt_status='Issued' GROUP BY x.fine_id) p ON p.fine_id=f.fine_id
+              LEFT JOIN (SELECT fine_id,SUM(amount_adjusted) adjusted FROM fine_adjustments GROUP BY fine_id) a ON a.fine_id=f.fine_id
+             WHERE f.user_id=? AND f.payment_status IN ('Accruing','Unpaid','Partially Paid')
+               AND GREATEST(0,f.fine_amount-COALESCE(p.paid,0)-COALESCE(a.adjusted,0))>0) unpaid_fine_count,
+            (SELECT COUNT(*) FROM lost_book_reports WHERE user_id=? AND report_status='Confirmed' AND charge_resolution='Quoted' AND payment_status='Unpaid' AND replacement_charge>0) unpaid_replacement_count`,
+        [borrower.user_id, borrower.user_id, borrower.user_id]),
+        database.execute<RowDataPacket[]>(`SELECT r.reservation_id, COALESCE(t.title,m.title) title, pc.barcode, pc.accession_number, r.pickup_deadline, r.reservation_status
+           FROM reservations r JOIN materials m ON m.material_id=r.material_id
+           LEFT JOIN physical_copies pc ON pc.physical_copy_id=r.assigned_physical_copy_id
+           LEFT JOIN titles t ON t.title_id=r.book_title_id
+          WHERE r.user_id=? AND r.reservation_status='ready_for_pickup'
+          ORDER BY r.pickup_deadline ASC, r.reservation_id ASC`, [borrower.user_id]),
+        database.execute<RowDataPacket[]>(`SELECT log_id FROM attendance_logs WHERE user_id=? AND time_out IS NULL ORDER BY attendance_date DESC, time_in DESC LIMIT 1`, [borrower.user_id]),
+      ])
+      const blocks = blockRows[0] ?? {}
+      const overdueCount = Number(blocks.overdue_count ?? 0)
+      const unpaidFineCount = Number(blocks.unpaid_fine_count ?? 0)
+      const unpaidReplacementCount = Number(blocks.unpaid_replacement_count ?? 0)
+      const holdReasons = [
+        overdueCount > 0 ? 'overdue books' : '',
+        unpaidFineCount > 0 ? 'unpaid fines' : '',
+        unpaidReplacementCount > 0 ? 'unpaid lost-book replacement charges' : '',
+      ].filter(Boolean)
+      const holdBlocked = holdReasons.length > 0
+      const checkoutAllowed = allowed && !holdBlocked
+      const message = holdBlocked
+        ? `Transaction Blocked: This borrower has ${holdReasons.join(', ')} that must be settled first.`
+        : allowed
+          ? null
+          : `This student already has ${activeLoans} active ${activeLoans === 1 ? 'loan' : 'loans'}, which is the ${loanLimit}-book limit. Checkout is not allowed until a book is returned.`
       return {
-        allowed,
+        allowed: checkoutAllowed,
         schoolId: String(borrower.school_id),
         name: String(borrower.full_name),
         role,
         activeLoans,
         loanLimit,
+        checkedIn: Boolean(insideRows[0]),
+        readyReservations: readyRows.map((row) => ({
+          reservationId: Number(row.reservation_id),
+          title: String(row.title ?? 'Untitled'),
+          barcode: row.barcode ? String(row.barcode) : null,
+          accessionNumber: row.accession_number ? String(row.accession_number) : null,
+          pickupDeadline: row.pickup_deadline ? String(row.pickup_deadline) : null,
+          status: String(row.reservation_status),
+        })),
         openLoans: loanRows.map((row) => ({
           transactionId: Number(row.transaction_id),
           title: String(row.title ?? 'Untitled'),
@@ -459,9 +503,7 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
           dueDate: row.due_at == null ? null : String(row.due_at),
           status: String(row.transaction_status) === 'Overdue' ? 'Overdue' as const : 'Borrowed' as const,
         })),
-        message: allowed
-          ? null
-          : `This student already has ${activeLoans} active ${activeLoans === 1 ? 'loan' : 'loans'}, which is the ${loanLimit}-book limit. Checkout is not allowed until a book is returned.`,
+        message,
       }
     },
 
@@ -522,27 +564,58 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
           const activeCount = Number(capacityRows[0]?.active_count ?? 0); const alreadyActive = Boolean(capacityRows[0]?.target_already_active)
           if (activeCount >= 2 && !alreadyActive) throw new HttpError(422, 'STUDENT_BORROW_LIMIT_REACHED', 'Transaction Blocked: Students cannot exceed 2 books', { activeCount, limit: 2 })
 
-          // NEW: Strict Fines & Overdue Check
-          const [finesRows] = await connection.execute<RowDataPacket[]>("SELECT COUNT(*) as unpaid FROM fines WHERE user_id = ? AND payment_status = 'Unpaid'", [borrower.user_id])
+          const [finesRows] = await connection.execute<RowDataPacket[]>(
+            `SELECT COUNT(*) as unpaid FROM fines f
+              LEFT JOIN (SELECT x.fine_id,SUM(x.amount_allocated) paid FROM fine_payment_allocations x JOIN fine_payment_receipts r ON r.fine_payment_receipt_id=x.fine_payment_receipt_id AND r.receipt_status='Issued' GROUP BY x.fine_id) p ON p.fine_id=f.fine_id
+              LEFT JOIN (SELECT fine_id,SUM(amount_adjusted) adjusted FROM fine_adjustments GROUP BY fine_id) a ON a.fine_id=f.fine_id
+             WHERE f.user_id=? AND f.payment_status IN ('Accruing','Unpaid','Partially Paid')
+               AND GREATEST(0,f.fine_amount-COALESCE(p.paid,0)-COALESCE(a.adjusted,0))>0`, [borrower.user_id])
           if (Number(finesRows[0]?.unpaid ?? 0) > 0) throw new HttpError(422, 'STUDENT_HAS_UNPAID_FINES', 'Transaction Blocked: This student has unpaid library fines that must be settled first.')
-          
-          const [overdueRows] = await connection.execute<RowDataPacket[]>("SELECT COUNT(*) as overdue FROM borrow_transactions WHERE user_id = ? AND transaction_status = 'Overdue'", [borrower.user_id])
+          const [overdueRows] = await connection.execute<RowDataPacket[]>("SELECT COUNT(*) as overdue FROM borrow_transactions WHERE user_id = ? AND (transaction_status = 'Overdue' OR (transaction_status = 'Borrowed' AND due_at < NOW())) AND lost_confirmed_at IS NULL", [borrower.user_id])
           if (Number(overdueRows[0]?.overdue ?? 0) > 0) throw new HttpError(422, 'STUDENT_HAS_OVERDUE_BOOKS', 'Transaction Blocked: This student has overdue books that must be returned first.')
+          const [replacementRows] = await connection.execute<RowDataPacket[]>("SELECT COUNT(*) as unpaid FROM lost_book_reports WHERE user_id=? AND report_status='Confirmed' AND charge_resolution='Quoted' AND payment_status='Unpaid' AND replacement_charge>0", [borrower.user_id])
+          if (Number(replacementRows[0]?.unpaid ?? 0) > 0) throw new HttpError(422, 'STUDENT_HAS_UNPAID_REPLACEMENT', 'Transaction Blocked: This student has an unpaid lost-book replacement charge that must be settled first.')
         }
-        const borrowedAt = clock(); const dueAt = nextOperatingDueDate(borrowedAt, await closedDateSet(connection, borrowedAt))
+        const borrowedAt = clock()
+        let dueAt: Date
+        if (input.loanMode === 'InsideLibrary') {
+          const weekday = borrowedAt.getDay() === 0 ? 7 : borrowedAt.getDay()
+          const [scheduleRows] = await connection.execute<RowDataPacket[]>(
+            'SELECT closes_at, is_open FROM library_operating_schedule WHERE day_of_week = ? LIMIT 1', [weekday],
+          )
+          const closesAt = scheduleRows[0]?.closes_at == null ? null : String(scheduleRows[0].closes_at)
+          dueAt = sameDayClosingDueDate(borrowedAt, closesAt)
+        } else {
+          dueAt = nextOperatingDueDate(borrowedAt, await closedDateSet(connection, borrowedAt))
+        }
+        const [openVisit] = await connection.execute<RowDataPacket[]>(
+          'SELECT log_id FROM attendance_logs WHERE user_id=? AND time_out IS NULL ORDER BY attendance_date DESC, time_in DESC LIMIT 1 FOR UPDATE',
+          [borrower.user_id],
+        )
+        if (!openVisit[0]) {
+          const entryRequestId = `desk-checkout-${borrower.user_id}-${randomUUID()}`
+          await connection.execute(
+            `INSERT INTO attendance_logs
+               (user_id,attendance_date,time_in,checked_in_at,time_out,checked_out_at,reason_for_visit,
+                qr_reference,qr_credential_id,scan_method,checked_in_by_user_id,entry_request_id)
+             VALUES (?,${currentDate()},${currentTime()},NOW(),NULL,NULL,'Book Borrowing',
+                NULL,NULL,'Manual',?,?)`,
+            [borrower.user_id, processedByUserId, entryRequestId],
+          )
+        }
         let transactionId: number
         if (pendingClaim) {
           transactionId = Number(pendingClaim.transaction_id)
           await connection.execute(
             `UPDATE borrow_transactions
-                SET processed_by_user_id = ?, borrowed_at = ?, due_at = ?, transaction_status = 'Borrowed', updated_at = NOW()
+                SET processed_by_user_id = ?, borrowed_at = ?, due_at = ?, transaction_status = 'Borrowed', loan_mode = ?, updated_at = NOW()
               WHERE transaction_id = ?`,
-            [processedByUserId, borrowedAt, dueAt, transactionId],
+            [processedByUserId, borrowedAt, dueAt, input.loanMode, transactionId],
           )
         } else {
           const [insert] = await connection.execute<ResultSetHeader>(
-            `INSERT INTO borrow_transactions (user_id, material_id, physical_copy_id, processed_by_user_id, borrowed_at, due_at, transaction_status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, 'Borrowed', NOW())`, [borrower.user_id, copy.material_id, copy.physical_copy_id, processedByUserId, borrowedAt, dueAt],
+            `INSERT INTO borrow_transactions (user_id, material_id, physical_copy_id, processed_by_user_id, borrowed_at, due_at, transaction_status, loan_mode, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'Borrowed', ?, NOW())`, [borrower.user_id, copy.material_id, copy.physical_copy_id, processedByUserId, borrowedAt, dueAt, input.loanMode],
           )
           transactionId = Number(insert.insertId)
         }
@@ -555,10 +628,13 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
         }
         await connection.execute("UPDATE physical_copies SET availability_status = 'Borrowed', row_version = row_version + 1, updated_at = NOW() WHERE physical_copy_id = ?", [copy.physical_copy_id])
         await connection.execute("UPDATE materials SET availability_status = 'Borrowed', updated_at = NOW() WHERE material_id = ?", [copy.material_id])
-        await connection.execute(`INSERT INTO notifications (user_id, message_title, message_body, trigger_type, is_read) VALUES (?, 'Borrow confirmed', ?, 'Due Date', 0)`, [borrower.user_id, `${copy.title} is due at 8:59 AM on ${dueAt.toLocaleDateString('en-CA')}.`])
-        await connection.execute(`INSERT INTO admin_notifications (event_type, actor_user_id, reservation_id, borrow_transaction_id, book_title_id, message_title, message_body) VALUES ('checkout_confirmed', ?, ?, ?, ?, 'Checkout confirmed', ?)`, [borrower.user_id, fulfilledReservation?.reservation_id ?? null, transactionId, copy.title_id, `${borrower.full_name} borrowed ${copy.title}.`])
+        const dueLabel = input.loanMode === 'InsideLibrary'
+          ? `due today at ${dueAt.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}`
+          : `due at 8:59 AM on ${dueAt.toLocaleDateString('en-CA')}`
+        await connection.execute(`INSERT INTO notifications (user_id, message_title, message_body, trigger_type, is_read) VALUES (?, 'Borrow confirmed', ?, 'Due Date', 0)`, [borrower.user_id, `${copy.title} is ${dueLabel}.`])
+        await connection.execute(`INSERT INTO admin_notifications (event_type, actor_user_id, reservation_id, borrow_transaction_id, book_title_id, message_title, message_body) VALUES ('checkout_confirmed', ?, ?, ?, ?, 'Checkout confirmed', ?)`, [borrower.user_id, fulfilledReservation?.reservation_id ?? null, transactionId, copy.title_id, `${borrower.full_name} borrowed ${copy.title} (${input.loanMode === 'InsideLibrary' ? 'inside library' : 'take home'}).`])
         await connection.commit()
-        return { transactionId, requestGroupId: pendingClaim?.request_group_id ?? null, borrower: { userId: Number(borrower.user_id), name: borrower.full_name, schoolId: borrower.school_id, role: borrower.role_name }, copy: { physicalCopyId: Number(copy.physical_copy_id), title: copy.title, accessionNumber: copy.accession_number, barcode: copy.barcode }, status: 'Borrowed', borrowedAt, dueAt, dueCutoff: '8:59 AM' }
+        return { transactionId, requestGroupId: pendingClaim?.request_group_id ?? null, borrower: { userId: Number(borrower.user_id), name: borrower.full_name, schoolId: borrower.school_id, role: borrower.role_name }, copy: { physicalCopyId: Number(copy.physical_copy_id), title: copy.title, accessionNumber: copy.accession_number, barcode: copy.barcode }, status: 'Borrowed', loanMode: input.loanMode, borrowedAt, dueAt, dueCutoff: input.loanMode === 'InsideLibrary' ? 'Closing today' : '8:59 AM' }
       } catch (error) { await connection.rollback(); throw error } finally { connection.release() }
     },
 

@@ -17,8 +17,8 @@ describe('book cart safeguards', () => {
     }).allowed).toBe(false)
   })
 
-  it('derives Add to cart or Reserve only from the live available-copy count', () => {
+  it('derives Add to cart or Request only from the live available-copy count', () => {
     expect(catalogActionLabel(1)).toBe('Add to cart')
-    expect(catalogActionLabel(0)).toBe('Reserve')
+    expect(catalogActionLabel(0)).toBe('Request')
   })
 })

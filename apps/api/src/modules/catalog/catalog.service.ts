@@ -62,6 +62,7 @@ export function createCatalogService(database: Pool = db) {
           title: input.title,
           isbn: input.isbn,
           publicationYear: input.publicationYear,
+          copyrightYear: input.copyrightYear,
           publisher: input.publisher,
           callNumber: input.callNumber,
           searchText: buildBookSearchText(input),

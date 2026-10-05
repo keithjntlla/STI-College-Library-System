@@ -3,7 +3,7 @@ import { attendanceController } from './attendance.controller.ts'
 export const attendanceRouter=Router()
 attendanceRouter.use((request,response,next)=>{
   if(response.locals.authenticatedUser?.role!=='Staff')return next()
-  const allowed=(request.method==='GET'&&['/logs','/summary'].includes(request.path))
+  const allowed=(request.method==='GET'&&['/logs','/summary','/capacity'].includes(request.path))
     ||(request.method==='POST'&&['/scan/resolve','/scan/check-in','/scan/check-out'].includes(request.path))
   return allowed?next():response.status(403).json({success:false,code:'STAFF_ATTENDANCE_FORBIDDEN',message:'Staff may use attendance scans and view attendance records only.'})
 })

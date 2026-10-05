@@ -18,6 +18,9 @@ function checkoutPool(role: 'Student' | 'Faculty', activeCount = 0, readyClaim: 
       if (sql.includes('as unpaid')) return [[{ unpaid: 0 }]]
       if (sql.includes('as overdue')) return [[{ overdue: 0 }]]
       if (sql.includes('FROM library_closed_days')) return [[]]
+      if (sql.includes('FROM library_operating_schedule')) return [[{ closes_at: '17:00:00', is_open: 1 }]]
+      if (sql.includes('FROM attendance_logs')) return [[]]
+      if (sql.includes('INSERT INTO attendance_logs')) return [{ insertId: 1, affectedRows: 1 }]
       if (sql.includes('INSERT INTO borrow_transactions')) { state.borrowInserts += 1; return [{ insertId: 55, affectedRows: 1 }] }
       if (sql.includes('UPDATE borrow_transactions')) return [{ affectedRows: 1 }]
       if (sql.includes("UPDATE reservations SET reservation_status = 'claimed'")) return [{ affectedRows: 1 }]
@@ -173,14 +176,28 @@ test('borrowing history exposes the normalized title cover path', async () => {
 function eligibilityPool(row: Record<string, unknown> | null, loans: Array<Record<string, unknown>> = []) {
   return {
     async execute(sql: string, params: unknown[]) {
-      assert.match(sql, /lost_confirmed_at IS NULL/)
       if (sql.includes('FROM users u')) {
+        assert.match(sql, /lost_confirmed_at IS NULL/)
         assert.deepEqual(params, ['STI-7'])
         return [row ? [row] : []]
       }
-      assert.match(sql, /FROM borrow_transactions bt/)
-      assert.deepEqual(params, [row?.user_id])
-      return [loans]
+      if (sql.includes('FROM borrow_transactions bt')) {
+        assert.deepEqual(params, [row?.user_id])
+        return [loans]
+      }
+      if (sql.includes('unpaid_replacement_count')) {
+        assert.deepEqual(params, [row?.user_id, row?.user_id, row?.user_id])
+        return [[{ overdue_count: 0, unpaid_fine_count: 0, unpaid_replacement_count: 0 }]]
+      }
+      if (sql.includes("reservation_status='ready_for_pickup'")) {
+        assert.deepEqual(params, [row?.user_id])
+        return [[]]
+      }
+      if (sql.includes('FROM attendance_logs')) {
+        assert.deepEqual(params, [row?.user_id])
+        return [[]]
+      }
+      throw new Error(`Unexpected eligibility SQL: ${sql}`)
     },
   } as unknown as Pool
 }

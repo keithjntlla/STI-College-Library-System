@@ -10,11 +10,34 @@ vi.mock('./dashboard-api',()=>({dashboardApi:api}))
 vi.mock('../catalog/book-catalog-api',()=>({fetchBookOverview:api.fetchBookOverview}))
 
 const profile={name:'STI Ormoc Smart Library',seatCapacity:80,information:'Library information',mapPath:null,schedule:[{day:1,isOpen:true,opensAt:'07:00 AM',closesAt:'05:00 PM'}],nextClosure:null}
-const admin={generatedAt:'2026-09-04T08:00:00.000Z',staff:{name:'Judelyn Admin',schoolId:'ADMIN-1'},profile,kpis:{totalBooks:2486,activeBorrowed:184,availableBooks:2241,overdueBooks:24,activeUsers:1348,dailyAttendance:216,activeReservations:31,outstandingFines:2840,returnedToday:12},weeklyAttendance:[{label:'Mon',value:20},{label:'Tue',value:30}],purposeBreakdown:[{label:'Research',value:10}],popularCategories:[{label:'Programming',value:84}],recentCirculation:[{id:1,userName:'John',schoolId:'0200',title:'Clean Code',barcode:'BC-1',status:'Borrowed',eventAt:'2026-09-04'}],recentActivity:[{id:1,type:'checkout',title:'Checkout confirmed',message:'Book checked out.',createdAt:'2026-09-04'}],occupancy:{current:42,capacity:80,peakHour:'10:00 AM',averageMinutes:84}}
+const queues={pendingLostReports:0,awaitingQuotation:2,reservationsReady:0,reservationsWaiting:4,pendingPrintJobs:0,readyPrintJobs:0,lowSupplies:0}
+const admin={generatedAt:'2026-09-04T08:00:00.000Z',staff:{name:'Judelyn Admin',schoolId:'ADMIN-1'},profile,kpis:{totalBooks:2486,activeBorrowed:184,availableBooks:2241,overdueBooks:24,activeUsers:1348,dailyAttendance:216,activeReservations:31,outstandingFines:2840,returnedToday:12},weeklyAttendance:[{label:'Mon',value:20},{label:'Tue',value:30}],purposeBreakdown:[{label:'Research',value:10}],popularCategories:[{label:'Programming',value:84}],recentCirculation:[{id:1,userName:'John',schoolId:'0200',title:'Clean Code',barcode:'BC-1',status:'Borrowed',eventAt:'2026-09-04'}],recentActivity:[{id:1,type:'checkout',title:'Checkout confirmed',message:'Book checked out.',createdAt:'2026-09-04'}],occupancy:{current:42,capacity:80,peakHour:'10:00 AM',averageMinutes:84},queues}
 const user={generatedAt:'2026-09-04T08:00:00.000Z',user:{name:'John Student',schoolId:'0200',program:'BSIT',role:'Student'},profile,summary:{activeLoans:1,activeBookCount:1,borrowingLimit:2,activeReservations:1,unreadNotifications:2,outstandingFines:0,clearanceStatus:'Cleared',clearanceReason:'No library obligations'},occupancy:{current:42,capacity:80},currentLoan:{id:1,title:'Clean Code',author:'Robert C. Martin',barcode:'BC-1',shelfLocation:'A-1',status:'Borrowed',dueAt:'2026-09-05 08:59 AM',coverPath:'/api/assets/covers/clean-code.png'},reservation:{id:7,title:'Database System Concepts',coverPath:'/api/assets/covers/database-systems.png',queuePosition:1,status:'ready_for_pickup',pickupDeadline:'2026-09-06 05:00 PM'},printRequest:null,latestNotification:null,announcement:{id:1,title:'Library schedule',message:'Open on Saturday.',priority:'Normal',publishedAt:'2026-09-04'},recentHistory:[{id:8,title:'Harry Potter',coverPath:'/api/assets/covers/harry-potter.png',status:'Returned',eventAt:'2026-08-25 10:02 PM'}],recommendations:[{id:2,title:'Computer Networks',author:'Andrew Tanenbaum',availableCopies:2,coverPath:'/api/assets/covers/networks.png'}]}
 
 describe('live dashboards',()=>{
-  it('loads the admin operational overview from the dashboard API',async()=>{api.admin.mockResolvedValue(admin);render(<MemoryRouter><AdminDashboardPage/></MemoryRouter>);expect(await screen.findByText('Good day, Judelyn')).toBeTruthy();expect(screen.getByText('2,486')).toBeTruthy();expect(screen.getByText('Programming')).toBeTruthy();expect(api.admin).toHaveBeenCalledTimes(1)})
+  it('loads the librarian desk and keeps the library report below the work queue',async()=>{
+    api.admin.mockResolvedValue(admin)
+    render(<MemoryRouter><AdminDashboardPage/></MemoryRouter>)
+    expect(await screen.findByText('Good day, Judelyn')).toBeTruthy()
+    const overdue=screen.getByRole('link',{name:/Overdue loans/i})
+    expect(overdue.getAttribute('href')).toBe('/librarian/circulation?lane=overdue')
+    expect(screen.getByRole('link',{name:/Confirmed losses awaiting quotation/i}).getAttribute('href')).toBe('/librarian/clearance')
+    expect(screen.queryByText('Lost-book reports awaiting review')).toBeNull()
+    expect(screen.queryByText('Total books')).toBeNull()
+    expect(screen.queryByText('2,486')).toBeNull()
+    expect(screen.getByRole('link',{name:'Borrow & return'})).toBeTruthy()
+    const report=screen.getByRole('heading',{name:'Library report'})
+    const categories=screen.getByText('Programming')
+    expect(report.compareDocumentPosition(categories)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(api.admin).toHaveBeenCalledTimes(1)
+  })
+  it('shows a calm empty queue when nothing is waiting',async()=>{
+    api.admin.mockResolvedValue({...admin,kpis:{...admin.kpis,overdueBooks:0,outstandingFines:0},queues:{pendingLostReports:0,awaitingQuotation:0,reservationsReady:0,reservationsWaiting:0,pendingPrintJobs:0,readyPrintJobs:0,lowSupplies:0}})
+    render(<MemoryRouter><AdminDashboardPage/></MemoryRouter>)
+    expect(await screen.findByText('Nothing is waiting.')).toBeTruthy()
+    expect(screen.queryByRole('link',{name:/Overdue loans/i})).toBeNull()
+    expect(screen.getByText('Programming')).toBeTruthy()
+  })
   it('places recommendations after the summary cards and adds a recommended book to the shared borrow cart',async()=>{
     api.user.mockResolvedValue(user)
     api.fetchBookOverview.mockResolvedValue({titleId:2,title:'Computer Networks',author:'Andrew Tanenbaum',isbn:'9780132126953',publisher:'Pearson',publicationYear:2010,categoryId:1,categoryName:'Networking',callNumber:'TK5105',coverImagePath:'/api/assets/covers/networks.png',shelfLocation:'Shelf N-1',currentAvailabilityStatus:'Available',currentConditionStatus:'Good',totalCopiesCount:2,availableCopiesCount:2,reservableMaterialId:4,previewBarcode:'STIORMOC2026000002'})

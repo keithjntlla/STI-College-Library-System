@@ -68,7 +68,7 @@ describe('BookCatalog availability refresh', () => {
     expect(screen.getAllByRole('button', { name: 'Add to cart' }).length).toBeGreaterThan(0)
   })
 
-  it('keeps a borrowed title visible and changes its action to Reserve', async () => {
+  it('keeps a borrowed title visible and changes its action to Request', async () => {
     api.fetchBookCategories.mockResolvedValue([{ categoryId: 2, categoryName: 'Database' }])
     api.fetchBookCatalog.mockImplementationOnce(() => response(baseBook))
     render(<MemoryRouter><BookCatalog /></MemoryRouter>)
@@ -81,7 +81,7 @@ describe('BookCatalog availability refresh', () => {
     }))
     window.dispatchEvent(new Event('focus'))
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Reserve' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Request' })).toBeTruthy())
     expect(screen.getByText('Database Systems')).toBeTruthy()
     expect(screen.getByText('Copies: 0 of 1 available')).toBeTruthy()
   })
@@ -96,7 +96,7 @@ describe('BookCatalog availability refresh', () => {
     api.reserveBookTitle.mockRejectedValue(new Error('You already borrowed this book. Return it before reserving the same book again.'))
     render(<MemoryRouter><BookCatalog /></MemoryRouter>)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Reserve' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Request' }))
 
     expect((await screen.findByRole('alert')).textContent).toContain('You already borrowed this book')
     expect(api.reserveBookTitle).toHaveBeenCalledWith(baseBook.titleId)
@@ -111,7 +111,7 @@ describe('BookCatalog availability refresh', () => {
     })
     render(<MemoryRouter><BookCatalog /></MemoryRouter>)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Reserve' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Request' }))
 
     expect((await screen.findByRole('alert')).textContent).toContain('already have 2 of 2 active book commitments')
     expect(api.reserveBookTitle).not.toHaveBeenCalled()

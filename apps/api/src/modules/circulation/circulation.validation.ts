@@ -39,11 +39,14 @@ export function validateCheckout(body: unknown) {
       errors: { schoolId: 'School ID or user ID is required.' },
     })
   }
+  const rawMode = String(input.loanMode ?? input.loan_mode ?? 'TakeHome').trim()
+  const loanMode = rawMode === 'InsideLibrary' || rawMode === 'inside' || rawMode === 'Inside' ? 'InsideLibrary' : 'TakeHome'
   return {
     barcode: barcode(input.barcode),
     schoolId: schoolId || null,
     userId,
     reservationId: optionalPositiveId(input.reservationId ?? input.reservation_id, 'reservationId'),
+    loanMode: loanMode as 'TakeHome' | 'InsideLibrary',
   }
 }
 

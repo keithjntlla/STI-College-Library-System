@@ -25,7 +25,7 @@ export function AddMultipleCopiesModal({ categories, onCreated, onClose }: {
   const [batch, setBatch] = useState<BulkBookResult | null>(null)
   const [coverImageData, setCoverImageData] = useState<string | null>(null)
   const [isbn, setIsbn] = useState('')
-  const [metadata, setMetadata] = useState({ title: '', author: '', publisher: '', publicationYear: '' })
+  const [metadata, setMetadata] = useState({ title: '', author: '', publisher: '', publicationYear: '', copyrightYear: '' })
   const [lookupStatus, setLookupStatus] = useState<{ state: 'idle' | 'loading' | 'found' | 'error'; message: string }>({ state: 'idle', message: '' })
   const lookupAbort = useRef<AbortController | null>(null)
   const lastLookup = useRef('')
@@ -46,6 +46,7 @@ export function AddMultipleCopiesModal({ categories, onCreated, onClose }: {
         author: result.author || current.author,
         publisher: result.publisher ?? current.publisher,
         publicationYear: result.publicationYear ? String(result.publicationYear) : current.publicationYear,
+        copyrightYear: result.publicationYear ? String(result.publicationYear) : current.copyrightYear,
       }))
       const source = result.source === 'local_catalog' ? 'SmartLib catalog' : result.source === 'google_books' ? 'Google Books' : 'Open Library'
       setLookupStatus({ state: 'found', message: `Book information found from ${source}. Review the details before saving.` })
@@ -83,6 +84,7 @@ export function AddMultipleCopiesModal({ categories, onCreated, onClose }: {
       const result = await catalogApi.createBulkBook({
         title: data.title, author: data.author, isbn: normalizeIsbnInput(isbn),
         number_of_copies: data.numberOfCopies, publication_year: data.publicationYear || null,
+        copyright_year: data.copyrightYear || null,
         publisher: data.publisher, call_number: data.callNumber,
         category_id: data.categoryId, shelf_location: data.bookLocation,
         cover_image_data: coverImageData,
@@ -123,7 +125,9 @@ export function AddMultipleCopiesModal({ categories, onCreated, onClose }: {
         {Object.keys(errors).length ? <div role="alert" className="rounded-xl bg-[#FFF200] p-3 text-sm text-[#0b5ea2] sm:col-span-2"><ul className="list-inside list-disc">{Object.entries(errors).map(([field, error]) => <li key={field}><strong>{field}:</strong> {error}</li>)}</ul></div> : null}
         <Field label="Title" name="title" required value={metadata.title} onChange={(title) => setMetadata((current) => ({ ...current, title }))} /><Field label="Author" name="author" required value={metadata.author} onChange={(author) => setMetadata((current) => ({ ...current, author }))} />
         <label><span className={labelClass}>ISBN *</span><input name="isbn" required value={isbn} inputMode="text" autoComplete="off" aria-invalid={Boolean(liveIsbnError || errors.isbn)} aria-describedby="isbn-feedback isbn-lookup-feedback" onChange={(event) => { setIsbn(event.target.value); if (normalizeIsbnInput(event.target.value) !== lastLookup.current) lastLookup.current = ''; setErrors((current) => { const next = { ...current }; delete next.isbn; return next }) }} onBlur={() => { const normalized = normalizeIsbnInput(isbn); setIsbn(normalized); if (!isbnInputError(normalized)) void lookupIsbn(normalized, true) }} onKeyDown={(event) => { if (event.key === 'Enter' && !liveIsbnError) { event.preventDefault(); const normalized = normalizeIsbnInput(isbn); setIsbn(normalized); void lookupIsbn(normalized, true) } }} placeholder="ISBN-10 or ISBN-13" className={fieldClass} /><span id="isbn-feedback" className={`mt-1.5 block text-xs font-semibold ${liveIsbnError || errors.isbn ? 'text-[#0b5ea2]' : 'text-[#0b5ea2]/65'}`}>{liveIsbnError ?? errors.isbn ?? (isbn ? `Valid ${normalizeIsbnInput(isbn).length === 10 ? 'ISBN-10' : 'ISBN-13'} checksum` : 'Hyphens and spaces are accepted.')}</span>{lookupStatus.message ? <span id="isbn-lookup-feedback" role={lookupStatus.state === 'error' ? 'alert' : 'status'} className={`mt-1 block text-xs font-bold ${lookupStatus.state === 'error' ? 'rounded-lg bg-[#FFF200] p-2 text-[#0b5ea2]' : 'text-[#0b5ea2]'}`}>{lookupStatus.message}</span> : null}</label><label><span className={labelClass}>Number of copies *</span><input name="numberOfCopies" required type="number" min="1" max="100" defaultValue="2" className={fieldClass} /></label>
-        <Field label="Publication year" name="publicationYear" value={metadata.publicationYear} onChange={(publicationYear) => setMetadata((current) => ({ ...current, publicationYear }))} /><Field label="Publisher" name="publisher" value={metadata.publisher} onChange={(publisher) => setMetadata((current) => ({ ...current, publisher }))} />
+        <Field label="Publication year" name="publicationYear" value={metadata.publicationYear} onChange={(publicationYear) => setMetadata((current) => ({ ...current, publicationYear }))} />
+        <Field label="Copyright year" name="copyrightYear" value={metadata.copyrightYear} onChange={(copyrightYear) => setMetadata((current) => ({ ...current, copyrightYear }))} />
+        <Field label="Publisher" name="publisher" value={metadata.publisher} onChange={(publisher) => setMetadata((current) => ({ ...current, publisher }))} />
         <p className="self-center text-sm text-[#0b5ea2]/70">Supplier quotation optional. You can attach one from the catalog after saving this book.</p>
         <Field label="Call number" name="callNumber" />
         <label><span className={labelClass}>Cover page</span><span className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#0b5ea2]/20 bg-[#FFFFFF] px-3 text-sm font-bold text-[#0b5ea2]"><ImagePlus size={17} />{coverImageData ? 'Cover selected' : 'Upload cover image'}<input aria-label="Upload cover page" type="file" accept="image/jpeg,image/png,image/webp" onChange={selectCover} className="sr-only" /></span></label>

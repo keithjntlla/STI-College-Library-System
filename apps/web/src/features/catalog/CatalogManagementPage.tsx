@@ -119,8 +119,6 @@ export function CatalogManagementPage() {
   const [notice, setNotice] = useState<Notice | null>(null)
   const [loading, setLoading] = useState(true)
   const [advancedOpen, setAdvancedOpen] = useState(false)
-  const [exportingPdf, setExportingPdf] = useState(false)
-  const [exportingCsv, setExportingCsv] = useState(false)
   const [overviewTitleId, setOverviewTitleId] = useState<number | null>(null)
   const [assetCopyId, setAssetCopyId] = useState<number | null>(null)
   const [researchAssetId, setResearchAssetId] = useState<number | null>(null)
@@ -192,30 +190,6 @@ export function CatalogManagementPage() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [archiveItem, form, importFile, importResult, notice])
-
-  async function downloadPdf() {
-    setExportingPdf(true)
-    try {
-      await catalogApi.downloadInventory('pdf', filters)
-      setNotice({ tone: 'success', text: 'PDF inventory report downloaded successfully.' })
-    } catch (error) {
-      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'The inventory report could not be generated.' })
-    } finally {
-      setExportingPdf(false)
-    }
-  }
-
-  async function downloadCsv() {
-    setExportingCsv(true)
-    try {
-      await catalogApi.downloadInventory('csv', filters)
-      setNotice({ tone: 'success', text: 'CSV inventory report downloaded successfully.' })
-    } catch (error) {
-      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'The inventory report could not be generated.' })
-    } finally {
-      setExportingCsv(false)
-    }
-  }
 
   async function changeCategory(targetCategoryId: number) {
     if (!categoryItem) return
@@ -401,12 +375,6 @@ export function CatalogManagementPage() {
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" disabled={exportingPdf} onClick={() => void downloadPdf()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#FFF200] px-4 text-sm font-bold text-[#0b5ea2] disabled:opacity-50">
-          <Download size={15} /> {exportingPdf ? 'Preparing PDF…' : 'Download PDF'}
-        </button>
-        <button type="button" disabled={exportingCsv} onClick={() => void downloadCsv()} className={secondaryButton}>
-          <FileSpreadsheet size={15} /> {exportingCsv ? 'Preparing CSV…' : 'Export CSV'}
-        </button>
         <button type="button" onClick={() => setFilters(emptyFilters)} className={secondaryButton}>
           Clear filters
         </button>

@@ -28,16 +28,16 @@ test('creates a unique category with prepared values', async () => {
   const result = await createCategoryService(database).create({ categoryName: 'Programming', description: ' Software and code ', shelfLocation: 'Shelf A-1' })
   assert.equal(result.categoryId, 14)
   assert.equal(result.description, 'Software and code')
-  assert.deepEqual(calls[2].values, ['Programming', 'Software and code', 'Shelf A-1', 1, 1])
+  assert.deepEqual(calls[2].values, ['Programming', 'Software and code', 'Shelf A-1', 1, 1, 0])
   assert.match(calls[2].sql, /INSERT INTO categories/)
 })
 
 test('editing a category saves its description on the same canonical row', async () => {
   let statement = '', values: unknown[] = []
   const connection = { async execute(sql: string, input: unknown[]) { statement = sql; values = input; return [{ affectedRows: 1 }] } } as never
-  await updateCategoryRow(connection, 14, { categoryName: 'Programming', description: 'New description', shelfLocation: 'Shelf A-1', shelfColumn: 1, shelfRow: 1 })
+  await updateCategoryRow(connection, 14, { categoryName: 'Programming', description: 'New description', shelfLocation: 'Shelf A-1', shelfColumn: 1, shelfRow: 1, textbookRecencyRule: false })
   assert.match(statement, /UPDATE categories SET category_name = \?, description = \?/)
-  assert.deepEqual(values, ['Programming', 'New description', 'Shelf A-1', 1, 1, 14])
+  assert.deepEqual(values, ['Programming', 'New description', 'Shelf A-1', 1, 1, 0, 14])
 })
 
 test('rejects a category shelf that is not managed in Category Management', async () => {

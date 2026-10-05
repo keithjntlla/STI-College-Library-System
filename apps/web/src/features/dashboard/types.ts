@@ -15,6 +15,15 @@ export type AdminDashboardData = {
   recentCirculation: Array<{id:number;userName:string;schoolId:string;title:string;barcode:string;status:string;eventAt:string}>
   recentActivity: Array<{id:number;type:string;title:string;message:string;createdAt:string}>
   occupancy: {current:number;capacity:number;peakHour:string|null;averageMinutes:number}
+  queues: {
+    pendingLostReports: number
+    awaitingQuotation: number
+    reservationsReady: number
+    reservationsWaiting: number
+    pendingPrintJobs: number
+    readyPrintJobs: number
+    lowSupplies: number
+  }
 }
 
 export type UserDashboardData = {
@@ -23,7 +32,7 @@ export type UserDashboardData = {
   profile: LibraryProfile
   summary: {activeLoans:number;activeBookCount:number;borrowingLimit:number|null;activeReservations:number;unreadNotifications:number;outstandingFines:number;clearanceStatus:string; clearanceReason?: string;}
   occupancy: {current:number;capacity:number}
-  currentLoan: null|{id:number;title:string;author:string;barcode:string;shelfLocation:string;status:string;dueAt:string;coverPath:string|null}
+  currentLoan: null|{id:number;title:string;author:string;barcode:string;shelfLocation:string;status:string;lostReportStatus?:string|null;dueAt:string;coverPath:string|null}
   reservation: null|{id:number;title:string;coverPath:string|null;queuePosition:number;status:string;pickupDeadline:string|null}
   printRequest: null|{id:number;fileName:string;copies:number;printType:string;cost:number;status:string;createdAt:string}
   latestNotification: null|{id:number;title:string;message:string;type:string;actionPath:string|null;createdAt:string}

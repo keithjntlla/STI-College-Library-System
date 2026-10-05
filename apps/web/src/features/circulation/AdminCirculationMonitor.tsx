@@ -9,10 +9,16 @@ import { CancelBorrowRequestDialog } from './CancelBorrowRequestDialog'
 import { CirculationScannerModal } from './CirculationScannerModal'
 import { ReportLostDialog } from './ReportLostDialog'
 import { circulationApi } from './circulation-api'
-import type { CheckoutEligibility, CirculationMonitorData } from './types'
+import type { CirculationMonitorData, LoanMode, ReadyReservation } from './types'
 
 type MonitorItem = CirculationMonitorData['items'][number]
 type MonitorTab = 'pending' | 'active' | 'overdue'
+
+function laneFromLocation(): MonitorTab {
+  const lane = new URLSearchParams(window.location.search).get('lane')
+  if (lane === 'pending' || lane === 'active' || lane === 'overdue') return lane
+  return 'pending'
+}
 type StudentInfo = { name: string; role: string; program: string; avatarUrl: string | null }
 type FeedbackStudent = StudentInfo & { schoolId: string; activeLoans: number | null; loanLimit: number | null }
 type BookInfo = {
@@ -81,7 +87,11 @@ export function AdminCirculationMonitor() {
   const [checkoutBlocked, setCheckoutBlocked] = useState(false)
   const [limitNotice, setLimitNotice] = useState('')
   const [returnCandidates, setReturnCandidates] = useState<MonitorItem[]>([])
-  const [monitorTab, setMonitorTab] = useState<MonitorTab>('pending')
+  const [readyReservations, setReadyReservations] = useState<ReadyReservation[]>([])
+  const [loanMode, setLoanMode] = useState<LoanMode>('TakeHome')
+  const [showManualEntry, setShowManualEntry] = useState(false)
+  const [verifyReadyHold, setVerifyReadyHold] = useState(false)
+  const [monitorTab, setMonitorTab] = useState<MonitorTab>(laneFromLocation)
 
   const load = useCallback(async (nextPage = page) => {
     setLoading(true)
@@ -137,6 +147,10 @@ export function AdminCirculationMonitor() {
     setCheckoutBlocked(false)
     setLimitNotice('')
     setReturnCandidates([])
+    setReadyReservations([])
+    setLoanMode('TakeHome')
+    setShowManualEntry(false)
+    setVerifyReadyHold(false)
   }
 
   async function loadBookPreview(code: string) {
@@ -223,7 +237,7 @@ export function AdminCirculationMonitor() {
     })
   }
 
-  async function acceptScannedStudent(next: { schoolId: string; name: string; role: string; program?: string }) {
+  async function acceptScannedStudent(next: { schoolId: string; name: string; role: string; program?: string }): Promise<'blocked' | 'ready' | 'ok'> {
     const eligibility = await circulationApi.checkoutEligibility(next.schoolId)
     const schoolIdValue = eligibility.schoolId || next.schoolId
     const identity: FeedbackStudent = {
@@ -236,16 +250,19 @@ export function AdminCirculationMonitor() {
       loanLimit: eligibility.loanLimit,
     }
     const openLoans = loansToMonitorItems(eligibility.openLoans ?? [], identity)
+    const ready = eligibility.readyReservations ?? []
     setFeedbackStudent(identity)
     setReturnCandidates(openLoans)
+    setReadyReservations(ready)
     if (!eligibility.allowed) {
       if (!openLoans.length) {
         setCheckoutBlocked(false)
         setLimitNotice('')
         setSchoolId('')
         setStudentInfo(null)
-        setError(eligibility.message ?? 'This student has reached the borrowing limit and cannot check out another book.')
-        return false
+        setReadyReservations([])
+        setError(eligibility.message ?? 'This student cannot check out another book.')
+        return 'blocked'
       }
       setCheckoutBlocked(true)
       setSchoolId('')
@@ -258,10 +275,10 @@ export function AdminCirculationMonitor() {
         program: identity.program,
         avatarUrl: identity.avatarUrl,
       })
-      setLimitNotice(eligibility.message ?? 'This student has reached the borrowing limit and cannot check out another book.')
+      setLimitNotice(eligibility.message ?? 'This student cannot check out another book.')
       setDeskSearch(identity.schoolId)
       if (openLoans.length === 1) await openReturnScanner(openLoans[0])
-      return false
+      return 'blocked'
     }
     await applyStudent({
       schoolId: identity.schoolId,
@@ -269,7 +286,15 @@ export function AdminCirculationMonitor() {
       role: identity.role,
       program: identity.program,
     })
-    return true
+    if (ready[0]?.barcode) {
+      setVerifyReadyHold(true)
+      setBarcode(ready[0].barcode)
+      await loadBookPreview(ready[0].barcode)
+      setSuccess(`Ready for pickup: ${ready[0].title}. Verify the book, then confirm Verify & Checkout.`)
+      setMonitorTab('pending')
+      return 'ready'
+    }
+    return 'ok'
   }
 
   async function selectClaim(item: MonitorItem) {
@@ -299,14 +324,14 @@ export function AdminCirculationMonitor() {
       setSubmitting(true)
       try {
         const result = await attendanceApi.resolveScan(dataText)
-        const accepted = await acceptScannedStudent({
+        const outcome = await acceptScannedStudent({
           schoolId: result.visitor.schoolId,
           name: result.visitor.name,
           role: result.visitor.role,
           program: result.visitor.program ?? '',
         })
-        if (!accepted) return
-        setSuccess('Student verified. Review pending claims below, then scan or select the book.')
+        if (outcome === 'blocked') return
+        if (outcome === 'ok') setSuccess('Student verified. Scan the book next, then confirm checkout.')
         setMonitorTab('pending')
       } catch (err) {
         setSchoolId('')
@@ -323,13 +348,13 @@ export function AdminCirculationMonitor() {
       const pendingMatch = data?.items.find((item) => item.schoolId.toUpperCase() === normalized)
       setSubmitting(true)
       try {
-        const accepted = await acceptScannedStudent({
+        const outcome = await acceptScannedStudent({
           schoolId: normalized,
           name: pendingMatch?.userName ?? normalized,
           role: pendingMatch?.role ?? 'Borrower',
         })
-        if (!accepted) return
-        setSuccess('School ID logged. Review pending claims below, then scan or select the book.')
+        if (outcome === 'blocked') return
+        if (outcome === 'ok') setSuccess('School ID logged. Scan the book next, then confirm checkout.')
         setMonitorTab('pending')
       } catch (err) {
         setSchoolId('')
@@ -412,9 +437,13 @@ export function AdminCirculationMonitor() {
     setError('')
     setSuccess('')
     try {
-      await circulationApi.confirmCheckout(barcode.trim(), schoolId.trim())
+      const wasReadyHold = verifyReadyHold
+      if (wasReadyHold) await circulationApi.fulfillClaim(barcode.trim(), schoolId.trim(), loanMode)
+      else await circulationApi.confirmCheckout(barcode.trim(), schoolId.trim(), loanMode)
       clearTerminal()
-      setSuccess('Checkout confirmed successfully. The book is now an active loan.')
+      setSuccess(wasReadyHold
+        ? 'Hold verified and checked out. The reservation is now claimed.'
+        : 'Checkout confirmed successfully. The book is now an active loan.')
       await load(page)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Checkout could not be confirmed.')
@@ -543,7 +572,7 @@ export function AdminCirculationMonitor() {
         <div className="relative z-10 flex h-full flex-col justify-between">
           <div>
             <h2 className="font-display text-xl font-bold text-[#0b5ea2]">Checkout Terminal</h2>
-            <p className="mt-1 text-sm text-[#0b5ea2]/70">Scan student and book QR in any order, or enter values manually. Verify the face and cover before confirming.</p>
+            <p className="mt-1 text-sm text-[#0b5ea2]/70">Scan the student QR, then the book barcode. Confirm once the photo and cover match. Typed entry is only for a dead scanner.</p>
           </div>
           <div className="mt-6 flex flex-col gap-2">
             <button
@@ -552,8 +581,11 @@ export function AdminCirculationMonitor() {
               className="flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-[#0b5ea2] text-lg font-bold text-white shadow-md transition-all hover:bg-[#004488]"
             >
               <QrCode size={24} />
-              Open Scanner
+              Scan student or book
             </button>
+            <Button variant="secondary" className="w-full" onClick={() => setShowManualEntry((value) => !value)}>
+              {showManualEntry ? 'Hide typed entry' : 'Type instead'}
+            </Button>
             <Button variant="secondary" className="w-full" onClick={() => void load(page)}>
               <RefreshCw size={16} /> Refresh
             </Button>
@@ -592,16 +624,47 @@ export function AdminCirculationMonitor() {
                   )}
                 </div>
               </div>
-              <input
-                required
-                value={schoolId}
-                onChange={(event) => setSchoolId(event.target.value)}
-                placeholder="Manual School ID e.g. 09-0123"
-                className="h-10 w-full rounded-xl border border-[#0b5ea2]/20 bg-white px-3 font-mono text-sm font-bold text-[#0b5ea2] outline-none focus:ring-2 focus:ring-[#0b5ea2]/10"
-              />
+              {showManualEntry ? (
+                <input
+                  value={schoolId}
+                  onChange={(event) => setSchoolId(event.target.value)}
+                  placeholder="Type school ID only if the scanner failed"
+                  className="h-11 w-full rounded-xl border border-[#0b5ea2]/20 bg-white px-3 font-mono text-sm font-bold text-[#0b5ea2] outline-none focus:ring-2 focus:ring-[#0b5ea2]/10"
+                />
+              ) : (
+                <p className="text-xs font-semibold text-[#0b5ea2]/60">{schoolId ? `School ID locked from scan: ${schoolId}` : 'Waiting for student QR scan…'}</p>
+              )}
 
               {limitNotice ? (
-                <p className="rounded-xl bg-[#FFF200] p-3 text-xs font-semibold leading-5 text-[#0b5ea2]">{limitNotice}</p>
+                <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold leading-5 text-red-700">{limitNotice}</p>
+              ) : null}
+              {readyReservations.length ? (
+                <div className="rounded-xl border border-[#FFF200] bg-[#FFF200]/35 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]">Ready for pickup</p>
+                  <p className="mt-1 text-xs text-[#0b5ea2]/65">Confirm Verify & Checkout after matching the physical book.</p>
+                  <ul className="mt-3 space-y-2">
+                    {readyReservations.map((hold) => (
+                      <li key={hold.reservationId}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!hold.barcode) return
+                            setVerifyReadyHold(true)
+                            setBarcode(hold.barcode)
+                            void loadBookPreview(hold.barcode)
+                          }}
+                          className={`flex min-h-11 w-full items-center gap-3 rounded-xl border p-2 text-left ${barcode === hold.barcode ? 'border-[#0b5ea2] bg-white ring-2 ring-[#0b5ea2]/20' : 'border-[#0b5ea2]/10 bg-white'}`}
+                        >
+                          <BookText size={18} className="text-[#0b5ea2]" />
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-bold text-[#0b5ea2]">{hold.title}</span>
+                            <span className="font-mono text-[11px] text-[#0b5ea2]/65">{hold.accessionNumber ?? hold.barcode ?? 'Copy assigned at desk'}</span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
               {returnCandidates.length ? (
                 <div className="rounded-xl border border-[#0b5ea2]/15 bg-white p-3">
@@ -628,7 +691,7 @@ export function AdminCirculationMonitor() {
               ) : null}
               {studentPendingClaims.length ? (
                 <div className="rounded-xl border border-[#0b5ea2]/15 bg-white p-3">
-                  <p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]">Claim queue for this borrower</p>
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]">Pending counter claims</p>
                   <p className="mt-1 text-xs text-[#0b5ea2]/65">Select a pending title or scan its book QR.</p>
                   <ul className="mt-3 space-y-2">
                     {studentPendingClaims.map((claim) => {
@@ -688,25 +751,34 @@ export function AdminCirculationMonitor() {
                   )}
                 </div>
               </div>
-              <input
-                required
-                value={barcode}
-                onChange={(event) => setBarcode(event.target.value)}
-                placeholder="Manual Accession e.g. ACC-123"
-                className="h-10 w-full rounded-xl border border-[#0b5ea2]/20 bg-white px-3 font-mono text-sm font-bold text-[#0b5ea2] outline-none focus:ring-2 focus:ring-[#0b5ea2]/10"
-              />
+              {showManualEntry ? (
+                <input
+                  value={barcode}
+                  onChange={(event) => setBarcode(event.target.value)}
+                  placeholder="Type accession or barcode only if the scanner failed"
+                  className="h-11 w-full rounded-xl border border-[#0b5ea2]/20 bg-white px-3 font-mono text-sm font-bold text-[#0b5ea2] outline-none focus:ring-2 focus:ring-[#0b5ea2]/10"
+                />
+              ) : (
+                <p className="text-xs font-semibold text-[#0b5ea2]/60">{barcode ? `Book code locked from scan: ${barcode}` : 'Waiting for book barcode scan…'}</p>
+              )}
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 border-t border-[#0b5ea2]/10 pt-4">
-            <button type="button" onClick={clearTerminal} className="rounded-xl px-5 py-3 font-bold text-[#0b5ea2] hover:bg-zinc-100">Clear</button>
-            <button
-              type="submit"
-              disabled={submitting || checkoutBlocked || !schoolId.trim() || !barcode.trim()}
-              className="flex items-center gap-2 rounded-xl bg-[#0b5ea2] px-8 py-3 text-lg font-bold text-white shadow-md hover:bg-[#004488] disabled:opacity-50"
-            >
-              {submitting ? 'Confirming…' : <><ScanBarcode size={20} /> Confirm Checkout</>}
-            </button>
+          <div className="flex flex-col gap-3 border-t border-[#0b5ea2]/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Loan mode">
+              <button type="button" onClick={() => setLoanMode('TakeHome')} className={`min-h-11 rounded-xl px-4 text-sm font-bold ${loanMode === 'TakeHome' ? 'bg-[#0b5ea2] text-white' : 'border border-[#0b5ea2]/15 bg-white text-[#0b5ea2]'}`}>Take home</button>
+              <button type="button" onClick={() => setLoanMode('InsideLibrary')} className={`min-h-11 rounded-xl px-4 text-sm font-bold ${loanMode === 'InsideLibrary' ? 'bg-[#0b5ea2] text-white' : 'border border-[#0b5ea2]/15 bg-white text-[#0b5ea2]'}`}>Use inside the library</button>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={clearTerminal} className="min-h-11 rounded-xl px-5 font-bold text-[#0b5ea2] hover:bg-zinc-100">Clear</button>
+              <button
+                type="submit"
+                disabled={submitting || checkoutBlocked || !schoolId.trim() || !barcode.trim()}
+                className="flex min-h-11 items-center gap-2 rounded-xl bg-[#0b5ea2] px-8 text-lg font-bold text-white shadow-md hover:bg-[#004488] disabled:opacity-50"
+              >
+                {submitting ? 'Confirming…' : <><ScanBarcode size={20} />{verifyReadyHold ? 'Verify & Checkout' : 'Confirm Checkout'}</>}
+              </button>
+            </div>
           </div>
         </form>
       </div>

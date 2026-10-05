@@ -38,5 +38,5 @@ export function validateBookCartAddition(input: {
 }
 
 export function catalogActionLabel(availableCopiesCount: number) {
-  return availableCopiesCount > 0 ? 'Add to cart' : 'Reserve'
+  return availableCopiesCount > 0 ? 'Add to cart' : 'Request'
 }

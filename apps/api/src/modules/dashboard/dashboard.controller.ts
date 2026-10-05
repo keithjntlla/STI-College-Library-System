@@ -18,6 +18,13 @@ async function* summaryRows(data: Awaited<ReturnType<typeof dashboardRepository.
     ['Returned today', data.kpis.returnedToday], ['Active user accounts', data.kpis.activeUsers],
     ['Attendance today', data.kpis.dailyAttendance], ['Active reservations', data.kpis.activeReservations],
     ['Outstanding fines', `PHP ${data.kpis.outstandingFines.toFixed(2)}`],
+    ['Lost-book reports awaiting review', data.queues.pendingLostReports],
+    ['Confirmed losses awaiting quotation', data.queues.awaitingQuotation],
+    ['Reservations ready for pickup', data.queues.reservationsReady],
+    ['Other active reservations', data.queues.reservationsWaiting],
+    ['Print jobs pending', data.queues.pendingPrintJobs],
+    ['Print jobs ready for pickup', data.queues.readyPrintJobs],
+    ['Low ink or paper items', data.queues.lowSupplies],
     ['Current occupancy', `${data.occupancy.current} of ${data.occupancy.capacity}`],
     ['Peak hour today', data.occupancy.peakHour ?? 'No visits yet'], ['Average visit', `${data.occupancy.averageMinutes} minutes`],
   ]

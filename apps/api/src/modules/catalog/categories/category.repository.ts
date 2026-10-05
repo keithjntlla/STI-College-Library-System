@@ -9,6 +9,7 @@ export type CategoryRecord = {
   shelfLocation: string
   shelfColumn: number
   shelfRow: number
+  textbookRecencyRule: boolean
   totalBooksCount: number
   totalThesisCount: number
   createdAt: Date | string
@@ -17,7 +18,8 @@ export type CategoryRecord = {
 
 export async function listCategoriesWithCounts(database: Pool): Promise<CategoryRecord[]> {
   const [rows] = await database.execute<RowDataPacket[]>(
-    `SELECT c.category_id, c.category_name, c.description, c.shelf_location, c.shelf_column, c.shelf_row, c.created_at, c.updated_at,
+    `SELECT c.category_id, c.category_name, c.description, c.shelf_location, c.shelf_column, c.shelf_row,
+            c.textbook_recency_rule, c.created_at, c.updated_at,
             COALESCE(book_totals.total_books_count, 0) AS total_books_count,
             COALESCE(thesis_totals.total_thesis_count, 0) AS total_thesis_count
        FROM categories c
@@ -46,6 +48,7 @@ export async function listCategoriesWithCounts(database: Pool): Promise<Category
     shelfLocation: String(row.shelf_location),
     shelfColumn: Number(row.shelf_column),
     shelfRow: Number(row.shelf_row),
+    textbookRecencyRule: Boolean(row.textbook_recency_rule),
     totalBooksCount: Number(row.total_books_count ?? 0),
     totalThesisCount: Number(row.total_thesis_count ?? 0),
     createdAt: row.created_at,
@@ -153,9 +156,9 @@ export async function recordCategoryShelfEvent(connection: PoolConnection, actor
 
 export async function insertCategory(database: Pool, input: CategoryInput) {
   const [result] = await database.execute<ResultSetHeader>(
-    `INSERT INTO categories (category_name, description, shelf_location, shelf_column, shelf_row, created_at)
-     VALUES (?, ?, ?, ?, ?, NOW())`,
-    [input.categoryName, input.description, input.shelfLocation, input.shelfColumn, input.shelfRow],
+    `INSERT INTO categories (category_name, description, shelf_location, shelf_column, shelf_row, textbook_recency_rule, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+    [input.categoryName, input.description, input.shelfLocation, input.shelfColumn, input.shelfRow, input.textbookRecencyRule ? 1 : 0],
   )
   return result.insertId
 }
@@ -170,8 +173,10 @@ export async function lockCategory(connection: PoolConnection, categoryId: numbe
 
 export async function updateCategoryRow(connection: PoolConnection, categoryId: number, input: CategoryInput) {
   await connection.execute<ResultSetHeader>(
-    `UPDATE categories SET category_name = ?, description = ?, shelf_location = ?, shelf_column = ?, shelf_row = ?, updated_at = NOW()
-      WHERE category_id = ?`, [input.categoryName, input.description, input.shelfLocation, input.shelfColumn, input.shelfRow, categoryId],
+    `UPDATE categories SET category_name = ?, description = ?, shelf_location = ?, shelf_column = ?, shelf_row = ?,
+       textbook_recency_rule = ?, updated_at = NOW()
+      WHERE category_id = ?`,
+    [input.categoryName, input.description, input.shelfLocation, input.shelfColumn, input.shelfRow, input.textbookRecencyRule ? 1 : 0, categoryId],
   )
 }
 

@@ -5,11 +5,17 @@ import { reservationApi, ReservationApiError } from './reservation-api'
 import type { ReservationFilters, ReservationQueueItem, ReservationStatus } from './types'
 
 const inputClass = 'h-10 w-full rounded-xl border border-[#0b5ea2]/20 bg-white px-3 text-sm text-[#0b5ea2] outline-none focus:border-[#0b5ea2] focus:ring-4 focus:ring-[#0b5ea2]/10'
+const reservationStatuses = ['pending', 'approved', 'ready_for_pickup', 'claimed', 'cancelled', 'expired']
 const initialFilters: ReservationFilters = { status: '', dateFrom: '', dateTo: '', user: '', role: '' }
+
+function filtersFromLocation(): ReservationFilters {
+  const status = new URLSearchParams(window.location.search).get('status') ?? ''
+  return { ...initialFilters, status: reservationStatuses.includes(status) ? status : '' }
+}
 
 export function AdminReservationQueuePage() {
   const [items, setItems] = useState<ReservationQueueItem[]>([])
-  const [filters, setFilters] = useState(initialFilters)
+  const [filters, setFilters] = useState(filtersFromLocation)
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [error, setError] = useState<{ title: string; message: string } | null>(null)

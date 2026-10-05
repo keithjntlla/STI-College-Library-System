@@ -73,7 +73,7 @@ export class DashboardRepository {
     const visitMinutes = isPostgres
       ? `EXTRACT(EPOCH FROM (time_out - time_in))/60`
       : `TIME_TO_SEC(TIMEDIFF(time_out,time_in))/60`
-    const [profile, copyResult, operationsResult, attendanceResult, fineResult, weeklyResult, purposeResult, categoriesResult, circulationResult, activityResult, occupancyResult] = await Promise.all([
+    const [profile, copyResult, operationsResult, attendanceResult, fineResult, weeklyResult, purposeResult, categoriesResult, circulationResult, activityResult, occupancyResult, queuesResult] = await Promise.all([
       this.libraryProfile(),
       this.pool.execute<RowDataPacket[]>(`SELECT COUNT(*) total_books,${sumEquals('availability_status', 'Available')} available_books FROM physical_copies WHERE lifecycle_status='Active'`),
       this.pool.execute<RowDataPacket[]>(`SELECT
@@ -112,8 +112,17 @@ export class DashboardRepository {
         COALESCE(ROUND(AVG(CASE WHEN attendance_date=${currentDate()} AND time_out IS NOT NULL THEN ${visitMinutes} END)),0) average_minutes,
         (SELECT ${hourOf('time_in')} FROM attendance_logs WHERE attendance_date=${currentDate()} GROUP BY ${hourOf('time_in')} ORDER BY COUNT(*) DESC,${hourOf('time_in')} LIMIT 1) peak_hour
         FROM attendance_logs`),
+      this.pool.execute<RowDataPacket[]>(`SELECT
+          (SELECT COUNT(*) FROM lost_book_reports WHERE report_status='Pending') pending_lost_reports,
+          (SELECT COUNT(*) FROM lost_book_reports WHERE report_status='Confirmed' AND charge_resolution='Awaiting Quotation') awaiting_quotation,
+          (SELECT COUNT(*) FROM reservations WHERE reservation_status='ready_for_pickup') reservations_ready,
+          (SELECT COUNT(*) FROM reservations WHERE reservation_status IN ('pending','approved')) reservations_waiting,
+          (SELECT COUNT(*) FROM print_requests WHERE job_status='Pending') pending_print_jobs,
+          (SELECT COUNT(*) FROM print_requests WHERE job_status='Ready for Pickup') ready_print_jobs,
+          (SELECT COUNT(*) FROM ink_repository WHERE available_bottles<=low_stock_threshold_bottles)
+            + (SELECT COUNT(*) FROM bond_paper_stocks WHERE unopened_reams<=low_stock_threshold_reams) low_supplies`),
     ])
-    const copies = copyResult[0][0] ?? {}, operations = operationsResult[0][0] ?? {}, attendance = attendanceResult[0][0] ?? {}, fine = fineResult[0][0] ?? {}, occupancy = occupancyResult[0][0] ?? {}
+    const copies = copyResult[0][0] ?? {}, operations = operationsResult[0][0] ?? {}, attendance = attendanceResult[0][0] ?? {}, fine = fineResult[0][0] ?? {}, occupancy = occupancyResult[0][0] ?? {}, queues = queuesResult[0][0] ?? {}
     const days = ['Mon','Tue','Wed','Thu','Fri','Sat']
     const byDay = new Map((weeklyResult[0] as RowDataPacket[]).map((row) => [number(row.weekday), number(row.visits)]))
     const peak = occupancy.peak_hour === null || occupancy.peak_hour === undefined ? null : number(occupancy.peak_hour)
@@ -129,6 +138,15 @@ export class DashboardRepository {
       recentCirculation: (circulationResult[0] as RowDataPacket[]).map((row) => ({ id: number(row.transaction_id), userName: String(row.full_name), schoolId: String(row.school_id), title: String(row.title), barcode: String(row.barcode), status: String(row.transaction_status), eventAt: String(row.event_at) })),
       recentActivity: (activityResult[0] as RowDataPacket[]).map((row) => ({ id: number(row.admin_notification_id), type: String(row.event_type), title: String(row.message_title), message: String(row.message_body), createdAt: String(row.created_at) })),
       occupancy: { current: number(occupancy.currently_inside), capacity: profile.seatCapacity, peakHour: peak === null ? null : `${peak % 12 || 12}:00 ${peak < 12 ? 'AM' : 'PM'}`, averageMinutes: number(occupancy.average_minutes) },
+      queues: {
+        pendingLostReports: number(queues.pending_lost_reports),
+        awaitingQuotation: number(queues.awaiting_quotation),
+        reservationsReady: number(queues.reservations_ready),
+        reservationsWaiting: number(queues.reservations_waiting),
+        pendingPrintJobs: number(queues.pending_print_jobs),
+        readyPrintJobs: number(queues.ready_print_jobs),
+        lowSupplies: number(queues.low_supplies),
+      },
     }
   }
 
@@ -145,17 +163,32 @@ export class DashboardRepository {
         (SELECT COUNT(*) FROM reservations WHERE user_id=? AND reservation_status IN ('pending','approved','ready_for_pickup')) active_reservations,
         (SELECT COUNT(*) FROM notifications WHERE user_id=? AND deleted_at IS NULL AND is_read=0 AND (delivered_at IS NULL OR delivered_at<=NOW()) AND (expires_at IS NULL OR expires_at>NOW())) unread_notifications,
         (SELECT override_status FROM clearance_overrides WHERE user_id=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>NOW()) ORDER BY applied_at DESC,clearance_override_id DESC LIMIT 1) override_status,
+        (SELECT COUNT(*) FROM lost_book_reports WHERE user_id=? AND report_status='Confirmed' AND charge_resolution IN ('Awaiting Quotation','Quoted') AND payment_status<>'Paid') open_confirmed_losses,
+        (SELECT COUNT(*) FROM lost_book_reports WHERE user_id=? AND report_status='Confirmed' AND charge_resolution='Awaiting Quotation') awaiting_quotation,
         COALESCE((SELECT SUM(GREATEST(0,f.fine_amount-COALESCE(p.paid,0)-COALESCE(a.adjusted,0))) FROM fines f
           LEFT JOIN (SELECT x.fine_id,SUM(x.amount_allocated) paid FROM fine_payment_allocations x JOIN fine_payment_receipts r ON r.fine_payment_receipt_id=x.fine_payment_receipt_id AND r.receipt_status='Issued' GROUP BY x.fine_id) p ON p.fine_id=f.fine_id
           LEFT JOIN (SELECT fine_id,SUM(amount_adjusted) adjusted FROM fine_adjustments GROUP BY fine_id) a ON a.fine_id=f.fine_id WHERE f.user_id=?),0)
-        + COALESCE((SELECT SUM(replacement_charge) FROM lost_book_reports WHERE user_id=? AND report_status='Confirmed' AND payment_status='Unpaid'),0) outstanding_fines`, [userId,userId,userId,userId,userId,userId,userId]),
+        + COALESCE((SELECT SUM(replacement_charge) FROM lost_book_reports WHERE user_id=? AND report_status='Confirmed' AND charge_resolution='Quoted' AND payment_status='Unpaid'),0) outstanding_fines`,
+      [userId,userId,userId,userId,userId,userId,userId,userId,userId]),
       this.pool.execute<RowDataPacket[]>(`SELECT bt.transaction_id,COALESCE(t.title,m.title) title,
         COALESCE((SELECT ${authorsAgg('a')} FROM authors a WHERE a.title_id=t.title_id),m.author,'Unknown author') author,
-        pc.barcode,pc.shelf_location,bt.transaction_status,${formatDate('bt.due_at', '%Y-%m-%d %h:%i %p', 'YYYY-MM-DD HH12:MI AM')} due_at,t.cover_image_path
+        pc.barcode,pc.shelf_location,
+        CASE WHEN bt.transaction_status='Borrowed' AND bt.due_at < NOW() THEN 'Overdue' ELSE bt.transaction_status END AS transaction_status,
+        lbr.report_status AS lost_report_status,
+        ${formatDate('bt.due_at', '%Y-%m-%d %h:%i %p', 'YYYY-MM-DD HH12:MI AM')} due_at,t.cover_image_path
         FROM borrow_transactions bt JOIN materials m ON m.material_id=bt.material_id
         LEFT JOIN physical_copies pc ON pc.physical_copy_id=bt.physical_copy_id LEFT JOIN titles t ON t.title_id=pc.title_id
-        WHERE bt.user_id=? AND bt.transaction_status IN ('Borrowed','Overdue') AND bt.lost_confirmed_at IS NULL
-        ORDER BY (bt.transaction_status='Overdue') DESC,bt.due_at ASC LIMIT 1`, [userId]),
+        LEFT JOIN lost_book_reports lbr ON lbr.transaction_id=bt.transaction_id
+        WHERE bt.user_id=? AND bt.transaction_status IN ('Borrowed','Overdue')
+          AND (
+            bt.lost_confirmed_at IS NULL
+            OR (lbr.report_status='Confirmed' AND lbr.charge_resolution IN ('Awaiting Quotation','Quoted') AND lbr.payment_status<>'Paid')
+          )
+        ORDER BY
+          (lbr.report_status='Confirmed') DESC,
+          (CASE WHEN bt.transaction_status='Overdue' OR (bt.transaction_status='Borrowed' AND bt.due_at < NOW()) THEN 1 ELSE 0 END) DESC,
+          bt.due_at ASC
+        LIMIT 1`, [userId]),
       this.pool.execute<RowDataPacket[]>(`SELECT r.reservation_id,COALESCE(t.title,m.title) title,t.cover_image_path,r.queue_position,r.reservation_status,${formatDate('r.pickup_deadline', '%Y-%m-%d %h:%i %p', 'YYYY-MM-DD HH12:MI AM')} pickup_deadline
         FROM reservations r JOIN materials m ON m.material_id=r.material_id LEFT JOIN titles t ON t.title_id=r.book_title_id
         WHERE r.user_id=? AND r.reservation_status IN ('pending','approved','ready_for_pickup') ORDER BY (r.reservation_status='ready_for_pickup') DESC,r.reserved_at LIMIT 1`, [userId]),
@@ -186,17 +219,32 @@ export class DashboardRepository {
     ])
     const summary = summaryResult[0][0] ?? {}, loan = loanResult[0][0], reservation = reservationResult[0][0], print = printResult[0][0], notice = noticeResult[0][0], announcement = announcementResult[0][0], occupancy = occupancyResult[0][0] ?? {}
     const limit = actor.role === 'Student' ? 2 : null
-    const computedClearance = number(summary.active_loans) > 0 || money(summary.outstanding_fines) > 0 ? 'Not Cleared' : 'Cleared'
-      const clearanceReasons = [
-        number(summary.active_loans) > 0 ? `${number(summary.active_loans)} unreturned ${number(summary.active_loans) === 1 ? 'book' : 'books'}` : '',
-        money(summary.outstanding_fines) > 0 ? `PHP ${money(summary.outstanding_fines).toFixed(2)} unpaid obligations` : '',
-      ].filter(Boolean)
-      const computedClearanceReason = clearanceReasons.join('; ') || 'No library obligations'
+    const openConfirmedLosses = number(summary.open_confirmed_losses)
+    const awaitingQuotation = number(summary.awaiting_quotation)
+    const outstandingFines = money(summary.outstanding_fines)
+    const computedClearance = number(summary.active_loans) > 0 || outstandingFines > 0 || openConfirmedLosses > 0 ? 'Not Cleared' : 'Cleared'
+    const clearanceReasons = [
+      number(summary.active_loans) > 0 ? `${number(summary.active_loans)} unreturned ${number(summary.active_loans) === 1 ? 'book' : 'books'}` : '',
+      awaitingQuotation > 0 ? `${awaitingQuotation} confirmed lost ${awaitingQuotation === 1 ? 'book' : 'books'} awaiting quotation` : '',
+      outstandingFines > 0 ? `PHP ${outstandingFines.toFixed(2)} unpaid obligations` : '',
+    ].filter(Boolean)
+    const computedClearanceReason = clearanceReasons.join('; ') || 'No library obligations'
+    const lostReportStatus = loan?.lost_report_status ? String(loan.lost_report_status) : null
     return {
       generatedAt: new Date().toISOString(), user: { name: identity.full_name, schoolId: identity.school_id, program: identity.program, role: actor.role }, profile,
-      summary: { activeLoans: number(summary.active_loans), activeBookCount: number(summary.active_loans)+number(summary.pending_book_requests)+number(summary.active_reservations), borrowingLimit: limit, activeReservations: number(summary.active_reservations), unreadNotifications: number(summary.unread_notifications), outstandingFines: money(summary.outstanding_fines), clearanceStatus: summary.override_status ? String(summary.override_status) : computedClearance, clearanceReason: summary.override_status ? 'Authorized override' : computedClearanceReason },
+      summary: { activeLoans: number(summary.active_loans), activeBookCount: number(summary.active_loans)+number(summary.pending_book_requests)+number(summary.active_reservations), borrowingLimit: limit, activeReservations: number(summary.active_reservations), unreadNotifications: number(summary.unread_notifications), outstandingFines, clearanceStatus: summary.override_status ? String(summary.override_status) : computedClearance, clearanceReason: summary.override_status ? 'Authorized override' : computedClearanceReason },
       occupancy: { current: number(occupancy.currently_inside), capacity: profile.seatCapacity },
-      currentLoan: loan ? { id:number(loan.transaction_id),title:String(loan.title),author:String(loan.author),barcode:String(loan.barcode ?? ''),shelfLocation:String(loan.shelf_location ?? ''),status:String(loan.transaction_status),dueAt:String(loan.due_at ?? ''),coverPath:loan.cover_image_path?String(loan.cover_image_path):null } : null,
+      currentLoan: loan ? {
+        id: number(loan.transaction_id),
+        title: String(loan.title),
+        author: String(loan.author),
+        barcode: String(loan.barcode ?? ''),
+        shelfLocation: String(loan.shelf_location ?? ''),
+        status: String(loan.transaction_status),
+        lostReportStatus,
+        dueAt: String(loan.due_at ?? ''),
+        coverPath: loan.cover_image_path ? String(loan.cover_image_path) : null,
+      } : null,
       reservation: reservation ? { id:number(reservation.reservation_id),title:String(reservation.title),coverPath:reservation.cover_image_path?String(reservation.cover_image_path):null,queuePosition:number(reservation.queue_position),status:String(reservation.reservation_status),pickupDeadline:reservation.pickup_deadline?String(reservation.pickup_deadline):null } : null,
       printRequest: print ? { id:number(print.request_id),fileName:String(print.file_name),copies:number(print.number_of_copies),printType:String(print.print_type),cost:money(print.calculated_cost),status:String(print.job_status),createdAt:String(print.created_at) } : null,
       latestNotification: notice ? { id:number(notice.notification_id),title:String(notice.message_title),message:String(notice.message_body),type:String(notice.trigger_type),actionPath:notice.action_path?String(notice.action_path):null,createdAt:String(notice.created_at) } : null,

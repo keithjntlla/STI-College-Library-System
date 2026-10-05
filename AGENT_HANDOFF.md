@@ -1,31 +1,86 @@
-# 🤖 Agent Handoff & Current State
+# Agent Handoff & Current State
 
-**Date:** October 2026
-**Target Audience:** Future AI Agents / Developers picking up the `StiOrmocLibrary` codebase.
+**Date:** 2026-10-05  
+**Repo:** https://github.com/keithjntlla/STI-College-Library-System  
+**HEAD:** `d960505` — *Improve lost-book clearance and supplier quotation workflows.* (`main` / `origin/main`)  
+**Audience:** Next AI agent or developer picking up `StiOrmocLibrary`.
 
-This document serves as a memory bridge. It outlines the specific features, architectural pipelines, and technical debts that were resolved or deferred during the last development session.
-
-## 🏗️ 1. Features Implemented
-* **SmartLib Blueprint Catalog Grid:** The `PublicCatalog.tsx` frontend was redesigned from abstract shapes to a high-tech, dot-matrix radial gradient design. 
-* **Optimistic UI Searching:** Search debouncing is wired up. To prevent layout flashing, the UI uses an `isFetching` state to dim the grid to 40% opacity while background fetching, rather than unmounting the grid.
-* **Mathematical "Load More" Pagination:** Replaced infinite scrolling with a definitive "View All / Load More" button. The backend handles this natively via `limit=20` and `page=X` in `catalog-search.repository.ts`. The frontend mathematically appends unique books to the React state array without losing previous DOM nodes.
-* **Book Details Modal:** Implemented `PublicBookDetailModal.tsx` showing availability badges (Waitlist vs. Available), category tags, dynamically fetched synopses, and a "Request to Borrow" deep-link router.
-
-## 🌐 2. The Smart Cover Pipeline (CRITICAL)
-A major architectural pipeline was built to handle missing book covers, especially critical for Philippine/Local editions that have obscure ISBNs.
-1. **Database Script:** All OpenLibrary URLs in the DB were appended with `?default=false` to force a `404 Not Found` instead of returning a blank 1x1 pixel.
-2. **Deep Search Fallback (`fix-missing-covers.ts`):** A backend script was written that scans for 404 covers, bypasses the ISBN, and does a fuzzy text search against the OpenLibrary API using `Title + Author Name` to extract the `cover_i` ID. 
-3. **Frontend Generative Fallback:** If the image still returns a 404, `PublicCatalog.tsx` uses an `onError` synthetic event to replace the `src` with a `Placehold.co` dynamically generated text cover matching the book's title.
-
-## 📦 3. Clarification on "Bulk Imports"
-* The backend contains a module named `bulk-book`.
-* **WARNING:** This is *not* a CSV file importer. It is a feature for **Physical Copy Generation** (e.g., adding 50 physical barcode labels for a single ISBN at once).
-* A true CSV/Excel importer for migrating the real STI database has not been built yet.
-
-## 📋 4. Next Steps & Backlog
-1. **CSV / Excel Bulk Book Importer:** Needs to be built in the Admin Dashboard. Must hook into the Smart Cover Pipeline to auto-fetch covers for imported books.
-2. **Circulation System:** Checkout / Return routing.
-3. **Impeccable Audit Check:** `impeccable audit` was run to snap random text sizes to standard Tailwind scales (`text-xs`). Continue enforcing this in future components.
+Read `GEMINI.md` and `REFERENCE.pdf` before changing code. Prefer real feature modules under `apps/web/src/features/...` and `apps/api/src/modules/...` over static mock pages.
 
 ---
-*Note to next agent: Please read `project-backlog.md` in the user's brain directory for the pending feature queue, and remember to check `REFERENCE.pdf` (and `GEMINI.md`) for global rules before writing code.*
+
+## 1. What just shipped (this session)
+
+### Lost-book student → librarian path
+- Student **Report lost** creates a **Pending** `lost_book_reports` row; the copy/loan is **not** marked Lost until staff confirm.
+- Librarian **Clearance** (`/librarian/clearance`) shows a soft-refreshing worklist: **Lost-book reports awaiting review**.
+- Staff open **Review** → Confirm (in-app `ConfirmModal`, not `window.confirm`) or Reject.
+- Confirm with an existing supplier quotation → charge **Quoted**; without one → **Awaiting Quotation** (no invented price).
+
+### Clearance standing (easy to misread)
+Master-list **Standing = Cleared** only looks at:
+- Unreturned loans where `lost_confirmed_at IS NULL`
+- Unpaid overdue fines
+- Unpaid **Quoted** replacement charges
+
+So after **Confirm loss** with **Awaiting Quotation**, Standing can correctly show **Cleared** — the open lost case still appears under Lost-book reports, but awaiting quotation is not a standing blocker.
+
+### Non-monetary resolution
+**Document non-monetary resolution** = **Waive**: loss stays on record, **no PHP charge**, reason ≥ 10 characters (e.g. in-kind replacement, authorized waiver). Opposite of **Confirm quotation charge**.
+
+### Supplier quotation UX
+- Clearance links **Upload supplier quotation** / **Attach quotation in catalog** deep-link to  
+  `/librarian/catalog?titleId=…&action=quotation&title=…`  
+  and [CatalogManagementPage.tsx](apps/web/src/features/catalog/CatalogManagementPage.tsx) opens [BookQuotationModal.tsx](apps/web/src/features/catalog/BookQuotationModal.tsx).
+- A quotation requires **both** a supplier file (PDF/JPEG/PNG, private storage) **and** a PHP amount. File = audit evidence; amount = charge used on clearance. Upload enables only when both are valid.
+
+### Other UI polish in the same commit
+- Student borrowing history layout/status polish; Report lost warning + success modal tweaks.
+- Student-facing book detail / cart overview: **barcode not shown** (staff asset tools still have codes).
+- Clearance review dialog: `lg:left-[var(--sidebar-offset)]`, sticky header, Escape close, z above sidebar.
+- Circulation monitor lost-report status badges.
+
+---
+
+## 2. Key files
+
+| Area | Path |
+| --- | --- |
+| Clearance API (standing, confirm, resolve Charge/Waive) | `apps/api/src/modules/clearance/clearance.service.ts` |
+| Report lost API | `apps/api/src/modules/circulation/circulation.service.ts` |
+| Librarian clearance UI | `apps/web/src/features/clearance/AdminClearancePage.tsx` |
+| Quotation modal | `apps/web/src/features/catalog/BookQuotationModal.tsx` |
+| Catalog deep-link | `apps/web/src/features/catalog/CatalogManagementPage.tsx` |
+| Quotation API/storage | `apps/api/src/modules/catalog/book-quotation.ts` |
+| Student history / Report lost | `apps/web/src/features/circulation/BorrowingHistory.tsx`, `ReportLostDialog.tsx` |
+
+---
+
+## 3. Product / architecture notes still true
+
+- **Stack:** React/Vite/Tailwind web + Express API; production target is Vercel + Supabase Postgres (local MySQL is reference/rollback only).
+- **Quotation vs purchase price:** Quotation is optional catalog evidence for replacement charge; do not invent a price or silently fall back to old purchase price.
+- **ConfirmModal / overlays:** Prefer shared `ConfirmModal` and sidebar-offset overlays (`--sidebar-offset`) over browser `confirm` and full-bleed dialogs that sit under the portal sidebar.
+- **CSV bulk title import:** Catalog management has CSV import for books; do not confuse with older `bulk-book` “many physical copies for one title” helpers.
+
+---
+
+## 4. Suggested next work
+
+1. **Deployed acceptance** of the lost-report → clearance → quotation → charge/waive path on the live site (Phase 1 B6 / Phase 2 A8 style checks in `docs/system-fixes-and-features-plan.md`).
+2. Whether **Awaiting Quotation** should block clearance standing (product decision; currently it does not).
+3. Continue Phase 2/3 backlog from `docs/system-fixes-and-features-plan.md` (durable jobs, reservation status actions, invoices, etc.).
+4. Keep Impeccable / GEMINI UI standards on any new frontend surfaces.
+
+---
+
+## 5. Verify locally
+
+```bash
+# From StiOrmocLibrary/apps/web
+npm test -- --run src/features/clearance/AdminClearancePage.test.tsx src/features/catalog/CatalogManagementPage.test.tsx src/features/catalog/BookQuotationModal.test.tsx
+```
+
+---
+
+*Older catalog-cover / PublicCatalog notes from prior handoffs remain in git history if needed; this file prioritizes the lost-book and quotation work that was just pushed.*

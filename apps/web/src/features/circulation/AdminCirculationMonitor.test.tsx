@@ -283,6 +283,19 @@ describe('AdminCirculationMonitor', () => {
     expect(screen.getByText('Computer Networks pending claim was cancelled and released.')).toBeTruthy()
   })
 
+  it('opens the overdue lane from the dashboard query', async () => {
+    window.history.pushState({}, '', '/librarian/circulation?lane=overdue')
+    api.monitor.mockResolvedValue({
+      ...monitor,
+      summary: { ...monitor.summary, overdueLoans: 1, activeLoans: 0 },
+      items: [{ ...monitor.items[0], status: 'Overdue', title: 'Late Networks' }],
+    })
+    render(<AdminCirculationMonitor />)
+    const tab = await screen.findByRole('tab', { name: /Overdue/i })
+    expect(tab.getAttribute('aria-selected')).toBe('true')
+    expect(await screen.findByText('Late Networks')).toBeTruthy()
+  })
+
   it('keeps Borrowed visible and badges a pending lost report on active loans', async () => {
     api.monitor.mockResolvedValue({
       ...monitor,
@@ -296,4 +309,4 @@ describe('AdminCirculationMonitor', () => {
   })
 })
 
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); window.history.pushState({}, '', '/') })

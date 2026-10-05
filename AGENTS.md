@@ -8,9 +8,10 @@
 
 ## Before making design, implementation, or database decisions
 
-1. Read [docs/source-of-truth.md](docs/source-of-truth.md) and consult its preserved Final Draft and Administrative System Flow PDFs for the relevant feature.
-2. Read and follow [agent.md](agent.md).
-3. Check the currently implemented schema contract in [docs/schema-context.md](docs/schema-context.md).
-4. For hosted database work, also read [docs/supabase-migration-plan.md](docs/supabase-migration-plan.md).
+1. Read [docs/source-of-truth.md](docs/source-of-truth.md) and the latest manuscript, [REFERENCE.docx](../REFERENCE.docx), for the relevant feature.
+2. Read and follow [agent.md](agent.md). For status pills/banners use `StatusPill` / `AlertMessage` tones in `apps/web/src/components/ui.tsx` (error=red, warning=yellow, success=green, info=blue).
+3. Keep [RULE.md](RULE.md) current when shipping mock-defense revisions (status checklist).
+4. Check the currently implemented schema contract in [docs/schema-context.md](docs/schema-context.md).
+5. For hosted database work, also read [docs/supabase-migration-plan.md](docs/supabase-migration-plan.md).
 
-The PDFs define the target product. The schema context describes the current database implementation. When they differ, plan a backward-safe migration instead of silently changing table meanings. The MySQL tree remains the rollback reference while the API dual-drives MySQL and Supabase Postgres.
+The manuscript and source of truth define the target product. Older PDFs in `docs/source/` are previous drafts. The schema context describes the current database implementation. When they differ, plan a backward-safe migration instead of silently changing table meanings. The MySQL tree remains the rollback reference while the API dual-drives MySQL and Supabase Postgres.

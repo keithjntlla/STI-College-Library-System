@@ -1,4 +1,11 @@
-export type CategoryInput = { categoryName: string; description: string; shelfLocation: string; shelfColumn: number; shelfRow: number }
+export type CategoryInput = {
+  categoryName: string
+  description: string
+  shelfLocation: string
+  shelfColumn: number
+  shelfRow: number
+  textbookRecencyRule: boolean
+}
 export type CategoryValidationResult = { isValid: boolean; data: CategoryInput; errors: Record<string, string> }
 
 const CATEGORY_NAME_MAX = 100
@@ -7,6 +14,17 @@ const SHELF_LOCATION_MAX = 100
 
 function normalizedString(value: unknown) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : ''
+}
+
+function booleanFlag(value: unknown) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value === 1
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+    if (['0', 'false', 'no', 'off', ''].includes(normalized)) return false
+  }
+  return null
 }
 
 export function validateCategoryPayload(body: unknown): CategoryValidationResult {
@@ -18,6 +36,7 @@ export function validateCategoryPayload(body: unknown): CategoryValidationResult
   const shelfLocation = normalizedString(input.shelfLocation ?? input.shelf_location)
   const shelfColumn = Number(input.shelfColumn ?? input.shelf_column ?? 1)
   const shelfRow = Number(input.shelfRow ?? input.shelf_row ?? 1)
+  const textbookFlag = booleanFlag(input.textbookRecencyRule ?? input.textbook_recency_rule ?? false)
 
   if (typeof (input.categoryName ?? input.category_name) !== 'string') errors.categoryName = 'Category name must be a string.'
   else if (!categoryName) errors.categoryName = 'Category name is required.'
@@ -32,8 +51,20 @@ export function validateCategoryPayload(body: unknown): CategoryValidationResult
 
   if (!Number.isSafeInteger(shelfColumn) || shelfColumn < 1 || shelfColumn > 12) errors.shelfColumn = 'Shelf column must be between 1 and 12.'
   if (!Number.isSafeInteger(shelfRow) || shelfRow < 1 || shelfRow > 12) errors.shelfRow = 'Shelf row must be between 1 and 12.'
+  if (textbookFlag === null) errors.textbookRecencyRule = 'Textbook recency rule must be true or false.'
 
-  return { isValid: Object.keys(errors).length === 0, data: { categoryName, description, shelfLocation, shelfColumn, shelfRow }, errors }
+  return {
+    isValid: Object.keys(errors).length === 0,
+    data: {
+      categoryName,
+      description,
+      shelfLocation,
+      shelfColumn,
+      shelfRow,
+      textbookRecencyRule: textbookFlag ?? false,
+    },
+    errors,
+  }
 }
 
 export function parseCategoryId(value: unknown, field = 'categoryId') {

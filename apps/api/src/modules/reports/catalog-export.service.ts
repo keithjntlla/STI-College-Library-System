@@ -12,6 +12,8 @@ export type InventoryExportRow = {
   isbn: string
   category: string
   publicationYear: string
+  copyrightYear: string
+  weedingReview: string
   accessionNumber: string
   barcode: string
   shelfLocation: string
@@ -19,6 +21,11 @@ export type InventoryExportRow = {
   availability: string
   researchCode: string
   adviser: string
+}
+
+export function weedingReviewLabel(copyrightYear: number | null, textbookRecencyRule: boolean, now = new Date()) {
+  if (!textbookRecencyRule || copyrightYear === null) return ''
+  return copyrightYear <= now.getFullYear() - 5 ? 'Review for weeding' : ''
 }
 
 function commonWhere(filters: CatalogSearchFilters, alias = 't') {
@@ -38,10 +45,16 @@ function commonWhere(filters: CatalogSearchFilters, alias = 't') {
   return { where, parameters }
 }
 
-function mapRow(row: RowDataPacket): InventoryExportRow {
+function mapRow(row: RowDataPacket, now = new Date()): InventoryExportRow {
+  const copyrightYear = row.copyright_year === null || row.copyright_year === undefined || row.copyright_year === ''
+    ? null
+    : Number(row.copyright_year)
+  const textbookRule = Boolean(row.textbook_recency_rule)
   return {
     recordType: String(row.record_type ?? ''), title: String(row.title ?? ''), authors: String(row.authors ?? ''),
     isbn: String(row.isbn ?? ''), category: String(row.category_name ?? ''), publicationYear: String(row.publication_year ?? ''),
+    copyrightYear: copyrightYear === null || Number.isNaN(copyrightYear) ? '' : String(copyrightYear),
+    weedingReview: weedingReviewLabel(Number.isNaN(copyrightYear as number) ? null : copyrightYear, textbookRule, now),
     accessionNumber: String(row.accession_number ?? ''), barcode: String(row.barcode ?? ''), shelfLocation: String(row.shelf_location ?? ''),
     condition: String(row.condition_status ?? ''), availability: String(row.availability ?? ''), researchCode: String(row.research_code ?? ''),
     adviser: String(row.adviser_name ?? ''),
@@ -66,8 +79,8 @@ export async function* iterateInventoryRows(
         parameters.push(filters.availability)
       }
       const [rows] = await database.execute<RowDataPacket[]>(
-        `SELECT pc.physical_copy_id, t.record_type, t.title, t.isbn, t.publication_year,
-                c.category_name, pc.accession_number, pc.barcode, pc.shelf_location,
+        `SELECT pc.physical_copy_id, t.record_type, t.title, t.isbn, t.publication_year, t.copyright_year,
+                c.category_name, c.textbook_recency_rule, pc.accession_number, pc.barcode, pc.shelf_location,
                 pc.condition_status, pc.availability_status AS availability,
                 (SELECT ${authorsAgg('a')}
                    FROM authors a WHERE a.title_id = t.title_id) AS authors,
@@ -94,8 +107,8 @@ export async function* iterateInventoryRows(
       if (filters.availability === 'Available' || filters.availability === 'Available for Viewing') where.push("rr.viewing_status = 'Available for Viewing'")
       else if (filters.availability) { where.push('rr.viewing_status = ?'); parameters.push(filters.availability) }
       const [rows] = await database.execute<RowDataPacket[]>(
-        `SELECT t.title_id, t.record_type, t.title, t.isbn, t.publication_year,
-                c.category_name, '' AS accession_number, '' AS barcode, '' AS shelf_location,
+        `SELECT t.title_id, t.record_type, t.title, t.isbn, t.publication_year, t.copyright_year,
+                c.category_name, c.textbook_recency_rule, '' AS accession_number, '' AS barcode, '' AS shelf_location,
                 '' AS condition_status, rr.viewing_status AS availability,
                 (SELECT ${authorsAgg('a')}
                    FROM authors a WHERE a.title_id = t.title_id) AS authors,
@@ -124,7 +137,8 @@ function csvCell(value: string) {
 
 const CSV_COLUMNS: Array<[keyof InventoryExportRow, string]> = [
   ['recordType', 'Record Type'], ['title', 'Title'], ['authors', 'Authors'], ['isbn', 'ISBN'],
-  ['category', 'Category'], ['publicationYear', 'Publication Year'], ['accessionNumber', 'Accession Number'],
+  ['category', 'Category'], ['publicationYear', 'Publication Year'], ['copyrightYear', 'Copyright Year'],
+  ['weedingReview', 'Weeding Review'], ['accessionNumber', 'Accession Number'],
   ['barcode', 'Barcode'], ['shelfLocation', 'Shelf Location'], ['condition', 'Condition'],
   ['availability', 'Availability'], ['researchCode', 'Research Code'], ['adviser', 'Adviser'],
 ]
@@ -144,14 +158,16 @@ export function createInventoryPdf(rows: AsyncIterable<InventoryExportRow>) {
     { key: 'authors', label: 'AUTHOR(S)', width: 125 },
     { key: 'isbn', label: 'ISBN', width: 90 },
     { key: 'category', label: 'CATEGORY', width: 85 },
-    { key: 'publicationYear', label: 'YEAR', width: 45 },
-    { key: 'accessionNumber', label: 'ACCESSION', width: 85 },
-    { key: 'barcode', label: 'BARCODE', width: 85 },
-    { key: 'shelfLocation', label: 'SHELF', width: 75 },
-    { key: 'condition', label: 'CONDITION', width: 70 },
-    { key: 'availability', label: 'AVAILABILITY', width: 80 },
-    { key: 'researchCode', label: 'RESEARCH CODE', width: 75 },
-    { key: 'adviser', label: 'ADVISER', width: 96 },
+    { key: 'publicationYear', label: 'PUB YEAR', width: 45 },
+    { key: 'copyrightYear', label: '© YEAR', width: 45 },
+    { key: 'weedingReview', label: 'WEEDING', width: 70 },
+    { key: 'accessionNumber', label: 'ACCESSION', width: 80 },
+    { key: 'barcode', label: 'BARCODE', width: 80 },
+    { key: 'shelfLocation', label: 'SHELF', width: 70 },
+    { key: 'condition', label: 'CONDITION', width: 65 },
+    { key: 'availability', label: 'AVAILABILITY', width: 75 },
+    { key: 'researchCode', label: 'RESEARCH CODE', width: 70 },
+    { key: 'adviser', label: 'ADVISER', width: 90 },
   ]
   return createBrandedTablePdf(rows, {
     title: 'COMPLETE INVENTORY REPORT',

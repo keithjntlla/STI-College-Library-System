@@ -189,12 +189,12 @@ export async function hasActiveTitleReservation(connection: PoolConnection, titl
 export async function updateBookMetadata(connection: PoolConnection, titleId: number, input: BookMetadataInput) {
   await connection.execute<ResultSetHeader>(
     `UPDATE titles SET category_id = ?, title = ?, normalized_title = ?, isbn = ?,
-       publication_year = ?, publisher = ?, call_number = ?, search_text = ?,
+       publication_year = ?, copyright_year = ?, publisher = ?, call_number = ?, search_text = ?,
        row_version = row_version + 1, updated_at = NOW()
      WHERE title_id = ?`,
     [
       input.categoryId, input.title, input.title.toLocaleLowerCase('en-US'), input.isbn,
-      input.publicationYear, input.publisher, input.callNumber,
+      input.publicationYear, input.copyrightYear, input.publisher, input.callNumber,
       buildBookSearchText({ ...input, copy: null as never }), titleId,
     ],
   )

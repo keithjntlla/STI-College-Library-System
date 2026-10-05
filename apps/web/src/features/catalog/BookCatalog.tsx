@@ -298,7 +298,7 @@ export function BookCatalog() {
                       </button>
                     ) : (
                       <button type="button" onClick={() => void reserve(book)} disabled={reserving === book.titleId} className="h-10 flex-1 rounded-xl bg-[#FFF200] text-sm font-bold text-[#0b5ea2] disabled:opacity-50 sm:flex-none sm:px-4">
-                        {reserving === book.titleId ? 'Reserving…' : 'Reserve'}
+                        {reserving === book.titleId ? 'Requesting…' : 'Request'}
                       </button>
                     )}
                   </div>
@@ -329,7 +329,7 @@ export function BookCatalog() {
                       </button>
                     ) : (
                       <button type="button" onClick={() => void reserve(book)} disabled={reserving === book.titleId} className="h-8 rounded-lg bg-[#FFF200] px-2 text-[11px] font-bold text-[#0b5ea2] disabled:opacity-50">
-                        {reserving === book.titleId ? 'Reserving…' : 'Reserve'}
+                        {reserving === book.titleId ? 'Requesting…' : 'Request'}
                       </button>
                     )}
                   </div>

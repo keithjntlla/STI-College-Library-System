@@ -11,4 +11,4 @@ afterEach(cleanup)
 
 it('shows live capacity and saves an audited capacity change',async()=>{render(<AdminAttendancePage/>);expect(await screen.findByText('80')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:/Capacity/i}));fireEvent.change(screen.getByLabelText('Maximum occupants'),{target:{value:'100'}});fireEvent.change(screen.getByLabelText('Reason'),{target:{value:'Expanded study area'}});fireEvent.click(screen.getByRole('button',{name:'Save capacity'}));await waitFor(()=>expect(api.updateCapacity).toHaveBeenCalledWith(100,'Expanded study area'))})
 
-it('opens the integrated camera scanner',async()=>{render(<AdminAttendancePage/>);await screen.findByText('Attendance logs');fireEvent.click(screen.getByRole('button',{name:'Scan QR'}));expect(screen.getByText('Scanner opened')).toBeTruthy()})
+it('opens the integrated camera scanner',async()=>{render(<AdminAttendancePage/>);await screen.findByText('Attendance logs');fireEvent.click(screen.getByRole('button',{name:'Open scanner'}));expect(screen.getByText('Scanner opened')).toBeTruthy()})

@@ -41,6 +41,7 @@ import { AdminFinesPage } from './features/fines/AdminFinesPage'
 import { StudentFinesPage } from './features/fines/StudentFinesPage'
 import { AdminInvoicesPage } from './features/invoices/AdminInvoicesPage'
 import { MyInvoicesPage } from './features/invoices/MyInvoicesPage'
+import { LibrarianReportsPage } from './features/reports/LibrarianReportsPage'
 
 function NotFound() {
   return <div className="flex min-h-screen items-center justify-center bg-[#0b5ea2]/5 p-6 text-center"><div><p className="text-sm font-bold text-[#0b5ea2]">404</p><h1 className="mt-2 font-display text-3xl font-bold text-[#0b5ea2]">This shelf is empty.</h1><p className="mt-2 text-sm text-[#0b5ea2]/65">The page you requested is not part of SmartLib.</p><a href="/" className="mt-5 inline-flex rounded-xl bg-[#0b5ea2] px-4 py-2.5 text-sm font-bold text-[#FFFFFF]">Return to library</a></div></div>
@@ -95,6 +96,7 @@ export default function App() {
           <Route path="/librarian/fines" element={<AdminFinesPage />} />
           <Route path="/librarian/invoices" element={<AdminInvoicesPage />} />
           <Route path="/librarian/inventory" element={<InventoryDashboard />} />
+          <Route path="/librarian/reports" element={<LibrarianReportsPage />} />
           <Route path="/librarian/floor-plan" element={<FloorPlanImagePage />} />
           <Route path="/librarian/printing" element={<AdminPrintingQueuePage />} />
           <Route path="/librarian/supplies" element={<AdminPrintSuppliesPage />} />

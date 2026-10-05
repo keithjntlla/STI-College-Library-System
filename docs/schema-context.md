@@ -6,11 +6,11 @@ The API is mid-cutover to Supabase PostgreSQL. See [supabase-migration-plan.md](
 
 - When `DATABASE_URL` (postgresql://…) is set, the runtime uses `pg` against drafts under [database/supabase/](../database/supabase/).
 - When unset, the runtime uses local MySQL via `mysql2` and the MySQL tree below (rollback / offline path).
-- The MySQL baseline and ordered migrations remain the historical product contract. Latest MySQL reference migration: `20260927_047_phase6_registration_roles.sql` (prepared locally, not applied). Next MySQL number: **`048`**. MySQL is not the active database.
+- The MySQL baseline and ordered migrations remain the historical product contract. Latest MySQL reference migration: `20261005_049_attendance_closing_hours.sql` (prepared locally, not applied; also `048` loan/weeding). Next MySQL number: **`050`**. MySQL is not the active database.
 - Additive MAIN product tables for Postgres land in `database/supabase/005_main_product_gapfill.sql` (033–040).
 - Applied Supabase Phase 2 files `012`–`014` add `book_quotations`, lost-report charge resolution, `library_job_runs`, `invoice_setup`, and `customer_invoices`. Existing payment rows now have `document_label='Legacy Receipt'`; future rows default to `Payment Record`.
 - Applied Supabase Phase 6 file `015` adds `registration_requests` with hashed one-time codes and password hashes pending approval, the Library Staff role, a private `profile-avatars` Storage bucket, and `profile_avatar_submissions`. Current local registration puts every public role in `PendingApproval` after email verification; Admin review creates an Active account or marks the request Rejected. The API supplies standard decision notes and records the reviewer/time without a typed Audit reason. Completed/rejected requests clear their extra password hash. Applied Supabase file `016` backfills missing `accounts` links for existing Student/Faculty `users`, retaining their school ID, password hash, role, status, and operational user ID. The MySQL rollback reference `047` also extends account/user role enums with Staff but remains unapplied.
-- The 2026-09-25 historical data cutover copied local MySQL rows into Supabase after applying Postgres 008–009. Hosted users/accounts were preserved, and the pre-cutover hosted snapshot is in schema `mysql_cutover_backup_20260925100301`. Postgres 010 adds book archive actor and floor image version metadata. Postgres 011 adds account authentication versions and management audit events. Product files 012–016 are now applied; the private pre-migration snapshot of affected rows for 012–015 is `migration_backup_20260927154637`. Next Postgres file number: **017**. The live ledger also contains two advisor-named files not present in this checkout; reconcile their sources before a whole-directory replay. See the cutover record in the migration plan.
+- The 2026-09-25 historical data cutover copied local MySQL rows into Supabase after applying Postgres 008–009. Hosted users/accounts were preserved, and the pre-cutover hosted snapshot is in schema `mysql_cutover_backup_20260925100301`. Postgres 010 adds book archive actor and floor image version metadata. Postgres 011 adds account authentication versions and management audit events. Product files 012–016 are now applied; the private pre-migration snapshot of affected rows for 012–015 is `migration_backup_20260927154637`. Checkout also has unapplied `017`–`019` (`019` sets Mon–Sat `closes_at` to 19:00 for attendance auto time-out). Next Postgres file number: **020**. The live ledger also contains two advisor-named files not present in this checkout; reconcile their sources before a whole-directory replay. See the cutover record in the migration plan.
 
 ## Target requirements versus current baseline
 
@@ -78,7 +78,7 @@ Migration `20260820_007_normalized_accounts_authentication.sql` adds `accounts` 
 
 ### Catalog
 
-- `categories`: unique category name, optional description, physical shelf-location tag, and creation/update timestamps. Supabase migration `008` already added the nullable `description` text column; Phase 2 A2 reads and edits it without a new Postgres migration. MySQL reference migration `043` adds the field for rollback compatibility and is not applied locally. The MySQL table uses `utf8mb4_unicode_ci`; category names are case-insensitively unique.
+- `categories`: unique category name, optional description, physical shelf-location tag, and creation/update timestamps. Supabase migration `008` already added the nullable `description` text column; Phase 2 A2 reads and edits it without a new Postgres migration. MySQL reference migration `043` adds the field for rollback compatibility and is not applied locally. The MySQL table uses `utf8mb4_unicode_ci`; category names are case-insensitively unique. MySQL `048` / Supabase `018` add optional `textbook_recency_rule` (default off) so librarians can opt a subject category into the five-year copyright weeding review without auto-archiving titles.
 - `materials`: barcode, title, author, ISBN, year, category, shelf, type, and availability.
 
 The `department_or_program` and `abstract_text` fields support thesis/manuscript analytics and discovery.
@@ -87,7 +87,7 @@ Category shelf locations are trimmed, non-empty administrator-defined labels up 
 
 The additive Book and Research/Thesis target model is defined by migration `20260816_002_book_research_management.sql`:
 
-- `titles`: one bibliographic title/edition or research work, linked to `categories`.
+- `titles`: one bibliographic title/edition or research work, linked to `categories`. Optional `copyright_year` (MySQL `048` / Supabase `018`) is distinct from `publication_year` so reprints are not treated as new copyrights.
 - `authors`: ordered, normalized author credits owned by a title.
 - `research_records`: one-to-one thesis metadata including adviser, abstract, program, code, and viewing state.
 - `physical_copies`: accession, barcode, shelf, condition, availability, scan timestamp, and lifecycle per copy.
@@ -117,7 +117,7 @@ Phase 3 migration MySQL `041` / Supabase `010` adds nullable `titles.archived_by
 
 ### Circulation
 
-- `borrow_transactions`: pending, borrowed, returned, and overdue activity.
+- `borrow_transactions`: pending, borrowed, returned, and overdue activity. MySQL `048` / Supabase `018` add `loan_mode` (`TakeHome` default, or `InsideLibrary` due at same-day closing without overnight fine accrual).
 - `reservations`: material waiting list and expiry status.
 - `fines`: one fine record per borrowing transaction.
 - `clearance_statuses`: one current standing row per user.
@@ -206,7 +206,7 @@ Migration `20260923_040_printing_digital_receipts.sql` creates one printing-only
 - `notifications`: per-user in-app delivery for due reminders, overdue penalties, reservation lifecycle changes, printing updates, library closures, announcements, and lost-book decisions. `dedupe_key` is unique per user so repeat worker executions cannot duplicate a milestone. User deletion sets `deleted_at`; the row stays hidden while preserving the deduplication record so the same milestone is not recreated.
 - `announcements`: Admin-authored immediate or scheduled campus posts. Only the JWT `Admin` role may create them; all active operational users receive the published notification.
 - `announcement_revisions`: immutable initial publication snapshots and future recorded revisions.
-- `library_operating_schedule`: Asia/Manila weekly opening hours; `library_closed_days` remains the dated exception ledger.
+- `library_operating_schedule`: Asia/Manila weekly opening hours; Mon–Sat default closing is 19:00 after MySQL `049` / Supabase `019`. `library_closed_days` remains the dated exception ledger. The operational minute job closes open attendance visits at/after `closes_at` (and always clears stale prior-day open visits); system exits leave `checked_out_by_user_id` NULL.
 
 The notification worker runs within the modular monolith and uses database uniqueness rather than a message broker. It creates 12-hour and 1-hour due reminders, overdue alerts, one notification per reservation/print status, seven-day closure notices, and scheduled announcement fan-out. Read state is owned by the recipient and does not delete the notification.
 
@@ -214,7 +214,7 @@ The notification worker runs within the modular monolith and uses database uniqu
 
 - `library_profile_settings`: the single configurable library name, physical seat capacity, information text, and optional map asset path used by both dashboards.
 - `library_operating_schedule` and `library_closed_days`: authoritative weekly hours and dated closure exceptions shown to users.
-- Admin dashboard totals are read-only aggregates from `physical_copies`, `borrow_transactions`, `accounts`, `attendance_logs`, `reservations`, fine/payment ledgers, and `admin_notifications`.
+- Admin dashboard totals are read-only aggregates from `physical_copies`, `borrow_transactions`, `accounts`, `attendance_logs`, `reservations`, fine/payment ledgers, and `admin_notifications`. The librarian home also counts pending `lost_book_reports`, confirmed losses with `charge_resolution` awaiting quotation, reservations ready for pickup separately from other active reservations, pending and ready `print_requests`, and low ink or paper stock. Those queue counts are computed on read and are not stored.
 - Student/Faculty dashboard data is scoped through the authenticated `accounts.user_id` bridge. It reads active loans, reservations, print requests, notifications, announcements, clearance, and recommendations without persisting derived dashboard totals.
 
 Migration `20260904_033_dashboard_library_profile.sql` adds only the configurable library profile row. Occupancy is computed from today's attendance rows whose `time_out` is null; active users means active Student/Faculty accounts, not currently connected browser sessions. Student recommendations require an available active copy, exclude the user's current loans/reservations, and prioritize recent borrowing by the same program before falling back to overall demand.

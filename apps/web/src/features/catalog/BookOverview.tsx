@@ -390,7 +390,7 @@ export function BookOverview({
                 disabled={reserving}
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#FFF200] px-5 text-sm font-bold text-[#0b5ea2] transition hover:bg-[#ffe600] active:scale-[0.98] disabled:opacity-50"
               >
-                {reserving ? 'Reserving…' : 'Reserve'}
+                {reserving ? 'Requesting…' : 'Request'}
               </button>
             )}
           </footer>

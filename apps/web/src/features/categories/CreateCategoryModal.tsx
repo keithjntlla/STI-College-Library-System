@@ -24,6 +24,7 @@ export function CreateCategoryModal({ category, shelves, saving, errors, onSubmi
       shelfLocation: String(data.get('shelfLocation') ?? ''),
       shelfColumn: Number(data.get('shelfColumn') ?? 1),
       shelfRow: Number(data.get('shelfRow') ?? 1),
+      textbookRecencyRule: data.get('textbookRecencyRule') === 'on',
     })
   }
 
@@ -35,6 +36,14 @@ export function CreateCategoryModal({ category, shelves, saving, errors, onSubmi
         <label className="block"><span className="mb-1.5 block text-xs font-bold uppercase text-[#0b5ea2]">Description</span><textarea name="description" maxLength={255} rows={3} defaultValue={category?.description ?? ''} placeholder="What books belong in this category?" className={`${inputClass} min-h-20 py-2`} />{errors.description ? <span className="mt-1 block text-xs font-semibold text-[#0b5ea2]">{errors.description}</span> : null}</label>
         <label className="block"><span className="mb-1.5 block text-xs font-bold uppercase text-[#0b5ea2]">Shelf location *</span><select name="shelfLocation" required value={shelfLabel} onChange={(event) => setShelfLabel(event.target.value)} className={inputClass}><option value="">{currentShelfIsManaged ? 'Select a shelf' : `Current location “${category?.shelfLocation}” is not in Floor Plan — select a shelf`}</option>{shelves.map((shelf) => <option key={shelf.id} value={shelf.label}>{shelf.label}</option>)}</select>{errors.shelfLocation ? <span className="mt-1 block text-xs font-semibold text-[#0b5ea2]">{errors.shelfLocation}</span> : null}{!shelves.length ? <span className="mt-1 block text-xs text-[#0b5ea2]/65">Create a shelf in Floor Plan first.</span> : null}</label>
         {selectedShelf ? <div key={selectedShelf.id} className="grid grid-cols-2 gap-3"><label className="block"><span className="mb-1.5 block text-xs font-bold uppercase text-[#0b5ea2]">Column *</span><select name="shelfColumn" defaultValue={category?.shelfLocation===shelfLabel?category.shelfColumn:1} className={inputClass}>{Array.from({length:selectedShelf.columnCount},(_,index)=><option key={index+1} value={index+1}>Column {index+1}</option>)}</select>{errors.shelfColumn?<span className="mt-1 block text-xs font-semibold">{errors.shelfColumn}</span>:null}</label><label className="block"><span className="mb-1.5 block text-xs font-bold uppercase text-[#0b5ea2]">Row *</span><select name="shelfRow" defaultValue={category?.shelfLocation===shelfLabel?category.shelfRow:1} className={inputClass}>{Array.from({length:selectedShelf.rowCount},(_,index)=><option key={index+1} value={index+1}>Row {index+1}</option>)}</select>{errors.shelfRow?<span className="mt-1 block text-xs font-semibold">{errors.shelfRow}</span>:null}</label></div>:null}
+        <label className="flex items-start gap-3 rounded-xl border border-[#0b5ea2]/15 bg-[#0b5ea2]/5 p-3">
+          <input name="textbookRecencyRule" type="checkbox" defaultChecked={category?.textbookRecencyRule ?? false} className="mt-1 h-4 w-4 accent-[#0b5ea2]" />
+          <span>
+            <span className="block text-xs font-bold uppercase text-[#0b5ea2]">5-year textbook recency review</span>
+            <span className="mt-1 block text-xs text-[#0b5ea2]/70">When on, titles in this category with a copyright year older than five years appear on the weeding review list. Classics and Filipiniana stay off this switch.</span>
+          </span>
+        </label>
+        {errors.textbookRecencyRule ? <span className="block text-xs font-semibold text-[#0b5ea2]">{errors.textbookRecencyRule}</span> : null}
         <div className="flex justify-end gap-2 pt-2"><button type="button" disabled={saving} onClick={onClose} className="h-11 rounded-xl border border-[#0b5ea2] bg-[#FFFFFF] px-5 font-bold text-[#0b5ea2] disabled:opacity-40">Cancel</button><button disabled={saving || !shelves.length} type="submit" className="h-11 rounded-xl bg-[#0b5ea2] px-5 font-bold text-[#FFFFFF] disabled:opacity-50">{saving ? 'Saving…' : 'Save category'}</button></div>
       </form>
     </div>

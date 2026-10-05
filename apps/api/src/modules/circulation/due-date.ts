@@ -1,5 +1,7 @@
 const DUE_HOUR = 8
 const DUE_MINUTE = 59
+const CLOSING_HOUR = 17
+const CLOSING_MINUTE = 0
 
 function localDateKey(value: Date) {
   const year = value.getFullYear()
@@ -20,4 +22,19 @@ export function nextOperatingDueDate(borrowedAt: Date, closedDates: ReadonlySet<
   throw new Error('No operating day could be resolved within one year.')
 }
 
-export const circulationDuePolicy = { hour: DUE_HOUR, minute: DUE_MINUTE }
+/** Inside-library loans are due at closing the same operating day. */
+export function sameDayClosingDueDate(borrowedAt: Date, closesAt: string | null = null) {
+  const due = new Date(borrowedAt)
+  const match = closesAt?.match(/^(\d{1,2}):(\d{2})/)
+  if (match) {
+    due.setHours(Number(match[1]), Number(match[2]), 0, 0)
+  } else {
+    due.setHours(CLOSING_HOUR, CLOSING_MINUTE, 0, 0)
+  }
+  if (due.getTime() <= borrowedAt.getTime()) {
+    due.setTime(borrowedAt.getTime() + 30 * 60 * 1000)
+  }
+  return due
+}
+
+export const circulationDuePolicy = { hour: DUE_HOUR, minute: DUE_MINUTE, closingHour: CLOSING_HOUR, closingMinute: CLOSING_MINUTE }

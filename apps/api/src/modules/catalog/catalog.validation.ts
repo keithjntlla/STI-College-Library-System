@@ -21,6 +21,7 @@ export type BookEntryInput = {
   isbn: string | null
   categoryId: number | null
   publicationYear: number | null
+  copyrightYear: number | null
   publisher: string | null
   callNumber: string | null
   copy: PhysicalCopyInput
@@ -133,14 +134,15 @@ export function isbnValidationMessage(value: unknown): string | null {
 }
 
 function validateYear(value: unknown, field: string, errors: ValidationErrors, required: boolean): number | null {
+  const label = field === 'copyrightYear' ? 'Copyright year' : 'Year published'
   const year = positiveInteger(value)
   if (year === null) {
-    if (required) errors[field] = 'Year published is required and must be a whole number.'
-    else if (value !== '' && value !== null && value !== undefined) errors[field] = 'Year published must be a whole number.'
+    if (required) errors[field] = `${label} is required and must be a whole number.`
+    else if (value !== '' && value !== null && value !== undefined) errors[field] = `${label} must be a whole number.`
     return null
   }
   if (year < 1000 || year > CURRENT_YEAR) {
-    errors[field] = `Year published must be between 1000 and ${CURRENT_YEAR}.`
+    errors[field] = `${label} must be between 1000 and ${CURRENT_YEAR}.`
   }
   return year
 }
@@ -182,6 +184,7 @@ export function validateBookEntry(body: unknown): ValidationResult<BookEntryInpu
   const isbn = rawIsbn || null
   const categoryId = positiveInteger(input.categoryId)
   const publicationYear = validateYear(input.publicationYear ?? input.year, 'publicationYear', errors, false)
+  const copyrightYear = validateYear(input.copyrightYear ?? input.copyright_year, 'copyrightYear', errors, false)
   const publisher = optionalText(input.publisher, 255)
   const callNumber = optionalText(input.callNumber, 100)
   const copyResult = validateCopyInput(input.copy ?? input, true)
@@ -208,6 +211,7 @@ export function validateBookEntry(body: unknown): ValidationResult<BookEntryInpu
       isbn,
       categoryId,
       publicationYear,
+      copyrightYear,
       publisher,
       callNumber,
       copy: copyResult.data as PhysicalCopyInput,

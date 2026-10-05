@@ -9,6 +9,7 @@ export type BulkBookInput = {
   shelfLocation: string
   numberOfCopies: number
   publicationYear: number | null
+  copyrightYear: number | null
   publisher: string | null
   callNumber: string | null
   coverImageData: string | null
@@ -36,6 +37,9 @@ export function validateBulkBookInput(body: unknown): BulkBookInput {
   const publicationYearValue = input.publication_year ?? input.publicationYear
   const publicationYear = publicationYearValue === '' || publicationYearValue === null || publicationYearValue === undefined
     ? null : positiveInteger(publicationYearValue)
+  const copyrightYearValue = input.copyright_year ?? input.copyrightYear
+  const copyrightYear = copyrightYearValue === '' || copyrightYearValue === null || copyrightYearValue === undefined
+    ? null : positiveInteger(copyrightYearValue)
 
   if (!title) errors.title = 'Title is required.'
   if (!author) errors.author = 'Author is required.'
@@ -46,6 +50,7 @@ export function validateBulkBookInput(body: unknown): BulkBookInput {
   if (!numberOfCopies || numberOfCopies > 100) errors.number_of_copies = 'Number of copies must be a whole number from 1 to 100.'
   const currentYear = new Date().getFullYear()
   if (publicationYear !== null && (publicationYear < 1000 || publicationYear > currentYear)) errors.publication_year = `Publication year must be between 1000 and ${currentYear}.`
+  if (copyrightYear !== null && (copyrightYear < 1000 || copyrightYear > currentYear)) errors.copyright_year = `Copyright year must be between 1000 and ${currentYear}.`
   const coverImageData = typeof (input.cover_image_data ?? input.coverImageData) === 'string'
     ? String(input.cover_image_data ?? input.coverImageData) : null
   if (coverImageData && coverImageData.length > 2_800_000) errors.cover_image = 'Book cover must not exceed 2 MB.'
@@ -54,7 +59,7 @@ export function validateBulkBookInput(body: unknown): BulkBookInput {
     throw new HttpError(422, 'BULK_BOOK_VALIDATION_FAILED', 'The bulk book entry contains invalid fields.', { errors })
   }
   return {
-    title, author, isbn, categoryId: categoryId!, shelfLocation, numberOfCopies: numberOfCopies!, publicationYear,
+    title, author, isbn, categoryId: categoryId!, shelfLocation, numberOfCopies: numberOfCopies!, publicationYear, copyrightYear,
     publisher: clean(input.publisher, 255) || null,
     callNumber: clean(input.call_number ?? input.callNumber, 100) || null,
     coverImageData,

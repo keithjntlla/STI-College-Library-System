@@ -6,6 +6,83 @@ export function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ')
 }
 
+/** Semantic status tones for pills, banners, and modals. Prefer these over ad-hoc yellow/red classes. */
+export type StatusTone = 'error' | 'warning' | 'success' | 'info'
+
+export const statusToneStyles: Record<StatusTone, {
+  pill: string
+  banner: string
+  bannerBorder: string
+  iconBg: string
+  iconOutline: string
+  title: string
+  description: string
+  icon: LucideIcon
+}> = {
+  error: {
+    pill: 'bg-red-100 text-red-700 ring-red-200 dark:bg-red-500/20 dark:text-red-300 dark:ring-red-500/30',
+    banner: 'bg-red-50 dark:bg-red-950/40',
+    bannerBorder: 'bg-red-500',
+    iconBg: 'bg-red-500 text-white',
+    iconOutline: 'text-red-600 dark:text-red-400',
+    title: 'text-red-950 dark:text-red-100',
+    description: 'text-red-800/80 dark:text-red-200/80',
+    icon: AlertTriangle,
+  },
+  warning: {
+    pill: 'bg-[#FFF200]/55 text-[#0b5ea2] ring-[#0b5ea2]/15 dark:bg-[#FFF200]/40 dark:text-[#0b5ea2] dark:ring-[#FFF200]/50',
+    banner: 'bg-[#FFF200]/20 dark:bg-[#FFF200]/15',
+    bannerBorder: 'bg-[#e6d900]',
+    iconBg: 'bg-[#FFF200] text-[#0b5ea2]',
+    iconOutline: 'text-[#0b5ea2]',
+    title: 'text-[#0b5ea2] dark:text-[#FFF200]',
+    description: 'text-[#0b5ea2]/75 dark:text-[#f7f9ff]/80',
+    icon: AlertTriangle,
+  },
+  success: {
+    pill: 'bg-emerald-100 text-emerald-800 ring-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:ring-emerald-500/30',
+    banner: 'bg-emerald-50 dark:bg-emerald-950/40',
+    bannerBorder: 'bg-emerald-500',
+    iconBg: 'bg-emerald-500 text-white',
+    iconOutline: 'text-emerald-600 dark:text-emerald-400',
+    title: 'text-emerald-950 dark:text-emerald-100',
+    description: 'text-emerald-800/80 dark:text-emerald-200/80',
+    icon: CheckCircle2,
+  },
+  info: {
+    pill: 'bg-[#0b5ea2]/10 text-[#0b5ea2] ring-[#0b5ea2]/15 dark:bg-white/10 dark:text-[#f7f9ff] dark:ring-white/20',
+    banner: 'bg-[#0b5ea2]/5 dark:bg-white/5',
+    bannerBorder: 'bg-[#0b5ea2]',
+    iconBg: 'bg-[#0b5ea2] text-white',
+    iconOutline: 'text-[#0b5ea2] dark:text-[#7eb6ff]',
+    title: 'text-[#0b5ea2] dark:text-white',
+    description: 'text-[#0b5ea2]/70 dark:text-white/70',
+    icon: Info,
+  },
+}
+
+/** Compact status pill/chip. Use for recorded, pending, blocked, and other short status labels. */
+export function StatusPill({
+  tone,
+  children,
+  icon: Icon,
+  className,
+}: {
+  tone: StatusTone
+  children: ReactNode
+  icon?: LucideIcon | false
+  className?: string
+}) {
+  const styles = statusToneStyles[tone]
+  const ResolvedIcon = Icon === false ? null : (Icon ?? styles.icon)
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ring-1 ring-inset', styles.pill, className)}>
+      {ResolvedIcon ? <ResolvedIcon size={14} strokeWidth={2.5} aria-hidden /> : null}
+      {children}
+    </span>
+  )
+}
+
 export function PageHeader({ eyebrow, title, action }: { eyebrow?: string; title: string; description?: string; action?: ReactNode }) {
   return (
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -125,15 +202,16 @@ export function BookCover({ code, accent, className }: { code: string; accent: s
 }
 
 
-export function StatusModal({ type = 'success', title, description, onClose }: { type?: 'error' | 'warning' | 'success' | 'info'; title?: string; description: ReactNode; onClose: () => void }) {
-  const styles = {
-    error: { iconBg: 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400', button: 'bg-red-600 hover:bg-red-700 text-white', icon: AlertTriangle, title: 'text-red-900 dark:text-red-100' },
-    warning: { iconBg: 'bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400', button: 'bg-orange-600 hover:bg-orange-700 text-white', icon: AlertTriangle, title: 'text-orange-900 dark:text-orange-100' },
-    success: { iconBg: 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400', button: 'bg-[#0b5ea2] hover:bg-[#094d87] text-white', icon: CheckCircle2, title: 'text-green-900 dark:text-green-100' },
-    info: { iconBg: 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400', button: 'bg-blue-600 hover:bg-blue-700 text-white', icon: Info, title: 'text-blue-900 dark:text-blue-100' },
-  }[type]
-  const Icon = styles.icon;
+export function StatusModal({ type = 'success', title, description, onClose }: { type?: StatusTone; title?: string; description: ReactNode; onClose: () => void }) {
+  const styles = statusToneStyles[type]
+  const Icon = styles.icon
   const defaultTitle = { error: 'Error', warning: 'Warning', success: 'Success', info: 'Notice' }[type]
+  const button = {
+    error: 'bg-red-600 hover:bg-red-700 text-white',
+    warning: 'bg-[#0b5ea2] hover:bg-[#094d87] text-white',
+    success: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+    info: 'bg-[#0b5ea2] hover:bg-[#094d87] text-white',
+  }[type]
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-[#001133]/40 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
@@ -142,8 +220,8 @@ export function StatusModal({ type = 'success', title, description, onClose }: {
           <Icon size={32} strokeWidth={2.5} />
         </div>
         <h3 className={cn('font-display text-xl font-bold', styles.title)}>{title || defaultTitle}</h3>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{description}</p>
-        <button onClick={onClose} className={cn('mt-6 w-full rounded-xl px-4 py-2.5 font-bold shadow-sm', styles.button)}>Close</button>
+        <p className={cn('mt-2 text-sm', styles.description)}>{description}</p>
+        <button onClick={onClose} className={cn('mt-6 w-full rounded-xl px-4 py-2.5 font-bold shadow-sm', button)}>Close</button>
       </div>
     </div>
   )
@@ -173,7 +251,7 @@ export function AlertMessage({
   className,
   action,
 }: {
-  type?: 'error' | 'warning' | 'success' | 'info'
+  type?: StatusTone
   title?: string
   description: ReactNode
   onDismiss?: () => void
@@ -181,49 +259,12 @@ export function AlertMessage({
   className?: string
   action?: ReactNode
 }) {
-  const styles = {
-    error: {
-      bg: 'bg-red-50 dark:bg-red-950/40',
-      border: 'bg-red-500',
-      iconBg: 'bg-red-500 text-white',
-      iconOutline: 'text-red-600 dark:text-red-400',
-      icon: AlertTriangle,
-      title: 'text-gray-900 dark:text-gray-100',
-      desc: 'text-gray-600 dark:text-gray-300',
-    },
-    warning: {
-      bg: 'bg-orange-50 dark:bg-orange-950/40',
-      border: 'bg-orange-500',
-      iconBg: 'bg-orange-500 text-white',
-      iconOutline: 'text-orange-600 dark:text-orange-400',
-      icon: AlertTriangle,
-      title: 'text-gray-900 dark:text-gray-100',
-      desc: 'text-gray-600 dark:text-gray-300',
-    },
-    success: {
-      bg: 'bg-green-50 dark:bg-green-950/40',
-      border: 'bg-green-500',
-      iconBg: 'bg-green-500 text-white',
-      iconOutline: 'text-green-600 dark:text-green-400',
-      icon: CheckCircle2,
-      title: 'text-gray-900 dark:text-gray-100',
-      desc: 'text-gray-600 dark:text-gray-300',
-    },
-    info: {
-      bg: 'bg-amber-50 dark:bg-amber-950/40',
-      border: 'bg-amber-500',
-      iconBg: 'bg-amber-500 text-white',
-      iconOutline: 'text-amber-600 dark:text-amber-400',
-      icon: Info,
-      title: 'text-gray-900 dark:text-gray-100',
-      desc: 'text-gray-600 dark:text-gray-300',
-    },
-  }[type]
+  const styles = statusToneStyles[type]
   const Icon = styles.icon
 
   if (variant === 'compact') {
     return (
-      <div role="alert" className={cn('mb-5 flex items-center gap-3 rounded-xl px-4 py-3', styles.bg, className)}>
+      <div role="alert" className={cn('mb-5 flex items-center gap-3 rounded-xl px-4 py-3', styles.banner, className)}>
         <Icon size={18} strokeWidth={2.25} className={cn('shrink-0', styles.iconOutline)} />
         <div className={cn('min-w-0 flex-1 text-sm font-semibold', styles.title)}>{description}</div>
         {action}
@@ -237,14 +278,14 @@ export function AlertMessage({
   }
 
   return (
-    <div role="alert" className={cn('relative mb-5 flex items-start gap-3 overflow-hidden rounded-xl p-4 pl-5', styles.bg, className)}>
-      <div className={cn('absolute inset-y-0 left-0 w-1.5', styles.border)} />
+    <div role="alert" className={cn('relative mb-5 flex items-start gap-3 overflow-hidden rounded-xl p-4 pl-5', styles.banner, className)}>
+      <div className={cn('absolute inset-y-0 left-0 w-1.5', styles.bannerBorder)} />
       <div className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full', styles.iconBg)}>
         <Icon size={15} strokeWidth={2.75} />
       </div>
       <div className="min-w-0 flex-1">
         {title ? <h3 className={cn('text-sm font-bold', styles.title)}>{title}</h3> : null}
-        <div className={cn('text-sm', styles.desc, title ? 'mt-0.5' : 'mt-0.5 font-semibold')}>{description}</div>
+        <div className={cn('text-sm', styles.description, title ? 'mt-0.5' : 'mt-0.5 font-semibold')}>{description}</div>
         {action ? <div className="mt-3">{action}</div> : null}
       </div>
       {onDismiss ? (
