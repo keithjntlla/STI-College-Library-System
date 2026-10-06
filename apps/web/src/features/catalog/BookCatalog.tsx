@@ -178,18 +178,7 @@ export function BookCatalog() {
   }
 
   return (
-    <div className="relative">
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div
-          className="absolute inset-0 opacity-[0.12] dark:opacity-20"
-          style={{
-            backgroundImage: 'radial-gradient(circle, #0b5ea2 1.5px, transparent 1.5px)',
-            backgroundSize: '28px 28px',
-          }}
-        />
-        <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-zinc-50 to-transparent dark:from-zinc-950" />
-      </div>
-
+    <div>
       <div className="mb-4 flex justify-end gap-2">
         <Link to={cartPath} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#0b5ea2]/15 bg-white px-3 text-xs font-bold text-[#0b5ea2] shadow-sm dark:border-white/15 dark:bg-[#001a4d] dark:text-[#f2f6ff]">
           <ShoppingBag size={16} /> Cart {cart.length}

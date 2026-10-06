@@ -15,6 +15,8 @@ import { BookQuotationModal } from './BookQuotationModal'
 const fieldClass = 'h-10 w-full rounded-xl border border-[#0b5ea2]/20 bg-white px-3 text-sm font-semibold text-[#0b5ea2] outline-none focus:border-[#0b5ea2] focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-white/15 dark:bg-[#001a4d] dark:text-[#f2f6ff]'
 const emptyFilters: CatalogFilters = { q: '', scope: 'all', categoryId: '', author: '', publicationYear: '', availability: '' }
 const TEMPLATE_HREF = '/templates/books-import-template.csv'
+const RESEARCH_TEMPLATE_HREF = '/templates/research-import-template.csv'
+const RESEARCH_EXAMPLES_HREF = '/templates/research-import-examples.csv'
 const tableScrollClass = 'max-h-[min(28rem,55vh)] overflow-auto'
 
 type Notice = { tone: 'success' | 'error'; text: string }
@@ -132,9 +134,11 @@ export function CatalogManagementPage() {
   const [archiveReason, setArchiveReason] = useState('')
   const [archiving, setArchiving] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
+  const [importKind, setImportKind] = useState<'books' | 'research'>('books')
   const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState<{ booksCreated: number; copiesCreated: number; message: string } | null>(null)
+  const [importResult, setImportResult] = useState<{ booksCreated?: number; copiesCreated?: number; thesesCreated?: number; message: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const researchFileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (searchParams.get('action') !== 'quotation') return
@@ -231,9 +235,12 @@ export function CatalogManagementPage() {
     if (!importFile || importing) return
     setImporting(true)
     try {
-      const result = await catalogApi.bulkImport(importFile)
+      const result = importKind === 'research'
+        ? await catalogApi.bulkImportResearch(importFile)
+        : await catalogApi.bulkImport(importFile)
       setImportFile(null)
       setImportResult(result)
+      if (importKind === 'research') setFilters((current) => ({ ...current, scope: 'research' }))
       await refresh()
     } catch (error) {
       setImportFile(null)
@@ -281,9 +288,10 @@ export function CatalogManagementPage() {
     <div className="px-3 py-12 text-center">
       <BookOpen className="mx-auto text-[#0b5ea2]/40" size={32} />
       <p className="mt-3 font-display text-lg font-bold text-[#0b5ea2] dark:text-white">No records match these filters</p>
-      <p className="mt-1 text-sm text-[#0b5ea2]/60 dark:text-white/55">Import existing stock from CSV or register a single title.</p>
+      <p className="mt-1 text-sm text-[#0b5ea2]/60 dark:text-white/55">Import books or research from CSV, or register a single title.</p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
-        <button type="button" onClick={() => fileInputRef.current?.click()} className={secondaryButton}><Upload size={16} /> Import CSV</button>
+        <button type="button" onClick={() => { setImportKind('books'); fileInputRef.current?.click() }} className={secondaryButton}><Upload size={16} /> Import books CSV</button>
+        <button type="button" onClick={() => { setImportKind('research'); researchFileInputRef.current?.click() }} className={secondaryButton}><Upload size={16} /> Import research CSV</button>
         <button type="button" onClick={() => setForm('book')} className={primaryButton}><Plus size={16} /> Add book</button>
       </div>
     </div>
@@ -299,7 +307,9 @@ export function CatalogManagementPage() {
           key={item.titleId}
           title={(
             <div className="flex items-start gap-3">
-              {item.recordType === 'Book' ? <BookCoverThumbnail title={item.title} coverImagePath={item.coverImagePath} className="h-14 w-10 shrink-0 rounded-md" /> : null}
+              {item.recordType === 'Book' ? (
+                <BookCoverThumbnail title={item.title} coverImagePath={item.coverImagePath} className="h-14 w-10 shrink-0 rounded-md" />
+              ) : null}
               <div className="min-w-0">
                 <p className="break-words">{item.title}</p>
                 <p className="mt-0.5 text-xs font-normal text-[#0b5ea2]/60 dark:text-white/55">{item.authors.join(', ')}</p>
@@ -367,21 +377,48 @@ export function CatalogManagementPage() {
       type="file"
       accept=".csv,text/csv"
       className="sr-only"
-      aria-label="Choose CSV file to import"
+      aria-label="Choose books CSV file to import"
       onChange={(event) => {
         const file = event.target.files?.[0] ?? null
         event.target.value = ''
-        if (file) setImportFile(file)
+        if (file) {
+          setImportKind('books')
+          setImportFile(file)
+        }
+      }}
+    />
+    <input
+      ref={researchFileInputRef}
+      type="file"
+      accept=".csv,text/csv"
+      className="sr-only"
+      aria-label="Choose research CSV file to import"
+      onChange={(event) => {
+        const file = event.target.files?.[0] ?? null
+        event.target.value = ''
+        if (file) {
+          setImportKind('research')
+          setImportFile(file)
+        }
       }}
     />
 
     <div className="mb-5 rounded-2xl border border-[#0b5ea2]/15 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-[#001a4d]">
       <div className="flex flex-wrap items-center justify-end gap-2">
         <a href={TEMPLATE_HREF} download className={secondaryButton}>
-          <Download size={16} /> Download template
+          <Download size={16} /> Books template
         </a>
-        <button type="button" onClick={() => fileInputRef.current?.click()} className={secondaryButton}>
-          <Upload size={16} /> Import CSV
+        <a href={RESEARCH_TEMPLATE_HREF} download className={secondaryButton}>
+          <Download size={16} /> Research template
+        </a>
+        <a href={RESEARCH_EXAMPLES_HREF} download className={secondaryButton}>
+          <Download size={16} /> Research examples
+        </a>
+        <button type="button" onClick={() => { setImportKind('books'); fileInputRef.current?.click() }} className={secondaryButton}>
+          <Upload size={16} /> Import books CSV
+        </button>
+        <button type="button" onClick={() => { setImportKind('research'); researchFileInputRef.current?.click() }} className={secondaryButton}>
+          <Upload size={16} /> Import research CSV
         </button>
         <button type="button" onClick={() => setForm('thesis')} className={secondaryButton}>
           <FileText size={16} /> Add thesis
@@ -394,7 +431,7 @@ export function CatalogManagementPage() {
         </button>
       </div>
       <p className="mt-2 text-right text-[11px] font-semibold text-[#0b5ea2]/55 dark:text-white/45">
-        Import CSV loads many physical books. Add book registers one title with multiple copies.
+        Books CSV loads physical stock. Research CSV publishes view-only theses with shelf locations and auto-generated codes.
       </p>
     </div>
 
@@ -503,7 +540,9 @@ export function CatalogManagementPage() {
               <tr key={item.titleId} className="border-b border-[#0b5ea2]/10 align-middle transition hover:bg-[#0b5ea2]/5 dark:border-white/10 dark:hover:bg-white/5">
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2.5">
-                    {item.recordType === 'Book' ? <BookCoverThumbnail title={item.title} coverImagePath={item.coverImagePath} className="h-12 w-8 shrink-0 rounded-md" /> : null}
+                    {item.recordType === 'Book' ? (
+                      <BookCoverThumbnail title={item.title} coverImagePath={item.coverImagePath} className="h-12 w-8 shrink-0 rounded-md" />
+                    ) : null}
                     <div className="min-w-0">
                       <p className="truncate font-bold text-[#0b5ea2] dark:text-white">{item.title}</p>
                       <p className="truncate text-[11px] text-[#0b5ea2]/60 dark:text-white/55">{item.authors.join(', ')}</p>
@@ -615,8 +654,21 @@ export function CatalogManagementPage() {
     {importFile ? (
       <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#0b5ea2]/75 p-4 lg:left-[var(--sidebar-offset,0px)]">
         <div role="dialog" aria-modal="true" aria-labelledby="import-csv-title" className="w-full max-w-md rounded-2xl bg-white p-6 text-[#0b5ea2]">
-          <h2 id="import-csv-title" className="font-display text-xl font-black">Import CSV books?</h2>
-          <p className="mt-2 text-sm">This loads physical book stock using the library import template columns (Title, Author, ISBN, Publication_Year, Category_ID, Quantity).</p>
+          <h2 id="import-csv-title" className="font-display text-xl font-black">
+            {importKind === 'research' ? 'Import CSV research?' : 'Import CSV books?'}
+          </h2>
+          <p className="mt-2 text-sm">
+            {importKind === 'research'
+              ? 'This publishes view-only theses using Title, Authors, Adviser, Publication_Year, Department_Or_Program, Research_Code, Abstract, Keywords, and Shelf_Location. Shelf_Location must exactly match an existing Category Management shelf (for example Shelf A). Download the research template or examples first.'
+              : 'This loads physical book stock using the library import template columns (Title, Author, ISBN, Publication_Year, Category_ID, Quantity).'}
+          </p>
+          {importKind === 'research' ? (
+            <p className="mt-3 text-xs font-semibold text-[#0b5ea2]/70">
+              <a href={RESEARCH_TEMPLATE_HREF} download className="underline">Research template</a>
+              {' · '}
+              <a href={RESEARCH_EXAMPLES_HREF} download className="underline">Filled examples</a>
+            </p>
+          ) : null}
           <p className="mt-4 rounded-xl bg-[#0b5ea2]/5 p-3 font-mono text-xs font-bold">{importFile.name}</p>
           <div className="mt-5 flex justify-end gap-2">
             <button type="button" disabled={importing} onClick={() => setImportFile(null)} className="rounded-xl border border-[#0b5ea2] px-4 py-2 font-bold">Cancel</button>
@@ -636,7 +688,11 @@ export function CatalogManagementPage() {
             <div>
               <h2 id="import-result-title" className="font-display text-lg font-bold text-[#0b5ea2]">Import complete</h2>
               <p className="mt-2 text-sm font-semibold text-[#0b5ea2]/80">{importResult.message}</p>
-              <p className="mt-3 text-xs font-bold text-[#0b5ea2]/60">{importResult.booksCreated} books · {importResult.copiesCreated} copies</p>
+              <p className="mt-3 text-xs font-bold text-[#0b5ea2]/60">
+                {typeof importResult.thesesCreated === 'number'
+                  ? `${importResult.thesesCreated} research theses`
+                  : `${importResult.booksCreated ?? 0} books · ${importResult.copiesCreated ?? 0} copies`}
+              </p>
             </div>
           </div>
           <div className="mt-5 flex justify-end">

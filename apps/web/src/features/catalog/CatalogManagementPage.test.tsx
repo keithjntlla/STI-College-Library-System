@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   changeTitleCategory: vi.fn(),
   archiveBook: vi.fn(),
   bulkImport: vi.fn(),
+  bulkImportResearch: vi.fn(),
 }))
 
 vi.mock('./catalog-api', () => ({ catalogApi: api }))
@@ -100,6 +101,10 @@ describe('CatalogManagementPage', () => {
       copiesCreated: 5,
       message: 'Successfully imported 3 books and 5 copies.',
     })
+    api.bulkImportResearch.mockResolvedValue({
+      thesesCreated: 2,
+      message: 'Successfully imported 2 research theses.',
+    })
   })
 
   afterEach(() => cleanup())
@@ -108,13 +113,16 @@ describe('CatalogManagementPage', () => {
     renderCatalog()
     expect((await screen.findAllByText('Clean Code')).length).toBeGreaterThan(0)
     expect(screen.queryByText('Hardware scanner')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Import CSV' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Import books CSV' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Import research CSV' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Add book' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Add thesis' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Refresh catalog' })).toBeTruthy()
-    const template = screen.getByRole('link', { name: 'Download template' })
+    const template = screen.getByRole('link', { name: 'Books template' })
     expect(template.getAttribute('href')).toBe('/templates/books-import-template.csv')
     expect(template.getAttribute('download')).not.toBeNull()
+    expect(screen.getByRole('link', { name: 'Research template' }).getAttribute('href')).toBe('/templates/research-import-template.csv')
+    expect(screen.getByRole('link', { name: 'Research examples' }).getAttribute('href')).toBe('/templates/research-import-examples.csv')
   })
 
   it('imports a CSV through confirm dialog and refreshes the list', async () => {
@@ -125,7 +133,7 @@ describe('CatalogManagementPage', () => {
     const file = new File(['Title,Author,ISBN,Publication_Year,Category_ID,Quantity\nA,B,1,2020,1,1'], 'stock.csv', {
       type: 'text/csv',
     })
-    fireEvent.change(screen.getByLabelText('Choose CSV file to import'), { target: { files: [file] } })
+    fireEvent.change(screen.getByLabelText('Choose books CSV file to import'), { target: { files: [file] } })
 
     expect(await screen.findByRole('dialog', { name: 'Import CSV books?' })).toBeTruthy()
     expect(screen.getByText('stock.csv')).toBeTruthy()
@@ -144,7 +152,8 @@ describe('CatalogManagementPage', () => {
     renderCatalog()
 
     expect(await screen.findByText('No records match these filters')).toBeTruthy()
-    expect(screen.getAllByRole('button', { name: 'Import CSV' }).length).toBeGreaterThan(1)
+    expect(screen.getAllByRole('button', { name: 'Import books CSV' }).length).toBeGreaterThan(1)
+    expect(screen.getAllByRole('button', { name: 'Import research CSV' }).length).toBeGreaterThan(1)
     expect(screen.getAllByRole('button', { name: 'Add book' }).length).toBeGreaterThan(1)
   })
 

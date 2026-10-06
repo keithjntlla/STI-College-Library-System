@@ -11,9 +11,20 @@ function appFor(role: 'Admin' | 'Librarian') {
   app.use('/catalog', createCatalogAdminRouter({
     changeTitleCategory: async (req, res) => { res.json({ success: true, data: { titleId: Number(req.params.titleId) } }) },
     bulkImport: async (req, res) => { res.json({ success: true, data: {} }) },
+    bulkImportResearch: async (req, res) => { res.json({ success: true, data: { thesesCreated: 1 } }) },
   }))
   return app
 }
+
+test('Librarian and Admin can import research CSV', async () => {
+  const librarian = await request(appFor('Librarian')).post('/catalog/bulk-import-research')
+  assert.equal(librarian.status, 200)
+  assert.equal(librarian.body.data.thesesCreated, 1)
+
+  const admin = await request(appFor('Admin')).post('/catalog/bulk-import-research')
+  assert.equal(admin.status, 200)
+  assert.equal(admin.body.data.thesesCreated, 1)
+})
 
 test('only Librarian can change a catalog title category', async () => {
   const librarian = await request(appFor('Librarian')).patch('/catalog/titles/14/category').send({ targetCategoryId: 8, expectedRowVersion: 3 })

@@ -355,15 +355,6 @@ export function PortalLayout({ role }: { role: Role }) {
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 transition-colors dark:bg-[#14151b] dark:text-zinc-100 relative">
-      {/* Global Dot-Matrix Background */}
-      <div
-        className="absolute inset-0 opacity-[0.15] dark:opacity-20 pointer-events-none z-0"
-        style={{
-          backgroundImage: 'radial-gradient(circle, #0b5ea2 1.5px, transparent 1.5px)',
-          backgroundSize: '28px 28px',
-        }}
-      />
-
       <Sidebar role={role} open={sidebarOpen} onClose={() => setSidebarOpen(false)} collapsed={desktopCollapsed} onToggleCollapse={() => setDesktopCollapsed(!desktopCollapsed)} />
 
       <div className={cn("relative z-10 transition-all duration-300", desktopCollapsed ? "lg:pl-0" : "lg:pl-64")} style={{ "--sidebar-offset": desktopCollapsed ? "0px" : "256px" } as CSSProperties}>

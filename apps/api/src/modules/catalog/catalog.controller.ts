@@ -94,4 +94,22 @@ export const catalogController = {
       data: result,
     })
   }),
+  bulkImportResearch: asyncController(async (request, response) => {
+    if (!request.file) {
+      response.status(400).json({ success: false, message: 'No file uploaded.' })
+      return
+    }
+    const { bulkImportResearch } = await import('./bulk-import.service.ts')
+    try {
+      const result = await bulkImportResearch(request.file.path)
+      response.status(201).json({
+        success: true,
+        message: `Successfully imported ${result.thesesCreated} research theses.`,
+        data: result,
+      })
+    } finally {
+      const fs = await import('fs')
+      fs.unlink(request.file.path, () => {})
+    }
+  }),
 }
