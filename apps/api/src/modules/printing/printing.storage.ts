@@ -33,6 +33,16 @@ export function validatePrintDocumentFile(file?: Express.Multer.File) {
   if (!extension || !validSignature(file)) throw new HttpError(422, 'PRINT_FILE_INVALID', 'The document must be a genuine PDF or DOCX file.')
   const safeOriginalName = path.basename(file.originalname).replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 255)
   if (!safeOriginalName) throw new HttpError(422, 'PRINT_FILE_INVALID', 'The document filename is invalid.')
+  const lowerName = safeOriginalName.toLowerCase()
+  if (extension === 'docx' && (lowerName.endsWith('.docm') || lowerName.endsWith('.dotm'))) {
+    throw new HttpError(422, 'PRINT_DOCX_MACROS', 'Macro-enabled Word documents are not allowed. Save as a regular .docx without macros, or upload a PDF.')
+  }
+  if (extension === 'pdf' && !lowerName.endsWith('.pdf')) {
+    throw new HttpError(422, 'PRINT_FILE_INVALID', 'The document must be a genuine PDF or DOCX file.')
+  }
+  if (extension === 'docx' && !lowerName.endsWith('.docx')) {
+    throw new HttpError(422, 'PRINT_FILE_INVALID', 'Upload a .docx Word file or a PDF.')
+  }
   return { extension, safeOriginalName }
 }
 

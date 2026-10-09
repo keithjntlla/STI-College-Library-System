@@ -7,6 +7,7 @@ import { createCsvStream, createInventoryPdf, inventoryRows, type InventoryExpor
 import {
   createWeedingCsvStream,
   createWeedingPdf,
+  listWeedingReview,
   notifyWeedingCrossings,
   weedingRows,
   type WeedingExportRow,
@@ -19,6 +20,7 @@ type ExportDependencies = {
   weeding: () => AsyncIterable<WeedingExportRow>
   weedingCsv: typeof createWeedingCsvStream
   weedingPdf: typeof createWeedingPdf
+  weedingList: typeof listWeedingReview
   notifyWeeding: typeof notifyWeedingCrossings
 }
 
@@ -29,6 +31,7 @@ export function createReportsRouter(dependencies: ExportDependencies = {
   weeding: weedingRows,
   weedingCsv: createWeedingCsvStream,
   weedingPdf: createWeedingPdf,
+  weedingList: listWeedingReview,
   notifyWeeding: notifyWeedingCrossings,
 }) {
   const router = Router()
@@ -56,6 +59,26 @@ export function createReportsRouter(dependencies: ExportDependencies = {
         'Cache-Control': 'private, no-store',
       })
       dependencies.pdf(dependencies.rows(filters)).on('error', next).pipe(response)
+    } catch (error) { next(error) }
+  })
+
+  router.get('/catalog/weeding', requireCatalogManager, async (_request, response, next) => {
+    try {
+      const items = await dependencies.weedingList()
+      response.json({
+        success: true,
+        data: items.map((row) => ({
+          titleId: Number(row.titleId),
+          title: row.title,
+          authors: row.authors,
+          category: row.category,
+          copyrightYear: row.copyrightYear,
+          publicationYear: row.publicationYear,
+          ageYears: row.ageYears,
+          activeCopies: Number(row.activeCopies),
+          reviewStatus: row.reviewStatus,
+        })),
+      })
     } catch (error) { next(error) }
   })
 

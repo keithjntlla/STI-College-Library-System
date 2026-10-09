@@ -80,7 +80,7 @@ export class PrintingRepository {
   async queue(filters: QueueFilters) {
     const where=this.queueWhere(filters),offset=(filters.page-1)*filters.limit
     const [count]=await this.pool.execute<RowDataPacket[]>(`SELECT COUNT(*) total FROM print_requests pr JOIN users u ON u.user_id=pr.user_id LEFT JOIN print_payment_receipts r ON r.request_id=pr.request_id WHERE ${where.sql}`,where.values)
-    const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT pr.request_id,u.full_name,u.school_id,u.user_role,pr.file_name,pr.number_of_copies,pr.print_type,pr.paper_size,pr.page_count,pr.total_sheets,pr.calculated_cost,pr.payment_status,pr.job_status,pr.created_at,
+    const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT pr.request_id,u.full_name,u.school_id,u.user_role,pr.file_name,pr.number_of_copies,pr.print_type,pr.paper_size,pr.page_count,pr.total_sheets,pr.calculated_cost,pr.payment_status,pr.job_status,pr.created_at,pr.started_at,pr.ready_at,pr.completed_at,pr.cancelled_at,pr.cancelled_reason,
         r.print_receipt_id,r.receipt_number,r.verification_code,r.receipt_status,r.received_at receipt_issued_at
       FROM print_requests pr JOIN users u ON u.user_id=pr.user_id
       LEFT JOIN print_payment_receipts r ON r.request_id=pr.request_id
@@ -96,8 +96,8 @@ export class PrintingRepository {
       ? `COUNT(*) FILTER (WHERE job_status='Completed' AND DATE(completed_at)=${currentDate()})`
       : `SUM(job_status='Completed' AND DATE(completed_at)=CURDATE())`
     const unpaidJobs = isPostgres
-      ? `COUNT(*) FILTER (WHERE payment_status='Unpaid' AND job_status<>'Cancelled')`
-      : `SUM(payment_status='Unpaid' AND job_status<>'Cancelled')`
+      ? `COUNT(*) FILTER (WHERE payment_status='Unpaid' AND (job_status<>'Cancelled' OR started_at IS NOT NULL))`
+      : `SUM(payment_status='Unpaid' AND (job_status<>'Cancelled' OR started_at IS NOT NULL))`
     const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT ${sumEquals('job_status', 'Pending')} pending_jobs,${sumEquals('job_status', 'Printing')} printing_jobs,${sumEquals('job_status', 'Ready for Pickup')} ready_jobs,${completedToday} completed_today,${unpaidJobs} unpaid_jobs,COALESCE(SUM(CASE WHEN payment_status='Paid' AND DATE(paid_at)=${currentDate()} THEN calculated_cost ELSE 0 END),0) revenue_today FROM print_requests`)
     const service_status=await this.serviceStatus()
     return { pending_jobs:Number(rows[0]?.pending_jobs??0),printing_jobs:Number(rows[0]?.printing_jobs??0),ready_jobs:Number(rows[0]?.ready_jobs??0),completed_today:Number(rows[0]?.completed_today??0),unpaid_jobs:Number(rows[0]?.unpaid_jobs??0),revenue_today:Number(rows[0]?.revenue_today??0),service_status }

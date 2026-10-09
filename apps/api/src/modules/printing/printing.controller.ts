@@ -18,7 +18,7 @@ export const printingController={
   myReceipts:handle(async(request,response)=>{response.json({success:true,data:await printingService.ownReceipts(actor(request,response))})}),
   myReceipt:handle(async(request,response)=>{response.json({success:true,data:await printingService.ownReceipt(actor(request,response),request.params.id)})}),
   myReceiptPdf:handle(async(request,response)=>{const receipt=await printingService.ownReceipt(actor(request,response),request.params.id) as unknown as PrintingReceipt;const report=createPrintingReceiptPdf(receipt);response.status(200).set({'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="${receipt.receipt_number}.pdf"`,'Cache-Control':'no-store'});report.pipe(response)}),
-  submit:handle(async(request,response)=>{const data=await printingService.submit(actor(request,response),request.body,request.file);response.status(201).json({success:true,message:'Print request submitted. Pay cash at the library counter before printing starts.',data})}),
+  submit:handle(async(request,response)=>{const data=await printingService.submit(actor(request,response),request.body,request.file);response.status(201).json({success:true,message:'Print request submitted. Staff will print your file. Pay cash when you pick it up.',data})}),
   quote:handle(async(request,response)=>{response.json({success:true,data:await printingService.quote(actor(request,response),request.body,request.file)})}),
   cancel:handle(async(request,response)=>{response.json({success:true,message:'The pending print request was cancelled.',data:await printingService.cancelOwn(actor(request,response),request.params.id)})}),
   summary:handle(async(_request,response)=>{response.json({success:true,data:await printingService.summary()})}),

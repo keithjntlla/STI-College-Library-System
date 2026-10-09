@@ -1,4 +1,5 @@
 import { Router,type NextFunction,type Request,type Response } from 'express'
+import { rateLimit } from 'express-rate-limit'
 import multer from 'multer'
 import { HttpError } from '../../core/http-error.ts'
 import { printingController } from './printing.controller.ts'
@@ -6,6 +7,13 @@ import { printingController } from './printing.controller.ts'
 const maxDocumentMb=process.env.VERCEL?4:10
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:maxDocumentMb*1024*1024,files:1},fileFilter:(_request,file,done)=>{const allowed=['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];if(!allowed.includes(file.mimetype)){done(new HttpError(422,'PRINT_FILE_INVALID','Only PDF and DOCX documents are allowed.'));return}done(null,true)}})
 const documentUpload=(request:Request,response:Response,next:NextFunction)=>upload.single('document')(request,response,(error)=>{if((error as {code?:string}|undefined)?.code==='LIMIT_FILE_SIZE')return next(new HttpError(422,'PRINT_FILE_TOO_LARGE',`The document must not exceed ${maxDocumentMb} MB.`));return error?next(error):next()})
+const uploadLimiter=rateLimit({
+  windowMs:15*60*1000,
+  limit:30,
+  standardHeaders:'draft-8',
+  legacyHeaders:false,
+  message:{success:false,code:'TOO_MANY_PRINT_UPLOADS',message:'Too many print uploads. Please wait a few minutes and try again.'},
+})
 
 export const userPrintingV1Router=Router()
 userPrintingV1Router.get('/service-status',printingController.serviceStatus)
@@ -15,16 +23,17 @@ userPrintingV1Router.get('/requests',printingController.mine)
 userPrintingV1Router.get('/receipts',printingController.myReceipts)
 userPrintingV1Router.get('/receipts/:id',printingController.myReceipt)
 userPrintingV1Router.get('/receipts/:id/pdf',printingController.myReceiptPdf)
-userPrintingV1Router.post('/quote',documentUpload,printingController.quote)
-userPrintingV1Router.post('/requests',documentUpload,printingController.submit)
+userPrintingV1Router.post('/quote',uploadLimiter,documentUpload,printingController.quote)
+userPrintingV1Router.post('/requests',uploadLimiter,documentUpload,printingController.submit)
 userPrintingV1Router.put('/requests/:id/cancel',printingController.cancel)
 
 export const adminPrintingV1Router=Router()
 adminPrintingV1Router.use((request,response,next)=>{
   if(response.locals.authenticatedUser?.role!=='Staff')return next()
-  const allowed=(request.method==='GET'&&(request.path==='/queue'||/^\/requests\/\d+\/document$/.test(request.path)))
+  const allowed=(request.method==='GET'&&(request.path==='/queue'||/^\/requests\/\d+\/document$/.test(request.path)||/^\/receipts\/\d+$/.test(request.path)||/^\/receipts\/\d+\/pdf$/.test(request.path)))
     ||(request.method==='PATCH'&&/^\/requests\/\d+\/status$/.test(request.path))
-  return allowed?next():response.status(403).json({success:false,code:'STAFF_PRINTING_FORBIDDEN',message:'Staff may access only the printing queue and job actions.'})
+    ||(request.method==='POST'&&/^\/requests\/\d+\/cash-payment$/.test(request.path))
+  return allowed?next():response.status(403).json({success:false,code:'STAFF_PRINTING_FORBIDDEN',message:'Staff may access the printing queue, cash payment, receipts, and job actions.'})
 })
 adminPrintingV1Router.get('/summary',printingController.summary)
 adminPrintingV1Router.get('/service-status',printingController.serviceStatus)
@@ -65,5 +74,5 @@ export const printingRouter=Router()
 printingRouter.get('/availability',printingController.availability)
 printingRouter.get('/pricing',printingController.pricing)
 printingRouter.get('/requests',printingController.mine)
-printingRouter.post('/quote',documentUpload,printingController.quote)
-printingRouter.post('/requests',documentUpload,printingController.submit)
+printingRouter.post('/quote',uploadLimiter,documentUpload,printingController.quote)
+printingRouter.post('/requests',uploadLimiter,documentUpload,printingController.submit)

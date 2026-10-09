@@ -1,9 +1,21 @@
-import { useState } from 'react'
-import { AlertTriangle, Download, FileSpreadsheet, Leaf, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { AlertTriangle, Archive, Download, FileSpreadsheet, Leaf, RefreshCw, X } from 'lucide-react'
 import { PageHeader, SectionCard } from '../../components/ui'
 import { getAccessToken } from '../auth/auth-storage'
 
 type Notice = { tone: 'success' | 'error'; text: string }
+type WeedingItem = {
+  titleId: number
+  title: string
+  authors: string
+  category: string
+  copyrightYear: string
+  publicationYear: string
+  ageYears: string
+  activeCopies: number
+  reviewStatus: string
+}
 
 async function downloadReport(path: string, filename: string, accept: string) {
   const headers = new Headers({ Accept: accept })
@@ -26,9 +38,34 @@ async function downloadReport(path: string, filename: string, accept: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }
 
+async function fetchWeedingList() {
+  const headers = new Headers({ Accept: 'application/json' })
+  const token = getAccessToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const response = await fetch('/api/reports/catalog/weeding', { headers, credentials: 'include' })
+  const payload = await response.json() as { data?: WeedingItem[]; message?: string }
+  if (!response.ok) throw new Error(payload.message ?? 'Unable to load the weeding review list.')
+  return payload.data ?? []
+}
+
 export function LibrarianReportsPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
+  const [weedingItems, setWeedingItems] = useState<WeedingItem[]>([])
+  const [weedingLoading, setWeedingLoading] = useState(true)
+
+  const loadWeeding = async () => {
+    setWeedingLoading(true)
+    try {
+      setWeedingItems(await fetchWeedingList())
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Unable to load the weeding review list.' })
+    } finally {
+      setWeedingLoading(false)
+    }
+  }
+
+  useEffect(() => { void loadWeeding() }, [])
 
   async function run(key: string, path: string, filename: string, accept: string, success: string) {
     setBusy(key)
@@ -36,6 +73,7 @@ export function LibrarianReportsPage() {
     try {
       await downloadReport(path, filename, accept)
       setNotice({ tone: 'success', text: success })
+      if (key.startsWith('weed-')) await loadWeeding()
     } catch (error) {
       setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'The report could not be generated.' })
     } finally {
@@ -51,7 +89,7 @@ export function LibrarianReportsPage() {
     <PageHeader
       eyebrow="Collection reporting"
       title="Reports"
-      description="Inventory and weeding exports live here. Catalog maintenance stays for data entry and import."
+      description="Inventory and weeding exports live here. Catalog maintenance stays for data entry and import. Weeding never auto-archives titles."
     />
 
     {notice ? (
@@ -129,8 +167,47 @@ export function LibrarianReportsPage() {
           >
             <FileSpreadsheet size={15} /> {busy === 'weed-csv' ? 'Preparing CSV…' : 'Export CSV'}
           </button>
+          <button
+            type="button"
+            disabled={weedingLoading || busy !== null}
+            className={secondary}
+            onClick={() => void loadWeeding()}
+          >
+            <RefreshCw size={15} /> {weedingLoading ? 'Refreshing…' : 'Refresh list'}
+          </button>
         </div>
       </SectionCard>
     </div>
+
+    <SectionCard className="mt-5 overflow-hidden">
+      <div className="border-b border-[#0b5ea2]/15 px-5 py-4">
+        <h2 className="font-bold text-[#0b5ea2]">Titles due for weeding review</h2>
+        <p className="mt-1 text-xs text-[#0b5ea2]/65">
+          Open Catalog to archive a title with a reason after you decide it should leave active use. Archive is never automatic from this list.
+        </p>
+      </div>
+      <div className="divide-y divide-[#0b5ea2]/10">
+        {weedingLoading ? (
+          <p className="p-8 text-center text-sm text-[#0b5ea2]">Loading weeding review…</p>
+        ) : weedingItems.length === 0 ? (
+          <p className="p-8 text-center text-sm font-semibold text-[#0b5ea2]">No titles currently need weeding review.</p>
+        ) : weedingItems.map((item) => (
+          <div key={item.titleId} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="font-bold text-[#0b5ea2]">{item.title}</p>
+              <p className="mt-1 text-xs text-[#0b5ea2]/65">
+                {item.authors || 'Author not recorded'} · {item.category} · copyright {item.copyrightYear || '—'} · age {item.ageYears}y · {item.activeCopies} active {item.activeCopies === 1 ? 'copy' : 'copies'}
+              </p>
+            </div>
+            <Link
+              to={`/librarian/catalog?action=archive&titleId=${item.titleId}&title=${encodeURIComponent(item.title)}`}
+              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-[#0b5ea2]/20 bg-white px-4 text-sm font-bold text-[#0b5ea2]"
+            >
+              <Archive size={15} /> Archive in catalog
+            </Link>
+          </div>
+        ))}
+      </div>
+    </SectionCard>
   </>
 }

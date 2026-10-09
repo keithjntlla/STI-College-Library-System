@@ -45,6 +45,29 @@ function fakeDatabase(activeLoan: Record<string, unknown> | null, activeReservat
   }
 }
 
+test('blocks archive when a pending desk claim still owns the copy', async () => {
+  const { database, state } = fakeDatabase({
+    transaction_id: 1050,
+    transaction_status: 'Pending',
+    borrowed_at: null,
+    due_at: null,
+  })
+  const guard = createPhysicalCopyMutationGuard(database)('archive')
+  const response = fakeResponse()
+  let receivedError: unknown
+
+  await guard(
+    { params: { copyId: '7' } } as never,
+    response as never,
+    (error?: unknown) => { receivedError = error },
+  )
+
+  assert.ok(receivedError instanceof HttpError)
+  assert.equal(receivedError.code, 'PHYSICAL_COPY_HAS_ACTIVE_LOAN')
+  assert.match(receivedError.message, /pending/i)
+  assert.equal(state.rolledBack, 1)
+})
+
 test('blocks archive with descriptive 422 when a copy is borrowed', async () => {
   const { database, state } = fakeDatabase({
     transaction_id: 1048,

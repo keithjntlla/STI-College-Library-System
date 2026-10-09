@@ -33,6 +33,18 @@ describe('InventoryRemovalDialog', () => {
     expect(completed).toHaveBeenCalledWith('deleted')
   })
 
+  it('opens directly in archive mode for explicit archive actions', () => {
+    render(<InventoryRemovalDialog
+      target={{ ...target, initialMode: 'archive' }}
+      deleteItem={vi.fn()}
+      archiveItem={vi.fn()}
+      onCancel={vi.fn()}
+      onCompleted={vi.fn()}
+    />)
+    expect(screen.getByRole('heading', { name: 'Archive book copy?' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Archive copy' })).toBeTruthy()
+  })
+
   it('switches to archive fallback when the server preserves historical data', async () => {
     const deleteItem = vi.fn().mockRejectedValue(new InventoryApiError(
       'This copy has history and must be archived.', 'PHYSICAL_COPY_REQUIRES_ARCHIVE', {}, { canArchive: true },

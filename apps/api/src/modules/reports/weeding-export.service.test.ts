@@ -6,6 +6,7 @@ import { CSV_INTEGRITY_MARKER, verifyIntegrityProtectedCsv } from './csv-integri
 
 async function* rows(): AsyncGenerator<WeedingExportRow> {
   yield {
+    titleId: '12',
     title: 'Clean Code',
     authors: 'Robert C. Martin',
     category: 'Programming',
@@ -27,6 +28,7 @@ async function collect(stream: NodeJS.ReadableStream) {
 test('streams a weeding review CSV with copyright year columns', async () => {
   const buffer = await collect(createWeedingCsvStream(rows()))
   const output = buffer.toString('utf8')
+  assert.match(output, /Title ID/)
   assert.match(output, /Copyright Year/)
   assert.match(output, /Clean Code/)
   assert.match(output, /Review for weeding/)

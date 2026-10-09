@@ -31,6 +31,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '../components/ui'
 import { getAccessToken, getCurrentIdentity, setSessionIdentity } from '../features/auth/auth-storage'
+import { postLogoutPath } from '../features/auth/auth-redirects'
 import { logout } from '../features/auth/auth-api'
 import { useMockAuth } from '../features/inventory/MockAuthContext'
 import { useTheme } from '../features/theme/ThemeProvider'
@@ -351,7 +352,7 @@ export function PortalLayout({ role }: { role: Role }) {
     return () => { active = false; window.clearInterval(timer) }
   }, [role, alertPollStopped])
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
-  const signOut = async () => { await logout(); navigate('/', { replace: true }) }
+  const signOut = async () => { await logout(); navigate(postLogoutPath(role), { replace: true }) }
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 transition-colors dark:bg-[#14151b] dark:text-zinc-100 relative">

@@ -19,7 +19,7 @@ type PhysicalCopyRow = RowDataPacket & {
 
 type ActiveLoanRow = RowDataPacket & {
   transaction_id: number
-  transaction_status: 'Borrowed' | 'Overdue'
+  transaction_status: 'Pending' | 'Borrowed' | 'Overdue'
   borrowed_at: Date | null
   due_at: Date | null
 }
@@ -94,7 +94,7 @@ export function createPhysicalCopyMutationGuard(database: Pool = db) {
         `SELECT transaction_id, transaction_status, borrowed_at, due_at
            FROM borrow_transactions
           WHERE material_id = ?
-            AND transaction_status IN ('Borrowed', 'Overdue')
+            AND transaction_status IN ('Pending', 'Borrowed', 'Overdue')
           ORDER BY transaction_id DESC
           LIMIT 1
           FOR UPDATE`,
@@ -103,10 +103,13 @@ export function createPhysicalCopyMutationGuard(database: Pool = db) {
       const activeLoan = loanRows[0]
       if (activeLoan) {
         const state = activeLoan.transaction_status.toLowerCase()
+        const nextStep = activeLoan.transaction_status === 'Pending'
+          ? 'Cancel or fulfill the pending claim before trying again.'
+          : 'Process its return before trying again.'
         throw new HttpError(
           422,
           'PHYSICAL_COPY_HAS_ACTIVE_LOAN',
-          `Cannot ${action} copy ${copy.accession_number} because it is currently ${state}. Process its return before trying again.`,
+          `Cannot ${action} copy ${copy.accession_number} because it is currently ${state}. ${nextStep}`,
           {
             physicalCopyId: copy.physical_copy_id,
             materialId: copy.material_id,

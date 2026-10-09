@@ -15,7 +15,7 @@ const api = vi.hoisted(() => ({
   checkoutEligibility: vi.fn(),
 }))
 vi.mock('./circulation-api', () => ({ circulationApi: api }))
-vi.mock('../attendance/attendance-api', () => ({ attendanceApi: { resolveScan: vi.fn() } }))
+vi.mock('../attendance/attendance-api', () => ({ attendanceApi: { resolveScan: vi.fn(), checkIn: vi.fn() } }))
 vi.mock('./CirculationScannerModal', () => ({
   CirculationScannerModal: ({ onScan, mode = 'checkout' }: { onScan: (value: string) => void; mode?: 'checkout' | 'return' }) => (
     <div role="dialog" aria-label={mode === 'return' ? 'Scan book to return' : 'Scan for checkout'}>
@@ -263,6 +263,12 @@ describe('AdminCirculationMonitor', () => {
       openVisit: null,
       occupancy: { current: 1, capacity: 80, available: 79, percentage: 1, overCapacity: false },
     })
+    vi.mocked(attendanceApi.checkIn).mockResolvedValue({
+      message: 'Checked in',
+      visitor: { userId: 7, schoolId: 'STI-7', name: 'Ada Student', role: 'Student', program: 'BSIT', section: null },
+      attendance: { logId: 1, purpose: 'Book Borrowing' },
+      occupancy: { current: 2, capacity: 80, available: 78, percentage: 3, overCapacity: false },
+    })
     api.checkoutEligibility.mockResolvedValue({
       allowed: true,
       schoolId: 'STI-7',
@@ -270,11 +276,14 @@ describe('AdminCirculationMonitor', () => {
       role: 'Student',
       activeLoans: 1,
       loanLimit: 2,
+      checkedIn: true,
       message: null,
     })
     render(<AdminCirculationMonitor />)
     fireEvent.click(await screen.findByRole('button', { name: /Scan student or book/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Simulate student scan' }))
+    expect(await screen.findByText(/checked in for book borrowing/i)).toBeTruthy()
+    expect(attendanceApi.checkIn).toHaveBeenCalled()
     expect(await screen.findByText('Scanned student')).toBeTruthy()
     expect(screen.getAllByText('Ada Student').length).toBeGreaterThan(0)
     openTypedEntry()

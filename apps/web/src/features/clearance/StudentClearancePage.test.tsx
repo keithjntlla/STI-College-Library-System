@@ -20,7 +20,7 @@ it('refreshes clearance from current records and confirms the update', async () 
   expect(await screen.findByText('You have no library obligations.')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
   expect(await screen.findByText('Your clearance is currently blocked.')).toBeTruthy()
-  expect(screen.getByRole('status').textContent).toContain('Clearance updated')
+  expect(screen.getByText(/Clearance updated from your current library records/i)).toBeTruthy()
   await waitFor(() => expect(api.mine).toHaveBeenCalledTimes(2))
 })
 

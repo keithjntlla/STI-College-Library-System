@@ -15,18 +15,22 @@ const notificationApi = vi.hoisted(() => ({
   markAllRead: vi.fn(),
 }))
 
+const identityState = vi.hoisted(() => ({
+  current: {
+    userId: 9,
+    schoolId: 'STI-9',
+    role: 'Student' as const,
+    fullName: 'Test Student',
+    source: 'jwt' as const,
+  },
+}))
+
 vi.mock('../features/auth/auth-storage', async () => {
   const actual = await vi.importActual<typeof import('../features/auth/auth-storage')>('../features/auth/auth-storage')
   return {
     ...actual,
     getAccessToken: () => 'test-token',
-    getCurrentIdentity: () => ({
-      userId: 9,
-      schoolId: 'STI-9',
-      role: 'Student' as const,
-      fullName: 'Test Student',
-      source: 'jwt' as const,
-    }),
+    getCurrentIdentity: () => identityState.current,
     setSessionIdentity: vi.fn(),
   }
 })
@@ -48,6 +52,13 @@ vi.mock('../features/notifications/notification-api', async () => {
 })
 
 beforeEach(() => {
+  identityState.current = {
+    userId: 9,
+    schoolId: 'STI-9',
+    role: 'Student',
+    fullName: 'Test Student',
+    source: 'jwt',
+  }
   profileApi.myProfile.mockResolvedValue({
     id: 9,
     school_id: 'STI-9',
@@ -156,6 +167,7 @@ it('opens notifications from the header bell instead of the sidebar', async () =
 })
 
 it('toggles theme from the account menu and confirms sign out', async () => {
+  const { logout } = await import('../features/auth/auth-api')
   renderStudentPortal()
 
   fireEvent.click(await screen.findByRole('button', { name: 'Account menu for Test Student' }))
@@ -169,4 +181,58 @@ it('toggles theme from the account menu and confirms sign out', async () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
   expect(screen.queryByRole('heading', { name: 'Sign Out' })).toBeNull()
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Account menu for Test Student' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+  expect(logout).toHaveBeenCalled()
+  expect(await screen.findByText('Signed out home')).toBeTruthy()
+})
+
+function renderLibrarianPortal(path = '/librarian/dashboard') {
+  return render(
+    <ThemeProvider>
+      <MockAuthProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route element={<PortalLayout role="librarian" />}>
+              <Route path="/librarian/dashboard" element={<p>Librarian dashboard</p>} />
+            </Route>
+            <Route path="/admin/login" element={<p>Admin login after sign out</p>} />
+            <Route path="/" element={<p>Signed out home</p>} />
+          </Routes>
+        </MemoryRouter>
+      </MockAuthProvider>
+    </ThemeProvider>,
+  )
+}
+
+it('sends librarian voluntary sign-out to admin login', async () => {
+  identityState.current = {
+    userId: 2,
+    schoolId: 'LIB-1',
+    role: 'Librarian',
+    fullName: 'Test Librarian',
+    source: 'jwt',
+  }
+  profileApi.myProfile.mockResolvedValue({
+    id: 2,
+    school_id: 'LIB-1',
+    role: 'Librarian',
+    account_status: 'Active',
+    email: 'librarian@ormoc.sti.edu.ph',
+    user_id: 2,
+    first_name: 'Test',
+    last_name: 'Librarian',
+    program_strand: null,
+    year_grade_level: null,
+    full_name: 'Test Librarian',
+  })
+
+  renderLibrarianPortal()
+  fireEvent.click(await screen.findByRole('button', { name: 'Account menu for Test Librarian' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+  expect(await screen.findByText('Admin login after sign out')).toBeTruthy()
+  expect(screen.queryByText('Signed out home')).toBeNull()
 })

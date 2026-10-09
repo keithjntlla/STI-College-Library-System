@@ -72,21 +72,100 @@ test('opening paper deducts exactly one unopened ream',async()=>{
   assert.ok(calls.some(call=>call.sql.includes("'OpenedReam'")&&call.values.includes(3)&&call.values.includes(2)))
 })
 
-test('starting a paid print job notifies its owner once in the status transaction without deducting paper',async()=>{
-  const{service,calls}=serviceFixture({request_id:4,user_id:12,file_name:'thesis.pdf',job_status:'Pending',payment_status:'Paid'})
+test('starting an unpaid print job notifies its owner once without deducting paper',async()=>{
+  const{service,calls}=serviceFixture({request_id:4,user_id:12,file_name:'thesis.pdf',job_status:'Pending',payment_status:'Unpaid',user_role:'Student'})
   await service.updateStatus({schoolId:'ADMIN-PORTAL-001'},4,{status:'Printing'})
   assert.equal(calls.some(call=>call.sql.includes('bond_paper_stocks')),false)
   assert.equal(calls.some(call=>call.sql.includes('paper_stock_movements')),false)
   const notification=calls.find(call=>call.sql.includes('INSERT IGNORE INTO notifications')&&call.values.includes('print:4:printing'))
   assert.ok(notification)
   assert.equal(notification.values[0],12)
-  assert.match(String(notification.values[1]),/thesis.pdf is now printing/)
+  assert.equal(notification.values[1],'Print request printing')
+  assert.match(String(notification.values[2]),/thesis.pdf is now printing/)
+  assert.match(String(notification.values[2]),/pay cash when you pick it up/i)
+  assert.equal(notification.values[4],'/student/printing')
 })
 
-test('a blocked print start sends no notification',async()=>{
-  const{service,calls}=serviceFixture({request_id:4,user_id:12,file_name:'thesis.pdf',job_status:'Pending',payment_status:'Unpaid'})
-  await assert.rejects(service.updateStatus({schoolId:'ADMIN-PORTAL-001'},4,{status:'Printing'}),{code:'PRINT_PAYMENT_REQUIRED'})
+test('marking a job ready for pickup notifies the owner with a role-correct action path',async()=>{
+  const{service,calls}=serviceFixture({request_id:9,user_id:15,file_name:'handout.pdf',job_status:'Printing',payment_status:'Unpaid',user_role:'Faculty'})
+  await service.updateStatus({schoolId:'ADMIN-PORTAL-001'},9,{status:'Ready for Pickup'})
+  const notification=calls.find(call=>call.sql.includes('INSERT IGNORE INTO notifications')&&call.values.includes('print:9:ready'))
+  assert.ok(notification)
+  assert.equal(notification.values[0],15)
+  assert.equal(notification.values[1],'Print request ready for pickup')
+  assert.match(String(notification.values[2]),/handout.pdf is ready for pickup/)
+  assert.match(String(notification.values[2]),/Pay cash at the library counter when you claim it/)
+  assert.equal(notification.values[4],'/faculty/printing')
+})
+
+test('confirming pickup without payment is blocked',async()=>{
+  const{service,calls}=serviceFixture({request_id:4,user_id:12,file_name:'thesis.pdf',job_status:'Ready for Pickup',payment_status:'Unpaid'})
+  await assert.rejects(service.updateStatus({schoolId:'ADMIN-PORTAL-001'},4,{status:'Completed'}),{code:'PRINT_PAYMENT_REQUIRED_FOR_PICKUP'})
   assert.equal(calls.some(call=>call.sql.includes('INTO notifications')),false)
+})
+
+test('confirming pickup after cash payment succeeds',async()=>{
+  const calls:Array<{sql:string;values:unknown[]}>=[]
+  const connection={
+    beginTransaction:async()=>undefined,commit:async()=>undefined,rollback:async()=>undefined,release:()=>undefined,
+    execute:async(sql:string,values:unknown[]=[] )=>{
+      assert.equal((sql.match(/\?/g)??[]).length,values.length,`Prepared value count mismatch in ${sql}`)
+      calls.push({sql,values})
+      if(sql.includes('FROM print_requests'))return[[{request_id:4,user_id:12,file_name:'thesis.pdf',job_status:'Ready for Pickup',payment_status:'Paid'}],[]]
+      if(sql.includes('FROM attendance_logs'))return[[{log_id:9}],[]]
+      return[{},[]]
+    },
+  }
+  const pool={getConnection:async()=>connection} as unknown as Pool
+  const repository={userBySchoolId:async()=>({user_id:5,account_status:'Active'})} as unknown as PrintingRepository
+  const service=createPrintingService(pool,repository)
+  const result=await service.updateStatus({schoolId:'ADMIN-PORTAL-001'},4,{status:'Completed'})
+  assert.equal(result.job_status,'Completed')
+  assert.ok(calls.some(call=>call.sql.includes('UPDATE print_requests')&&call.values.includes('Completed')))
+})
+
+test('confirming pickup without attendance check-in is blocked',async()=>{
+  const calls:Array<{sql:string;values:unknown[]}>=[]
+  const connection={
+    beginTransaction:async()=>undefined,commit:async()=>undefined,rollback:async()=>undefined,release:()=>undefined,
+    execute:async(sql:string,values:unknown[]=[] )=>{
+      calls.push({sql,values})
+      if(sql.includes('FROM print_requests'))return[[{request_id:4,user_id:12,file_name:'thesis.pdf',job_status:'Ready for Pickup',payment_status:'Paid'}],[]]
+      if(sql.includes('FROM attendance_logs'))return[[],[]]
+      return[{},[]]
+    },
+  }
+  const pool={getConnection:async()=>connection} as unknown as Pool
+  const repository={userBySchoolId:async()=>({user_id:5,account_status:'Active'})} as unknown as PrintingRepository
+  const service=createPrintingService(pool,repository)
+  await assert.rejects(service.updateStatus({schoolId:'ADMIN-PORTAL-001'},4,{status:'Completed'}),{code:'ATTENDANCE_REQUIRED'})
+  assert.equal(calls.some(call=>call.sql.includes('UPDATE print_requests')&&call.values.includes('Completed')),false)
+})
+
+test('student cannot cancel once printing has started',async()=>{
+  const{service}=serviceFixture({request_id:4,job_status:'Printing',payment_status:'Unpaid'})
+  await assert.rejects(service.cancelOwn({schoolId:'STUDENT-001'},4),{code:'PRINT_CANCELLATION_BLOCKED'})
+})
+
+test('staff cancel after print start keeps the unpaid charge',async()=>{
+  const{service,calls}=serviceFixture({request_id:4,user_id:12,file_name:'thesis.pdf',job_status:'Printing',payment_status:'Unpaid',user_role:'Student'})
+  await service.updateStatus({schoolId:'ADMIN-PORTAL-001'},4,{status:'Cancelled',reason:'Student never claimed the printout'})
+  const update=calls.find(call=>call.sql.includes('UPDATE print_requests')&&call.values.includes('Cancelled'))
+  assert.ok(update)
+  assert.match(String(update.values.find(value=>typeof value==='string'&&value.includes('unpaid charge'))),/unpaid charge remains due/i)
+  assert.equal(calls.some(call=>call.sql.includes("payment_status='Paid'")||call.sql.includes("payment_status = 'Paid'")),false)
+})
+
+test('cash payment is allowed on cancelled jobs that already started printing',async()=>{
+  const{service,calls}=serviceFixture({request_id:4,user_id:7,calculated_cost:'36.00',payment_status:'Unpaid',job_status:'Cancelled',started_at:'2026-10-06T08:00:00.000Z',file_name:'capstone.pdf',page_count:6,number_of_copies:2,total_sheets:12,print_type:'Monochrome',paper_size:'A4',student_name:'Student User',school_id:'0200000001',user_role:'Student'})
+  const result=await service.recordCash({schoolId:'ADMIN-PORTAL-001'},4,{amount_paid:36})
+  assert.equal(result.payment_status,'Paid')
+  assert.ok(calls.some(call=>call.sql.includes('INSERT INTO print_payment_receipts')))
+})
+
+test('cash payment is blocked on cancelled jobs that never started printing',async()=>{
+  const{service}=serviceFixture({request_id:4,user_id:7,calculated_cost:'36.00',payment_status:'Unpaid',job_status:'Cancelled',started_at:null,file_name:'capstone.pdf',page_count:6,number_of_copies:2,total_sheets:12,print_type:'Monochrome',paper_size:'A4',student_name:'Student User',school_id:'0200000001',user_role:'Student'})
+  await assert.rejects(service.recordCash({schoolId:'ADMIN-PORTAL-001'},4,{amount_paid:36}),{code:'PRINT_PAYMENT_BLOCKED'})
 })
 
 test('recording a printing payment creates a separate digital printing receipt',async()=>{

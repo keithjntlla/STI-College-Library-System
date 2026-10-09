@@ -71,7 +71,7 @@ export function createBookArchive(database: Pool = db) {
       if (!titles[0]) throw new HttpError(404, 'ARCHIVED_BOOK_NOT_FOUND', 'Archived book not found.')
       const [copies] = await database.execute<RowDataPacket[]>(
         `SELECT pc.physical_copy_id AS "copyId", pc.accession_number AS accession,
-                pc.barcode, pc.shelf_location AS shelf, pc.condition_status AS condition,
+                pc.barcode, pc.shelf_location AS shelf, pc.condition_status AS "condition",
                 pc.archived_at AS "archivedAt", pc.archive_reason AS reason,
                 (SELECT COUNT(*) FROM borrow_transactions bt
                   WHERE bt.material_id=COALESCE(pc.material_id,pc.physical_copy_id)) AS "borrowingCount"

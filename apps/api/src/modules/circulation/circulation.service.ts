@@ -6,7 +6,6 @@ import {
   authorsAgg,
   caseIf,
   currentDate,
-  currentTime,
   excluded,
   isPostgres,
   sumEquals,
@@ -470,18 +469,21 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
       const overdueCount = Number(blocks.overdue_count ?? 0)
       const unpaidFineCount = Number(blocks.unpaid_fine_count ?? 0)
       const unpaidReplacementCount = Number(blocks.unpaid_replacement_count ?? 0)
+      const checkedIn = Boolean(insideRows[0])
       const holdReasons = [
         overdueCount > 0 ? 'overdue books' : '',
         unpaidFineCount > 0 ? 'unpaid fines' : '',
         unpaidReplacementCount > 0 ? 'unpaid lost-book replacement charges' : '',
       ].filter(Boolean)
       const holdBlocked = holdReasons.length > 0
-      const checkoutAllowed = allowed && !holdBlocked
+      const checkoutAllowed = allowed && !holdBlocked && checkedIn
       const message = holdBlocked
         ? `Transaction Blocked: This borrower has ${holdReasons.join(', ')} that must be settled first.`
-        : allowed
-          ? null
-          : `This student already has ${activeLoans} active ${activeLoans === 1 ? 'loan' : 'loans'}, which is the ${loanLimit}-book limit. Checkout is not allowed until a book is returned.`
+        : !allowed
+          ? `This student already has ${activeLoans} active ${activeLoans === 1 ? 'loan' : 'loans'}, which is the ${loanLimit}-book limit. Checkout is not allowed until a book is returned.`
+          : !checkedIn
+            ? 'Transaction Blocked: The borrower must check in at attendance before books can be borrowed.'
+            : null
       return {
         allowed: checkoutAllowed,
         schoolId: String(borrower.school_id),
@@ -489,7 +491,7 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
         role,
         activeLoans,
         loanLimit,
-        checkedIn: Boolean(insideRows[0]),
+        checkedIn,
         readyReservations: readyRows.map((row) => ({
           reservationId: Number(row.reservation_id),
           title: String(row.title ?? 'Untitled'),
@@ -596,15 +598,7 @@ export function createCirculationService(database: Pool = db, clock: () => Date 
           [borrower.user_id],
         )
         if (!openVisit[0]) {
-          const entryRequestId = `desk-checkout-${borrower.user_id}-${randomUUID()}`
-          await connection.execute(
-            `INSERT INTO attendance_logs
-               (user_id,attendance_date,time_in,checked_in_at,time_out,checked_out_at,reason_for_visit,
-                qr_reference,qr_credential_id,scan_method,checked_in_by_user_id,entry_request_id)
-             VALUES (?,${currentDate()},${currentTime()},NOW(),NULL,NULL,'Book Borrowing',
-                NULL,NULL,'Manual',?,?)`,
-            [borrower.user_id, processedByUserId, entryRequestId],
-          )
+          throw new HttpError(422, 'ATTENDANCE_REQUIRED', 'The borrower must check in at attendance before books can be borrowed.')
         }
         let transactionId: number
         if (pendingClaim) {

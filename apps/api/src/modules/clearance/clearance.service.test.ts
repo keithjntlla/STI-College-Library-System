@@ -140,6 +140,41 @@ test('paid quoted loss no longer blocks clearance', async () => {
   assert.equal(result.reason, 'No library obligations')
 })
 
+test('unpaid started print request blocks clearance with print charge amount', async () => {
+  const database = {
+    async execute(sql: string) {
+      if (sql.includes('FROM users u WHERE u.user_id')) {
+        return [[{ user_id: 7, school_id: 'STI-7', full_name: 'Ada Student', course_or_strand: 'BSIT', section: 'A', account_status: 'Active' }]]
+      }
+      if (sql.includes('FROM borrow_transactions bt INNER JOIN materials') && sql.includes('lost_confirmed_at IS NULL')) return [[]]
+      if (sql.includes('FROM fines f') || sql.includes('calculated.fine_amount')) return [[]]
+      if (sql.includes('FROM lost_book_reports l')) return [[]]
+      if (sql.includes('FROM print_requests')) {
+        return [[{
+          request_id: 44, file_name: 'thesis.pdf', calculated_cost: 36,
+          job_status: 'Ready for Pickup', payment_status: 'Unpaid',
+          started_at: '2026-10-06T08:00:00.000Z', created_at: '2026-10-06T07:30:00.000Z',
+        }]]
+      }
+      if (sql.includes('FROM clearance_overrides')) return [[]]
+      if (sql.includes('INSERT INTO clearance_statuses') || sql.includes('ON CONFLICT') || sql.includes('ON DUPLICATE KEY')) {
+        return [{ affectedRows: 1 }]
+      }
+      return [[]]
+    },
+  } as unknown as Pool
+
+  const result = await createClearanceService(database).compute(7)
+  assert.equal(result.computedStatus, 'Not Cleared')
+  assert.equal(result.summary.unpaidPrintCharges, 36)
+  assert.equal(result.summary.totalOutstanding, 36)
+  assert.equal(result.summary.blockCount, 1)
+  assert.match(result.reason, /unpaid printing charge/i)
+  assert.equal(result.printCharges.length, 1)
+  assert.equal(result.printCharges[0]?.requestId, 44)
+  assert.equal(result.printCharges[0]?.amount, 36)
+})
+
 test('resolveLost waive writes Waived resolution and lost_book_resolved admin notice', async () => {
   const statements: string[] = []
   const connection = {

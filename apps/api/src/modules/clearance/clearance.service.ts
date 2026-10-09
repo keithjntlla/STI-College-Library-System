@@ -64,6 +64,8 @@ export function createClearanceService(database: Pool = db) {
               COALESCE(losses.unpaid_replacement,0) AS unpaid_replacement,
               COALESCE(losses.open_confirmed_losses,0) AS open_confirmed_losses,
               COALESCE(losses.awaiting_quotation,0) AS awaiting_quotation,
+              COALESCE(prints.unpaid_print_charges,0) AS unpaid_print_charges,
+              COALESCE(prints.unpaid_print_jobs,0) AS unpaid_print_jobs,
               active_override.clearance_override_id,active_override.override_status,active_override.reason AS override_reason
          FROM users u
          LEFT JOIN (
@@ -90,6 +92,14 @@ export function createClearanceService(database: Pool = db) {
             WHERE report_status='Confirmed' AND charge_resolution<>'Waived'
             GROUP BY user_id
          ) losses ON losses.user_id=u.user_id
+         LEFT JOIN (
+           SELECT user_id,
+                  SUM(calculated_cost) AS unpaid_print_charges,
+                  COUNT(*) AS unpaid_print_jobs
+             FROM print_requests
+            WHERE payment_status='Unpaid' AND started_at IS NOT NULL
+            GROUP BY user_id
+         ) prints ON prints.user_id=u.user_id
          LEFT JOIN clearance_overrides active_override
            ON active_override.clearance_override_id=(
              SELECT recent.clearance_override_id FROM clearance_overrides recent
@@ -103,15 +113,18 @@ export function createClearanceService(database: Pool = db) {
       const activeLoans = Number(row.active_loans ?? 0)
       const unpaidFines = Number(row.unpaid_fines ?? 0)
       const unpaidReplacement = Number(row.unpaid_replacement ?? 0)
+      const unpaidPrintCharges = Number(row.unpaid_print_charges ?? 0)
+      const unpaidPrintJobs = Number(row.unpaid_print_jobs ?? 0)
       const openConfirmedLosses = Number(row.open_confirmed_losses ?? 0)
       const awaitingQuotation = Number(row.awaiting_quotation ?? 0)
-      const computedStatus = activeLoans || unpaidFines > 0 || openConfirmedLosses > 0 ? 'Not Cleared' : 'Cleared'
+      const computedStatus = activeLoans || unpaidFines > 0 || openConfirmedLosses > 0 || unpaidPrintCharges > 0 ? 'Not Cleared' : 'Cleared'
       const status = row.override_status ? String(row.override_status) : computedStatus
       const reasons = [
         activeLoans ? `${activeLoans} unreturned ${activeLoans === 1 ? 'book' : 'books'}` : '',
         unpaidFines ? `PHP ${unpaidFines.toFixed(2)} unpaid overdue fines` : '',
         awaitingQuotation ? `${awaitingQuotation} confirmed lost ${awaitingQuotation === 1 ? 'book' : 'books'} awaiting quotation` : '',
         unpaidReplacement ? `PHP ${unpaidReplacement.toFixed(2)} unpaid lost-book replacement charges` : '',
+        unpaidPrintCharges ? `PHP ${unpaidPrintCharges.toFixed(2)} unpaid printing ${unpaidPrintJobs === 1 ? 'charge' : 'charges'}` : '',
       ].filter(Boolean)
       return {
         student: { userId: Number(row.user_id), schoolId: String(row.school_id), name: String(row.full_name), program: row.course_or_strand ?? null, section: row.section ?? null, accountStatus: String(row.account_status) },
@@ -120,16 +133,17 @@ export function createClearanceService(database: Pool = db) {
           activeLoans,
           unpaidOverdueFines: unpaidFines,
           unpaidReplacementCharges: unpaidReplacement,
-          totalOutstanding: unpaidFines + unpaidReplacement,
-          blockCount: activeLoans + (unpaidFines > 0 ? 1 : 0) + openConfirmedLosses,
+          unpaidPrintCharges,
+          totalOutstanding: unpaidFines + unpaidReplacement + unpaidPrintCharges,
+          blockCount: activeLoans + (unpaidFines > 0 ? 1 : 0) + openConfirmedLosses + unpaidPrintJobs,
         },
-        loans: [], fines: [], lostBooks: [], activeOverride: row.clearance_override_id ? { overrideId: Number(row.clearance_override_id), status: String(row.override_status), reason: String(row.override_reason) } : null, overrideHistory: [],
+        loans: [], fines: [], lostBooks: [], printCharges: [], activeOverride: row.clearance_override_id ? { overrideId: Number(row.clearance_override_id), status: String(row.override_status), reason: String(row.override_reason) } : null, overrideHistory: [],
       }
     })
   }
 
   async function compute(userId: number) {
-    const [[userRows], [loanRows], [fineRows], [lostRows], [overrideRows], [historyRows]] = await Promise.all([
+    const [[userRows], [loanRows], [fineRows], [lostRows], [printRows], [overrideRows], [historyRows]] = await Promise.all([
       database.execute<RowDataPacket[]>(
         `SELECT u.user_id, u.school_id, u.full_name, u.course_or_strand, u.section, u.account_status
            FROM users u WHERE u.user_id = ? AND u.user_role IN ('Student','Faculty') LIMIT 1`, [userId],
@@ -180,6 +194,12 @@ export function createClearanceService(database: Pool = db) {
           WHERE l.user_id=? ORDER BY l.reported_at DESC`, [userId],
       ),
       database.execute<RowDataPacket[]>(
+        `SELECT request_id,file_name,calculated_cost,job_status,payment_status,started_at,created_at
+           FROM print_requests
+          WHERE user_id=? AND payment_status='Unpaid' AND started_at IS NOT NULL
+          ORDER BY started_at DESC, request_id DESC`, [userId],
+      ),
+      database.execute<RowDataPacket[]>(
         `SELECT o.clearance_override_id, o.override_status, o.reason, o.applied_at, o.expires_at,
                 u.full_name AS applied_by
            FROM clearance_overrides o INNER JOIN users u ON u.user_id=o.applied_by_user_id
@@ -200,14 +220,16 @@ export function createClearanceService(database: Pool = db) {
     const unpaidFines = fineRows.reduce((sum, row) => sum + Number(row.fine_amount ?? 0), 0)
     const lostStanding = openConfirmedLostReasons(lostRows)
     const unpaidReplacement = lostStanding.unpaidReplacement
+    const unpaidPrintCharges = printRows.reduce((sum, row) => sum + Number(row.calculated_cost ?? 0), 0)
     const activeLoans = loanRows.length
-    const computedStatus = activeLoans || unpaidFines > 0 || lostStanding.openConfirmedLosses > 0 ? 'Not Cleared' : 'Cleared'
+    const computedStatus = activeLoans || unpaidFines > 0 || lostStanding.openConfirmedLosses > 0 || unpaidPrintCharges > 0 ? 'Not Cleared' : 'Cleared'
     const activeOverride = overrideRows[0]
     const status = activeOverride?.override_status ? String(activeOverride.override_status) : computedStatus
     const reasons = [
       activeLoans ? `${activeLoans} unreturned ${activeLoans === 1 ? 'book' : 'books'}` : '',
       unpaidFines > 0 ? `PHP ${unpaidFines.toFixed(2)} unpaid overdue fines` : '',
       ...lostStanding.reasons,
+      unpaidPrintCharges > 0 ? `PHP ${unpaidPrintCharges.toFixed(2)} unpaid printing ${printRows.length === 1 ? 'charge' : 'charges'}` : '',
     ].filter(Boolean)
     const reason = activeOverride ? `Authorized override: ${activeOverride.reason}` : reasons.join('; ') || 'No library obligations'
     await database.execute(
@@ -228,12 +250,22 @@ export function createClearanceService(database: Pool = db) {
         activeLoans,
         unpaidOverdueFines: unpaidFines,
         unpaidReplacementCharges: unpaidReplacement,
-        totalOutstanding: unpaidFines + unpaidReplacement,
-        blockCount: activeLoans + fineRows.length + lostStanding.openConfirmedLosses,
+        unpaidPrintCharges,
+        totalOutstanding: unpaidFines + unpaidReplacement + unpaidPrintCharges,
+        blockCount: activeLoans + fineRows.length + lostStanding.openConfirmedLosses + printRows.length,
       },
       loans: loanRows.map((row) => ({ transactionId: Number(row.transaction_id), title: String(row.title), accessionNumber: row.accession_number, status: String(row.transaction_status), borrowedAt: row.borrowed_at, dueAt: row.due_at, overdueHours: Number(row.overdue_hours ?? 0), currentFine: Number(row.current_fine ?? 0) })),
       fines: fineRows.map((row) => ({ fineId: Number(row.fine_id), transactionId: row.transaction_id ? Number(row.transaction_id) : null, title: String(row.title), amount: Number(row.fine_amount), basis: String(row.calculation_basis), overdueUnits: Number(row.overdue_units), rate: Number(row.rate_applied), appliedAt: row.applied_date, notes: row.notes })),
       lostBooks: lostRows.map((row) => ({ lostBookReportId: Number(row.lost_book_report_id), transactionId: Number(row.transaction_id), titleId: row.title_id ? Number(row.title_id) : null, title: String(row.title), status: String(row.report_status), chargeResolution: String(row.charge_resolution), resolutionReason: row.resolution_reason ? String(row.resolution_reason) : null, quotationId: row.current_quotation_id ? Number(row.current_quotation_id) : null, quotedAmount: row.current_quotation_amount === null ? null : Number(row.current_quotation_amount), replacementCharge: Number(row.replacement_charge), paymentStatus: String(row.payment_status), reportedAt: row.reported_at, verifiedAt: row.verified_at })),
+      printCharges: printRows.map((row) => ({
+        requestId: Number(row.request_id),
+        fileName: String(row.file_name),
+        amount: Number(row.calculated_cost),
+        jobStatus: String(row.job_status),
+        paymentStatus: String(row.payment_status),
+        startedAt: row.started_at,
+        createdAt: row.created_at,
+      })),
       activeOverride: activeOverride ? { overrideId: Number(activeOverride.clearance_override_id), status: String(activeOverride.override_status), reason: String(activeOverride.reason), appliedAt: activeOverride.applied_at, expiresAt: activeOverride.expires_at, appliedBy: String(activeOverride.applied_by) } : null,
       overrideHistory: historyRows.map((row) => ({ overrideId: Number(row.clearance_override_id), status: String(row.override_status), reason: String(row.reason), appliedAt: row.applied_at, expiresAt: row.expires_at, revokedAt: row.revoked_at, revocationReason: row.revocation_reason, appliedBy: String(row.applied_by), revokedBy: row.revoked_by ? String(row.revoked_by) : null })),
     }

@@ -14,7 +14,7 @@ const row: InventoryExportRow = {
 }
 
 const weedingRow: WeedingExportRow = {
-  title: 'Database Systems', authors: 'SmartLib QA', category: 'Programming',
+  titleId: '42', title: 'Database Systems', authors: 'SmartLib QA', category: 'Programming',
   copyrightYear: '2018', publicationYear: '2026', ageYears: '8', activeCopies: '2', reviewStatus: 'Review for weeding',
 }
 
@@ -28,6 +28,7 @@ function appFor(role: string) {
     weeding: async function* () { yield weedingRow },
     weedingCsv: createWeedingCsvStream,
     weedingPdf: createWeedingPdf,
+    weedingList: async () => [weedingRow],
     notifyWeeding: async () => 1,
   }))
   return app
@@ -57,6 +58,14 @@ test('authorized Librarian streams the weeding review CSV', async () => {
   assert.equal(response.status, 200)
   assert.match(response.headers['content-disposition'], /sti-library-weeding-list\.csv/)
   assert.match(response.text, /Review for weeding/)
+  assert.match(response.text, /Title ID/)
+})
+
+test('authorized Librarian lists weeding review titles as JSON for catalog handoff', async () => {
+  const response = await request(appFor('Librarian')).get('/api/reports/catalog/weeding')
+  assert.equal(response.status, 200)
+  assert.equal(response.body.data[0].titleId, 42)
+  assert.equal(response.body.data[0].title, 'Database Systems')
 })
 
 test('Student cannot download administrative inventory reports', async () => {

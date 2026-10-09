@@ -219,6 +219,33 @@ export async function updateThesisMetadata(connection: PoolConnection, titleId: 
 }
 
 export async function setTitleArchived(connection: PoolConnection, titleId: number, reason: string, actorAccountId: number | null = null) {
+  let actorUserId: number | null = null
+  let actorLabel = 'Librarian'
+  if (actorAccountId != null) {
+    const [actorRows] = await connection.execute<RowDataPacket[]>(
+      `SELECT a.user_id, COALESCE(u.full_name, a.school_id, 'Librarian') AS label
+         FROM accounts a
+         LEFT JOIN users u ON u.user_id = a.user_id
+        WHERE a.account_id = ?
+        LIMIT 1`,
+      [actorAccountId],
+    )
+    if (actorRows[0]) {
+      actorUserId = actorRows[0].user_id == null ? null : Number(actorRows[0].user_id)
+      actorLabel = String(actorRows[0].label ?? 'Librarian')
+    }
+  }
+
+  await connection.execute(
+    `INSERT INTO inventory_audit_events
+      (physical_copy_id, barcode_snapshot, event_type, previous_availability, new_availability,
+       action_reason, verified_by_user_id, verified_by_label)
+     SELECT pc.physical_copy_id, pc.barcode, 'Archived', pc.availability_status, 'Archived', ?, ?, ?
+       FROM physical_copies pc
+      WHERE pc.title_id = ? AND pc.lifecycle_status = 'Active'`,
+    [reason, actorUserId, actorLabel, titleId],
+  )
+
   await connection.execute(
     `UPDATE materials SET availability_status='Unavailable', updated_at=NOW()
       WHERE material_id IN (SELECT material_id FROM physical_copies WHERE title_id=? AND material_id IS NOT NULL)`,

@@ -1,5 +1,6 @@
 import { Archive, RefreshCw, ShieldAlert, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { archiveErrorMessage } from '../catalog/archive-error-message'
 import { InventoryApiError } from './inventory-api'
 import type { InventoryRemovalTarget } from './types'
 
@@ -18,13 +19,20 @@ export function InventoryRemovalDialog({
   onCancel: () => void
   onCompleted: (action: RemovalAction) => Promise<void>
 }) {
-  const [mode, setMode] = useState<'delete' | 'archive'>('delete')
+  const [mode, setMode] = useState<'delete' | 'archive'>(target.initialMode ?? 'delete')
   const [confirmation, setConfirmation] = useState('')
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const confirmationInput = useRef<HTMLInputElement>(null)
   const archiveReasonInput = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    setMode(target.initialMode ?? 'delete')
+    setConfirmation('')
+    setReason('')
+    setError(null)
+  }, [target.id, target.initialMode, target.kind])
 
   useEffect(() => {
     if (mode === 'delete') confirmationInput.current?.focus()
@@ -57,7 +65,7 @@ export function InventoryRemovalDialog({
         setMode('archive')
         setError(`${caught.message} Enter an archive reason to continue without deleting its history.`)
       } else {
-        setError(caught instanceof Error ? caught.message : 'The inventory record could not be removed.')
+        setError(archiveErrorMessage(caught, 'The inventory record could not be removed.'))
       }
     } finally {
       setSaving(false)

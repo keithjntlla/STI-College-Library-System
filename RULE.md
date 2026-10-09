@@ -46,7 +46,7 @@ When a listed item ships, bump its status here in the same change.
 | B1 | Scan-first borrow/return; block on fines, overdue, clearance, unpaid replacement; photo + book card; Confirm | done | Scan-first desk; typed path behind Type instead; server blocks clearance-style holds and unpaid replacement. |
 | B2 | Inside-library vs take-home loan | done | `loan_mode` on borrow_transactions; inside due at closing, no overnight fine. |
 | B3 | Student scan opens ready reservation; Verify & Checkout | done | Ready hold surfaces from student scan; timer stays on ready_for_pickup. |
-| B4 | Attendance purpose Book Borrowing; check-in before borrow (same scan) | done | Confirm checkout writes attendance when student is not already inside. |
+| B4 | Attendance purpose Book Borrowing; check-in before borrow | done | Checkout and print pickup require an open attendance visit. Desk attendance QR check-in (Book Borrowing / Printing) must happen first; checkout no longer auto-inserts a visit. |
 | B5 | Catalog filter by course/program | deferred | Categories are subjects, not degrees. Needs program map. |
 | B6 | Synopsis / glossary / book details | partial | Synopsis done. Glossary deferred. |
 | B7 | Digital copies when library owns them | deferred | Rights-gated. |

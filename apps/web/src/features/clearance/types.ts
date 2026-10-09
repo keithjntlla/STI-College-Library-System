@@ -1,10 +1,11 @@
 export type ClearanceRecord = {
   student: { userId: number; schoolId: string; name: string; program: string | null; section: string | null; accountStatus: string }
   status: 'Cleared' | 'Not Cleared'; computedStatus: 'Cleared' | 'Not Cleared'; reason: string; checkedAt: string
-  summary: { activeLoans: number; unpaidOverdueFines: number; unpaidReplacementCharges: number; totalOutstanding: number; blockCount: number }
+  summary: { activeLoans: number; unpaidOverdueFines: number; unpaidReplacementCharges: number; unpaidPrintCharges?: number; totalOutstanding: number; blockCount: number }
   loans: Array<{ transactionId: number; title: string; accessionNumber: string | null; status: string; borrowedAt: string | null; dueAt: string | null; overdueHours: number; currentFine: number }>
   fines: Array<{ fineId: number; transactionId: number | null; title: string; amount: number; basis: string; overdueUnits: number; rate: number; appliedAt: string; notes: string | null }>
   lostBooks: Array<{ lostBookReportId: number; transactionId: number; titleId: number | null; title: string; status: string; chargeResolution: string; resolutionReason: string | null; quotationId: number | null; quotedAmount: number | null; replacementCharge: number; paymentStatus: string; reportedAt: string; verifiedAt: string | null }>
+  printCharges?: Array<{ requestId: number; fileName: string; amount: number; jobStatus: string; paymentStatus: string; startedAt: string | null; createdAt: string }>
   activeOverride: null | { overrideId: number; status: string; reason: string; appliedAt: string; expiresAt: string | null; appliedBy: string }
   overrideHistory: Array<{ overrideId: number; status: string; reason: string; appliedAt: string; expiresAt: string | null; revokedAt: string | null; revocationReason: string | null; appliedBy: string; revokedBy: string | null }>
 }

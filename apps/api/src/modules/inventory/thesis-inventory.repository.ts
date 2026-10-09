@@ -109,7 +109,7 @@ export async function findOpenThesisLoan(connection: PoolConnection, materialId:
   const [rows] = await connection.execute<RowDataPacket[]>(`
     SELECT transaction_id, transaction_status, user_id, due_at
       FROM borrow_transactions
-     WHERE material_id = ? AND transaction_status IN ('Borrowed', 'Overdue')
+     WHERE material_id = ? AND transaction_status IN ('Pending', 'Borrowed', 'Overdue')
      ORDER BY transaction_id DESC LIMIT 1 FOR UPDATE`, [materialId])
   return rows[0] ?? null
 }

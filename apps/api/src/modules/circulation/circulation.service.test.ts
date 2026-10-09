@@ -22,7 +22,7 @@ function checkoutPool(role: 'Student' | 'Faculty', activeCount = 0, readyClaim: 
       if (sql.includes('as overdue')) return [[{ overdue: 0 }]]
       if (sql.includes('FROM library_closed_days')) return [[]]
       if (sql.includes('FROM library_operating_schedule')) return [[{ closes_at: '17:00:00', is_open: 1 }]]
-      if (sql.includes('FROM attendance_logs')) return [[]]
+      if (sql.includes('FROM attendance_logs')) return [[{ log_id: 1 }]]
       if (sql.includes('INSERT INTO attendance_logs')) return [{ insertId: 1, affectedRows: 1 }]
       if (sql.includes('INSERT INTO borrow_transactions')) { state.borrowInserts += 1; return [{ insertId: 55, affectedRows: 1 }] }
       if (sql.includes('UPDATE borrow_transactions')) return [{ affectedRows: 1 }]
@@ -177,7 +177,7 @@ test('borrowing history exposes the normalized title cover path', async () => {
   assert.equal(result.items[0].coverImagePath, '/api/assets/covers/clean-code.png')
 })
 
-function eligibilityPool(row: Record<string, unknown> | null, loans: Array<Record<string, unknown>> = []) {
+function eligibilityPool(row: Record<string, unknown> | null, loans: Array<Record<string, unknown>> = [], checkedIn = false) {
   return {
     async execute(sql: string, params: unknown[]) {
       if (sql.includes('FROM users u')) {
@@ -199,7 +199,7 @@ function eligibilityPool(row: Record<string, unknown> | null, loans: Array<Recor
       }
       if (sql.includes('FROM attendance_logs')) {
         assert.deepEqual(params, [row?.user_id])
-        return [[]]
+        return [checkedIn ? [{ log_id: 1 }] : []]
       }
       throw new Error(`Unexpected eligibility SQL: ${sql}`)
     },
@@ -234,16 +234,44 @@ test('checkout scan includes open loans so a blocked student can be returned fro
 test('checkout scan still accepts a student with an open loan slot', async () => {
   const result = await createCirculationService(eligibilityPool({
     user_id: 7, full_name: 'Ada Student', school_id: 'STI-7', role_name: 'Student', account_status: 'Active', active_loans: 1,
-  })).checkoutEligibility('STI-7')
+  }, [], true)).checkoutEligibility('STI-7')
   assert.equal(result.allowed, true)
   assert.deepEqual(result.openLoans, [])
   assert.equal(result.message, null)
+  assert.equal(result.checkedIn, true)
+})
+
+test('checkout scan blocks a student who is not checked in', async () => {
+  const result = await createCirculationService(eligibilityPool({
+    user_id: 7, full_name: 'Ada Student', school_id: 'STI-7', role_name: 'Student', account_status: 'Active', active_loans: 1,
+  })).checkoutEligibility('STI-7')
+  assert.equal(result.allowed, false)
+  assert.equal(result.checkedIn, false)
+  assert.match(result.message ?? '', /must check in at attendance/i)
 })
 
 test('checkout scan does not apply the student loan cap to faculty', async () => {
   const result = await createCirculationService(eligibilityPool({
     user_id: 8, full_name: 'Jun Faculty', school_id: 'STI-7', role_name: 'Faculty', account_status: 'Active', active_loans: 6,
-  })).checkoutEligibility('STI-7')
+  }, [], true)).checkoutEligibility('STI-7')
   assert.equal(result.allowed, true)
   assert.equal(result.loanLimit, null)
+})
+
+test('confirm checkout rejects borrowers without an open attendance visit', async () => {
+  const { state, database } = checkoutPool('Student', 0)
+  const connection = await database.getConnection()
+  const originalExecute = connection.execute.bind(connection)
+  connection.execute = async (sql: string) => {
+    if (sql.includes('FROM attendance_logs')) return [[]]
+    return originalExecute(sql)
+  }
+  await assert.rejects(createCirculationService(database).confirmCheckout(1, { barcode: 'book-20', school_id: 'sti-7' }), (error: unknown) => {
+    assert.ok(error instanceof HttpError)
+    assert.equal(error.code, 'ATTENDANCE_REQUIRED')
+    return true
+  })
+  assert.equal(state.borrowInserts, 0)
+  assert.equal(state.commits, 0)
+  assert.equal(state.rollbacks, 1)
 })

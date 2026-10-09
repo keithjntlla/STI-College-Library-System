@@ -324,6 +324,9 @@ export function AdminCirculationMonitor() {
       setSubmitting(true)
       try {
         const result = await attendanceApi.resolveScan(dataText)
+        if (!result.openVisit) {
+          await attendanceApi.checkIn(dataText, 'Book Borrowing', crypto.randomUUID())
+        }
         const outcome = await acceptScannedStudent({
           schoolId: result.visitor.schoolId,
           name: result.visitor.name,
@@ -331,7 +334,11 @@ export function AdminCirculationMonitor() {
           program: result.visitor.program ?? '',
         })
         if (outcome === 'blocked') return
-        if (outcome === 'ok') setSuccess('Student verified. Scan the book next, then confirm checkout.')
+        if (outcome === 'ok') {
+          setSuccess(result.openVisit
+            ? 'Student verified and already checked in. Scan the book next, then confirm checkout.'
+            : 'Student checked in for book borrowing. Scan the book next, then confirm checkout.')
+        }
         setMonitorTab('pending')
       } catch (err) {
         setSchoolId('')

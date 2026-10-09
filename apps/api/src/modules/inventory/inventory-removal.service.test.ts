@@ -76,7 +76,7 @@ function thesisDatabase(options: { auditHistory?: boolean; activeReservation?: b
       state.statements.push(sql)
       if (sql.includes('FROM research_inventory WHERE research_inventory_id')) return [[thesis]]
       if (sql.includes('FROM materials WHERE')) return [[{ material_id: 88, availability_status: 'Available' }]]
-      if (sql.includes("transaction_status IN ('Borrowed', 'Overdue')")) return [[]]
+      if (sql.includes("transaction_status IN ('Pending', 'Borrowed', 'Overdue')") || sql.includes("transaction_status IN ('Borrowed', 'Overdue')")) return [[]]
       if (sql.includes("reservation_status IN ('pending', 'approved', 'ready_for_pickup')")) {
         return [options.activeReservation ? [{ reservation_id: 91, reservation_status: 'approved' }] : []]
       }

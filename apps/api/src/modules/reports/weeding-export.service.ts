@@ -5,6 +5,7 @@ import { createIntegrityProtectedCsvStream } from './csv-integrity.ts'
 import { createBrandedTablePdf, type PdfTableColumn } from './branded-table-pdf.ts'
 
 export type WeedingExportRow = {
+  titleId: string
   title: string
   authors: string
   category: string
@@ -37,6 +38,7 @@ export async function* iterateWeedingRows(database: Pool = db, now = new Date())
   for (const row of rows) {
     const copyrightYear = Number(row.copyright_year)
     yield {
+      titleId: String(Number(row.title_id)),
       title: String(row.title ?? ''),
       authors: String(row.authors ?? ''),
       category: String(row.category_name ?? ''),
@@ -89,7 +91,7 @@ function csvCell(value: string) {
 }
 
 const CSV_COLUMNS: Array<[keyof WeedingExportRow, string]> = [
-  ['title', 'Title'], ['authors', 'Authors'], ['category', 'Category'],
+  ['titleId', 'Title ID'], ['title', 'Title'], ['authors', 'Authors'], ['category', 'Category'],
   ['copyrightYear', 'Copyright Year'], ['publicationYear', 'Publication Year'],
   ['ageYears', 'Age (Years)'], ['activeCopies', 'Active Copies'], ['reviewStatus', 'Review Status'],
 ]
@@ -123,4 +125,10 @@ export function createWeedingPdf(rows: AsyncIterable<WeedingExportRow>) {
 
 export function weedingRows() {
   return iterateWeedingRows(db)
+}
+
+export async function listWeedingReview(database: Pool = db, now = new Date()) {
+  const rows: WeedingExportRow[] = []
+  for await (const row of iterateWeedingRows(database, now)) rows.push(row)
+  return rows
 }

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { PDFDocument } from 'pdf-lib'
@@ -6,9 +7,48 @@ import puppeteer from 'puppeteer-core'
 import chromium from '@sparticuz/chromium'
 import { env } from '../../config/env.js'
 import { HttpError } from '../../core/http-error.ts'
+import { assertSafeDocxPackage } from './printing.docx-safety.ts'
 import { validatePrintDocumentFile } from './printing.storage.ts'
 
 const maxRenderedBytes = 20 * 1024 * 1024
+
+function productionMode() {
+  return process.env.NODE_ENV === 'production' || env.isProduction
+}
+
+function configuredRendererUrl() {
+  return (process.env.DOCX_RENDERER_URL ?? env.printing.docxRendererUrl)?.trim() ?? ''
+}
+
+function configuredRendererToken() {
+  return (process.env.DOCX_RENDERER_TOKEN ?? env.printing.docxRendererToken)?.trim() ?? ''
+}
+
+/** True when DOCX→PDF conversion can realistically run (external renderer or local Chrome/Chromium). */
+export function isDocxAutoCountAvailable() {
+  const configured = configuredRendererUrl()
+  if (configured) {
+    try {
+      const endpoint = new URL(configured)
+      if (productionMode() && endpoint.protocol !== 'https:') return false
+      // Production must authenticate the private LibreOffice/Gotenberg service.
+      if (productionMode() && !configuredRendererToken()) return false
+      return true
+    } catch {
+      return false
+    }
+  }
+  // Puppeteer/docx-preview is too heavy and timeout-prone on Vercel without an external renderer.
+  if (process.env.VERCEL) return false
+  const chromePath = process.env.CHROME_PATH?.trim()
+  if (chromePath && existsSync(chromePath)) return true
+  if (process.platform === 'win32') {
+    return existsSync('C:/Program Files/Google/Chrome/Application/chrome.exe')
+      || existsSync('C:/Program Files (x86)/Google/Chrome/Application/chrome.exe')
+  }
+  // Non-Windows local/dev: @sparticuz/chromium may resolve at runtime.
+  return true
+}
 
 async function countPdfPages(contents: Buffer) {
   try {
@@ -71,11 +111,12 @@ async function renderDocx(file: Express.Multer.File, options: RendererOptions) {
     }
   }
   const endpoint = new URL('/forms/libreoffice/convert', configured)
-  if (env.isProduction && endpoint.protocol !== 'https:') throw new HttpError(503, 'PRINT_DOCX_RENDERER_UNAVAILABLE', 'DOCX page counting is not securely configured.')
+  if (productionMode() && endpoint.protocol !== 'https:') throw new HttpError(503, 'PRINT_DOCX_RENDERER_UNAVAILABLE', 'DOCX page counting is not securely configured.')
+  const token = (options.rendererToken ?? configuredRendererToken()).trim()
+  if (productionMode() && !token) throw new HttpError(503, 'PRINT_DOCX_RENDERER_UNAVAILABLE', 'DOCX page counting is not securely configured.')
   const form = new FormData()
   form.set('files', new Blob([new Uint8Array(file.buffer)], { type: file.mimetype }), path.basename(file.originalname))
   const headers: Record<string, string> = {}
-  const token = options.rendererToken ?? env.printing.docxRendererToken
   if (token) headers.Authorization = `Bearer ${token}`
   let response: Response
   try {
@@ -113,6 +154,10 @@ async function renderDocx(file: Express.Multer.File, options: RendererOptions) {
 export async function inspectPrintDocument(file?: Express.Multer.File, options: RendererOptions = {}) {
   const { extension, safeOriginalName } = validatePrintDocumentFile(file)
   if (!file) throw new HttpError(422, 'PRINT_FILE_REQUIRED', 'Select a PDF or DOCX document.')
+  if (extension === 'docx' && !options.rendererUrl && !isDocxAutoCountAvailable()) {
+    throw new HttpError(422, 'PRINT_DOCX_UNAVAILABLE', 'DOCX conversion is unavailable. Export your document as a PDF and upload that instead.')
+  }
+  if (extension === 'docx') await assertSafeDocxPackage(file.buffer)
   const sourceHash = createHash('sha256').update(file.buffer).digest('hex')
   const contents = extension === 'docx' ? await renderDocx(file, options) : file.buffer
   const pageCount = await countPdfPages(contents)

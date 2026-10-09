@@ -261,25 +261,31 @@ export function InventoryDashboard() {
   const copyActions = (copy: InventoryCopy) => {
     const activeCirculation = copy.availability_status === 'Borrowed' || copy.availability_status === 'Reserved'
     const availabilityLocked = activeCirculation || copy.condition_status === 'Lost'
+    const archiveLocked = activeCirculation
     const removalLocked = activeCirculation || copy.condition_status !== 'Lost'
-    const removalTitle = activeCirculation ? 'Process the return or cancel the reservation before removing this copy.' : copy.condition_status !== 'Lost' ? 'Mark this copy as Lost before removing it.' : 'Remove this Lost copy from active inventory.'
+    const archiveTitle = activeCirculation ? 'Process the return or cancel the reservation before archiving this copy.' : 'Archive this copy while keeping its history.'
+    const removalTitle = activeCirculation ? 'Process the return or cancel the reservation before removing this copy.' : copy.condition_status !== 'Lost' ? 'Mark this copy as Lost before hard-deleting it. Prefer Archive for copies with history.' : 'Remove this Lost copy from active inventory.'
     return <>
       <button onClick={() => setSelected(copy)} title="Change physical condition" className="rounded-lg border border-[#0b5ea2]/20 px-3 py-2 text-xs font-bold text-[#0b5ea2]">Condition</button>
       {copy.condition_status !== 'Lost' ? <button disabled={copy.availability_status === 'Borrowed'} title={copy.availability_status === 'Borrowed' ? 'Report a borrowed copy from Circulation.' : 'Record this copy as lost.'} onClick={() => setLostTarget(copy)} className="rounded-lg border border-[#0b5ea2]/20 px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:opacity-40">Report lost</button> : null}
       <button onClick={() => requestAvailabilityChange(copy)} disabled={availabilityLocked} title={availabilityLocked ? 'Active circulation and Lost copies cannot be manually toggled.' : 'Toggle availability manually'} className="rounded-lg bg-[#0b5ea2] px-3 py-2 text-xs font-bold text-[#FFFFFF] disabled:cursor-not-allowed disabled:opacity-40">{copy.availability_status === 'Available' ? 'Make unavailable' : 'Make available'}</button>
-      <button aria-label={`Delete ${copy.accession_number}`} disabled={removalLocked} title={removalTitle} onClick={() => setRemovalTarget({ kind: 'book', id: copy.physical_copy_id, item_title: copy.item_title, accession_number: copy.accession_number, barcode: copy.barcode })} className="rounded-lg bg-[#FFF200] px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:cursor-not-allowed disabled:opacity-40">Delete</button>
+      <button aria-label={`Archive ${copy.accession_number}`} disabled={archiveLocked} title={archiveTitle} onClick={() => setRemovalTarget({ kind: 'book', id: copy.physical_copy_id, item_title: copy.item_title, accession_number: copy.accession_number, barcode: copy.barcode, initialMode: 'archive' })} className="rounded-lg border border-[#0b5ea2]/20 px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:cursor-not-allowed disabled:opacity-40">Archive</button>
+      <button aria-label={`Delete ${copy.accession_number}`} disabled={removalLocked} title={removalTitle} onClick={() => setRemovalTarget({ kind: 'book', id: copy.physical_copy_id, item_title: copy.item_title, accession_number: copy.accession_number, barcode: copy.barcode, initialMode: 'delete' })} className="rounded-lg bg-[#FFF200] px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:cursor-not-allowed disabled:opacity-40">Delete</button>
     </>
   }
 
   const thesisActions = (thesis: ThesisInventoryRow) => {
     const activeCirculation = thesis.availability_status === 'borrowed' || thesis.availability_status === 'reserved'
     const availabilityLocked = activeCirculation || thesis.condition_state === 'lost'
+    const archiveLocked = activeCirculation
     const removalLocked = activeCirculation || thesis.condition_state !== 'lost'
-    const removalTitle = activeCirculation ? 'Resolve the active allocation before removing this research copy.' : thesis.condition_state !== 'lost' ? 'Mark this research copy as Lost before removing it.' : 'Remove this Lost research copy from active inventory.'
+    const archiveTitle = activeCirculation ? 'Resolve the active allocation before archiving this research copy.' : 'Archive this research copy while keeping its history.'
+    const removalTitle = activeCirculation ? 'Resolve the active allocation before removing this research copy.' : thesis.condition_state !== 'lost' ? 'Mark this research copy as Lost before hard-deleting it. Prefer Archive for copies with history.' : 'Remove this Lost research copy from active inventory.'
     return <>
       <button onClick={() => setSelectedThesis(thesis)} className="rounded-lg border border-[#0b5ea2]/20 px-3 py-2 text-xs font-bold text-[#0b5ea2]">Audit condition</button>
       <button disabled={availabilityLocked} onClick={() => requestThesisAvailabilityChange(thesis)} title={availabilityLocked ? 'Borrowed, reserved, or lost papers cannot be manually toggled.' : 'Toggle thesis availability'} className="rounded-lg bg-[#0b5ea2] px-3 py-2 text-xs font-bold text-[#FFFFFF] disabled:cursor-not-allowed disabled:opacity-40">{thesis.availability_status === 'available' ? 'Make unavailable' : 'Make available'}</button>
-      <button aria-label={`Delete ${thesis.accession_number}`} disabled={removalLocked} title={removalTitle} onClick={() => setRemovalTarget({ kind: 'thesis', id: thesis.research_inventory_id, item_title: thesis.item_title, accession_number: thesis.accession_number, barcode: thesis.barcode })} className="rounded-lg bg-[#FFF200] px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:cursor-not-allowed disabled:opacity-40">Delete</button>
+      <button aria-label={`Archive ${thesis.accession_number}`} disabled={archiveLocked} title={archiveTitle} onClick={() => setRemovalTarget({ kind: 'thesis', id: thesis.research_inventory_id, item_title: thesis.item_title, accession_number: thesis.accession_number, barcode: thesis.barcode, initialMode: 'archive' })} className="rounded-lg border border-[#0b5ea2]/20 px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:cursor-not-allowed disabled:opacity-40">Archive</button>
+      <button aria-label={`Delete ${thesis.accession_number}`} disabled={removalLocked} title={removalTitle} onClick={() => setRemovalTarget({ kind: 'thesis', id: thesis.research_inventory_id, item_title: thesis.item_title, accession_number: thesis.accession_number, barcode: thesis.barcode, initialMode: 'delete' })} className="rounded-lg bg-[#FFF200] px-3 py-2 text-xs font-bold text-[#0b5ea2] disabled:cursor-not-allowed disabled:opacity-40">Delete</button>
     </>
   }
 

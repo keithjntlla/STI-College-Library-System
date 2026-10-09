@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Archive, ArrowRightLeft, BookOpen, CheckCircle2, ChevronDown, Download, Eye, FileSpreadsheet, FileText, Layers, MapPin, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { MobileList, MobileListItem, SectionCard, StatusBadge, TableShell } from '../../components/ui'
-import { catalogApi } from './catalog-api'
+import { archiveErrorMessage } from './archive-error-message'
+import { ApiError, catalogApi } from './catalog-api'
 import type { CatalogFilters, CatalogItem, Category, PhysicalCopy } from './types'
 import { BookOverview } from './BookOverview'
 import { AssetCodeModal } from './AssetCodeModal'
@@ -148,6 +149,43 @@ export function CatalogManagementPage() {
     setQuotationItem({ titleId, title })
   }, [searchParams])
 
+  useEffect(() => {
+    if (searchParams.get('action') !== 'archive') return
+    const titleId = Number(searchParams.get('titleId'))
+    if (!Number.isInteger(titleId) || titleId <= 0) return
+    const title = searchParams.get('title')?.trim() || 'Book'
+    setArchiveReason('')
+    setArchiveItem({
+      titleId,
+      recordType: 'Book',
+      title,
+      coverImagePath: null,
+      authors: [],
+      isbn: null,
+      publicationYear: null,
+      categoryId: null,
+      categoryName: null,
+      rowVersion: 0,
+      shelfLocation: null,
+      actualShelfLocations: [],
+      activeInventoryCount: 0,
+      shelfStatus: 'No active copies',
+      availability: 'Unavailable',
+      totalCopies: 0,
+      availableCopies: 0,
+      research: null,
+    })
+  }, [searchParams])
+
+  function clearArchiveQueryParams() {
+    if (searchParams.get('action') !== 'archive') return
+    const next = new URLSearchParams(searchParams)
+    next.delete('action')
+    next.delete('titleId')
+    next.delete('title')
+    setSearchParams(next, { replace: true })
+  }
+
   function closeQuotationModal() {
     setQuotationItem(null)
     if (searchParams.get('action') !== 'quotation' && !searchParams.has('titleId') && !searchParams.has('title')) return
@@ -222,10 +260,14 @@ export function CatalogManagementPage() {
       const title = archiveItem.title
       setArchiveItem(null)
       setArchiveReason('')
+      clearArchiveQueryParams()
       await refresh()
       setNotice({ tone: 'success', text: `${title} moved to Book archive.` })
     } catch (error) {
-      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'The book could not be archived.' })
+      setNotice({
+        tone: 'error',
+        text: archiveErrorMessage(error instanceof ApiError ? error : error, 'The book could not be archived.'),
+      })
     } finally {
       setArchiving(false)
     }
@@ -715,7 +757,7 @@ export function CatalogManagementPage() {
           <p className="mt-2 text-sm">The book and its copies will leave the active catalog. Their records will remain in Book archive. Active loans or reservations must be completed first.</p>
           <label className="mt-5 block text-sm font-bold">Reason for archiving<textarea value={archiveReason} onChange={(event) => setArchiveReason(event.target.value)} maxLength={255} rows={3} className="mt-2 w-full rounded-xl border border-[#0b5ea2]/20 p-3" /></label>
           <div className="mt-5 flex justify-end gap-2">
-            <button type="button" disabled={archiving} onClick={() => setArchiveItem(null)} className="rounded-xl border border-[#0b5ea2] px-4 py-2 font-bold">Cancel</button>
+            <button type="button" disabled={archiving} onClick={() => { setArchiveItem(null); clearArchiveQueryParams() }} className="rounded-xl border border-[#0b5ea2] px-4 py-2 font-bold">Cancel</button>
             <button type="button" disabled={archiving || !archiveReason.trim()} onClick={() => void archiveBook()} className="rounded-xl bg-[#0b5ea2] px-4 py-2 font-bold text-white disabled:opacity-50">Archive book</button>
           </div>
         </div>
