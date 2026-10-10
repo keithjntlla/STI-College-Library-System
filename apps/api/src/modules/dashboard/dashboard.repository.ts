@@ -156,6 +156,7 @@ export class DashboardRepository {
     const profile = await this.libraryProfile()
     if (!userId) return this.emptyUser(identity, actor.role, profile)
     const last180Days = isPostgres ? `NOW() - INTERVAL '180 day'` : `DATE_SUB(NOW(),INTERVAL 180 DAY)`
+    const programLabel = (identity.program ?? '').trim()
     const [summaryResult, loanResult, reservationResult, printResult, noticeResult, announcementResult, historyResult, recommendationResult, occupancyResult] = await Promise.all([
       this.pool.execute<RowDataPacket[]>(`SELECT
         (SELECT COUNT(*) FROM borrow_transactions WHERE user_id=? AND transaction_status IN ('Borrowed','Overdue') AND lost_confirmed_at IS NULL) active_loans,
@@ -208,9 +209,27 @@ export class DashboardRepository {
         FROM titles t JOIN physical_copies pc ON pc.title_id=t.title_id AND pc.lifecycle_status='Active'
         LEFT JOIN borrow_transactions bt ON bt.physical_copy_id=pc.physical_copy_id AND bt.borrowed_at>=${last180Days} LEFT JOIN users borrower ON borrower.user_id=bt.user_id
         WHERE t.record_type='Book' AND t.lifecycle_status='Active'
+          AND EXISTS (
+            SELECT 1
+              FROM program_categories course_link
+              JOIN programs course_program ON course_program.program_id = course_link.program_id
+             WHERE course_link.category_id = t.category_id
+               AND course_program.is_active = ${isPostgres ? 'TRUE' : '1'}
+               AND (
+                 LOWER(course_program.program_name) = LOWER(?)
+                 OR (
+                   CHAR_LENGTH(?) >= 8
+                   AND CHAR_LENGTH(course_program.program_name) >= 8
+                   AND (
+                     POSITION(LOWER(?) IN LOWER(course_program.program_name)) > 0
+                     OR POSITION(LOWER(course_program.program_name) IN LOWER(?)) > 0
+                   )
+                 )
+               )
+          )
           AND NOT EXISTS (SELECT 1 FROM borrow_transactions own_bt JOIN physical_copies own_pc ON own_pc.physical_copy_id=own_bt.physical_copy_id WHERE own_bt.user_id=? AND own_pc.title_id=t.title_id AND own_bt.transaction_status IN ('Pending','Borrowed','Overdue'))
           AND NOT EXISTS (SELECT 1 FROM reservations own_r WHERE own_r.user_id=? AND own_r.book_title_id=t.title_id AND own_r.reservation_status IN ('pending','approved','ready_for_pickup'))
-        GROUP BY t.title_id,t.title,t.cover_image_path HAVING COUNT(DISTINCT CASE WHEN pc.availability_status='Available' THEN pc.physical_copy_id END)>0 ORDER BY score DESC,t.title LIMIT 3`, [identity.program ?? '',userId,userId]),
+        GROUP BY t.title_id,t.title,t.cover_image_path HAVING COUNT(DISTINCT CASE WHEN pc.availability_status='Available' THEN pc.physical_copy_id END)>0 ORDER BY score DESC,t.title LIMIT 3`, [programLabel, programLabel, programLabel, programLabel, programLabel, userId, userId]),
       this.pool.execute<RowDataPacket[]>(`SELECT ${sumCondition(`attendance_date=${currentDate()} AND time_out IS NULL`)} currently_inside FROM attendance_logs`),
     ])
     const summary = summaryResult[0][0] ?? {}, loan = loanResult[0][0], reservation = reservationResult[0][0], print = printResult[0][0], notice = noticeResult[0][0], announcement = announcementResult[0][0], occupancy = occupancyResult[0][0] ?? {}

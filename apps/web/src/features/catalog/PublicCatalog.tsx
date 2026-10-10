@@ -1,8 +1,21 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Search, Book, Library, LayoutGrid, List, Heart, Computer, Briefcase, Stethoscope, Palette, Users, BookOpen } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Search, Book, Library } from 'lucide-react'
 import { ThemeToggle } from '../theme/ThemeToggle'
+import { BookCoverThumbnail } from './BookCoverThumbnail'
 import { PublicBookDetailModal } from './PublicBookDetailModal'
+
+type PublicCategory = {
+  categoryId: number
+  categoryName: string
+  bookCount: number
+}
+
+type PublicProgram = {
+  programId: number
+  programName: string
+  programGroup: string
+}
 
 export interface BookEntry {
   titleId: string;
@@ -20,25 +33,65 @@ export interface BookEntry {
 
 export function PublicCatalog() {
   const browseRef = useRef<HTMLElement>(null)
-  
-
-  const navigate = useNavigate()
   const [query, setQuery] = useState('')
+  const [programId, setProgramId] = useState<number | null>(null)
+  const [programs, setPrograms] = useState<PublicProgram[]>([])
+  const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [categories, setCategories] = useState<PublicCategory[]>([])
+  const [courseError, setCourseError] = useState('')
+  const [categoryError, setCategoryError] = useState('')
   const [books, setBooks] = useState<BookEntry[]>([])
+  const [collectionTotal, setCollectionTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [isFetching, setIsFetching] = useState(false)
   const [error, setError] = useState('')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [viewAll, setViewAll] = useState(false)
-    const [page, setPage] = useState(1)
-    const [hasMore, setHasMore] = useState(false)
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
   const [selectedBook, setSelectedBook] = useState<BookEntry | null>(null)
 
-  // Reset page to 1 on query change
+  useEffect(() => {
+    let active = true
+    fetch('/api/v1/public/catalog/programs')
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to fetch courses')
+        return response.json()
+      })
+      .then((payload) => {
+        if (active) setPrograms(Array.isArray(payload.data) ? payload.data : [])
+      })
+      .catch(() => {
+        if (active) setCourseError('Courses could not be loaded. Search still works.')
+      })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const params = new URLSearchParams()
+    if (programId !== null) params.set('programId', String(programId))
+    const suffix = params.size ? `?${params.toString()}` : ''
+    fetch(`/api/v1/public/catalog/categories${suffix}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to fetch categories')
+        return response.json()
+      })
+      .then((payload) => {
+        if (!active) return
+        const next = Array.isArray(payload.data) ? payload.data as PublicCategory[] : []
+        setCategories(next)
+        setCategoryId((current) => (current !== null && !next.some((category) => category.categoryId === current) ? null : current))
+      })
+      .catch(() => {
+        if (active) setCategoryError('Categories could not be loaded. Search still works.')
+      })
+    return () => { active = false }
+  }, [programId])
+
   useEffect(() => {
     setPage(1)
     setViewAll(false)
-  }, [query])
+  }, [query, categoryId, programId])
 
   useEffect(() => {
     let active = true
@@ -46,8 +99,11 @@ export function PublicCatalog() {
       setIsFetching(true)
       if (books.length === 0 && page === 1) setLoading(true)
       try {
-        let url = `/api/v1/public/catalog/books?page=${page}&limit=20`
-        if (query.trim()) url += `&q=${encodeURIComponent(query.trim())}`
+        const params = new URLSearchParams({ page: String(page), limit: '20', scope: 'books' })
+        if (query.trim()) params.set('q', query.trim())
+        if (programId !== null) params.set('programId', String(programId))
+        if (categoryId !== null) params.set('categoryId', String(categoryId))
+        const url = `/api/v1/public/catalog/books?${params.toString()}`
 
         const response = await fetch(url)
         if (!response.ok) throw new Error('Failed to fetch catalog')
@@ -65,6 +121,7 @@ export function PublicCatalog() {
           }
           if (payload.data.pagination) {
             setHasMore(payload.data.pagination.page < payload.data.pagination.pages)
+            if (!query.trim() && categoryId === null && programId === null) setCollectionTotal(Number(payload.data.pagination.total))
           } else {
             setHasMore(false)
           }
@@ -80,7 +137,7 @@ export function PublicCatalog() {
     }, 300)
 
     return () => { active = false; clearTimeout(delay) }
-  }, [query, page])
+  }, [query, categoryId, programId, page])
 
 
   // Auto-scroll to results when searching or viewing all
@@ -90,28 +147,18 @@ export function PublicCatalog() {
       isInitialMount.current = false
       return
     }
-    if ((query || viewAll) && browseRef.current) {
+    if ((query || categoryId !== null || programId !== null || viewAll) && browseRef.current) {
       browseRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
-  }, [query, viewAll])
+  }, [query, categoryId, programId, viewAll])
+
+  const selectedCategory = categories.find((category) => category.categoryId === categoryId) ?? null
+  const selectedProgram = programs.find((program) => program.programId === programId) ?? null
 
   return (
-    <div className="min-h-screen bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes marquee {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        .animate-marquee {
-          animation: marquee 40s linear infinite;
-        }
-        .animate-marquee:hover {
-          animation-play-state: paused;
-        }
-      `}} />
-
+    <div className="public-surface min-h-screen bg-zinc-50 font-sans text-zinc-900 dark:bg-[#121219] dark:text-zinc-100">
       {/* Top Navigation */}
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-zinc-200 bg-white/80 px-6 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80">
+      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-zinc-200 bg-white/80 px-6 backdrop-blur-md dark:border-white/10 dark:bg-[#121219]/90">
         <div className="flex items-center gap-8">
           <Link to="/" className="flex items-center gap-3 text-[#0b5ea2] dark:text-[#FFF200]">
             <img src="/logo.png" alt="STI College Ormoc Logo" className="w-10 h-auto shrink-0 object-contain rounded-sm" />
@@ -131,7 +178,7 @@ export function PublicCatalog() {
           <Link to="/login" className="hidden sm:block text-sm font-bold text-zinc-600 hover:text-[#0b5ea2] dark:text-zinc-300 dark:hover:text-[#FFF200]">
             Sign In
           </Link>
-          <Link to="/login" className="rounded-full bg-[#FFF200] px-5 py-2 text-sm font-bold text-[#0b5ea2] hover:bg-yellow-400 transition-colors">
+          <Link to="/register" className="rounded-full bg-[#FFF200] px-5 py-2 text-sm font-bold text-[#0b5ea2] transition-colors hover:bg-yellow-400 active:scale-[0.98]">
             Sign Up
           </Link>
         </div>
@@ -150,15 +197,14 @@ export function PublicCatalog() {
           <div className="absolute inset-0 bg-gradient-to-t from-[#0b5ea2] via-transparent to-transparent opacity-80"></div>
         </div>
         
-        <div className="mx-auto max-w-7xl px-6 pt-28 pb-12 relative z-10 flex flex-col items-center text-center">
+        <div className="relative z-10 mx-auto flex max-w-7xl flex-col items-center px-6 pb-16 pt-16 text-center">
 
-          {/* Centered Content */}
-          <div className="mx-auto max-w-3xl flex flex-col items-center">
-            <h1 className="text-5xl font-black tracking-tight text-white sm:text-7xl font-display leading-none">
+          <div className="mx-auto flex max-w-3xl flex-col items-center">
+            <h1 className="font-display text-4xl font-black leading-none tracking-tight text-white sm:text-6xl" style={{ textShadow: '0 2px 10px rgba(0, 0, 0, 0.45)' }}>
               Your <span className="text-[#FFF200]">Academic Hub</span> at STI College Ormoc
             </h1>
-            <p className="mt-6 text-lg leading-8 text-white/80 max-w-xl mx-auto">
-              Discover a wide collection of books, e-resources, and learning materials available at your library. Search, explore, and start reading today.
+            <p className="mx-auto mt-6 max-w-xl text-lg leading-8 text-white/80">
+              Search the STI College Ormoc collection, then sign in to borrow a copy.
             </p>
 
             {/* Search Bar */}
@@ -169,62 +215,21 @@ export function PublicCatalog() {
                   type="text"
                   value={query}
                   onChange={e => setQuery(e.target.value)}
+                  aria-label="Search books, authors, or subjects"
                   placeholder="Search books, authors, or subjects..."
-                  className="block w-full rounded-full border-0 py-4 pl-14 pr-6 text-zinc-900 placeholder:text-zinc-400 focus:ring-0 dark:bg-zinc-900 dark:text-white dark:placeholder-zinc-500 bg-transparent"
+                  className="block w-full rounded-full border-0 bg-transparent py-4 pl-14 pr-6 text-zinc-900 placeholder:text-zinc-400 focus:ring-0 dark:bg-[#22232e] dark:text-white dark:placeholder-zinc-500"
                 />
-                <button className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-[#FFF200] p-2.5 text-[#0b5ea2] hover:bg-yellow-400 transition-colors shadow-md">
+                <button type="button" aria-label="Search" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-[#FFF200] p-2.5 text-[#0b5ea2] shadow-md transition-transform duration-150 hover:bg-yellow-400 active:scale-[0.98]">
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
                 </button>
               </div>
             </div>
 
-            {/* Trending Quick Links */}
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-xs font-bold text-white/70">
-              <span>Trending:</span>
-              {['Information Technology', 'Computer Science', 'Business', 'Fiction'].map(tag => (
-                 <button key={tag} onClick={() => setQuery(tag)} className="rounded-full bg-white/10 px-3 py-1 text-white hover:bg-white/20 hover:text-[#FFF200] transition-colors border border-white/10">
-                   {tag}
-                 </button>
-              ))}
-            </div>
-
-            {/* Feature Stat Blocks */}
-            <div className="mt-14 flex flex-wrap justify-center gap-x-12 gap-y-6 max-w-2xl">
-               <div className="flex items-center text-left gap-3">
-                 <div className="rounded-full bg-white/10 p-2 text-[#FFF200] border border-white/10"><Book size={18} /></div>
-                 <div><p className="text-xs font-black text-white">Thousands of Books</p><p className="text-xs text-white/60">Print & digital</p></div>
-               </div>
-               <div className="flex items-center text-left gap-3">
-                 <div className="rounded-full bg-white/10 p-2 text-[#FFF200] border border-white/10"><Computer size={18} /></div>
-                 <div><p className="text-xs font-black text-white">Easy Access</p><p className="text-xs text-white/60">Anytime, anywhere</p></div>
-               </div>
-               <div className="flex items-center text-left gap-3">
-                 <div className="rounded-full bg-white/10 p-2 text-[#FFF200] border border-white/10"><Users size={18} /></div>
-                 <div><p className="text-xs font-black text-white">For Students</p><p className="text-xs text-white/60">Faculty & Staff</p></div>
-               </div>
-            </div>
-
-            {/* Book Marquee */}
-            <div className="mt-16 w-[100vw] relative left-1/2 -ml-[50vw] overflow-hidden py-4 opacity-80 hover:opacity-100 transition-opacity">
-              <div className="flex w-max animate-marquee gap-6 px-6">
-                {[
-                  '9780060935467.jpg', '9780062316097.jpg', '9780134610993.jpg', '9780135957059.jpg',
-                  '9780201633610.jpg', '9780262033848.jpg', '9780307887894.jpg', '9780374533557.jpg',
-                  '9780441172719.jpg', '9780451524935.jpg', '9780521809269.jpg', '9780702077050.jpg',
-                  '9780743273565.jpg', '9781305585126.jpg'
-                ].map((isbn, i) => (
-                   <img key={i} src={`https://covers.openlibrary.org/b/isbn/${isbn.replace('.jpg', '')}-M.jpg`} className="h-40 w-auto rounded-md shadow-xl border border-white/10" alt="Book cover" />
-                ))}
-                {[
-                  '9780060935467.jpg', '9780062316097.jpg', '9780134610993.jpg', '9780135957059.jpg',
-                  '9780201633610.jpg', '9780262033848.jpg', '9780307887894.jpg', '9780374533557.jpg',
-                  '9780441172719.jpg', '9780451524935.jpg', '9780521809269.jpg', '9780702077050.jpg',
-                  '9780743273565.jpg', '9781305585126.jpg'
-                ].map((isbn, i) => (
-                   <img key={`dup-${i}`} src={`https://covers.openlibrary.org/b/isbn/${isbn.replace('.jpg', '')}-M.jpg`} className="h-40 w-auto rounded-md shadow-xl border border-white/10" alt="Book cover" />
-                ))}
-              </div>
-            </div>
+            <p className="mt-8 text-sm font-bold text-white">
+              {collectionTotal === null
+                ? 'Sign in to borrow.'
+                : `${collectionTotal.toLocaleString()} ${collectionTotal === 1 ? 'book' : 'books'} in the collection. Sign in to borrow.`}
+            </p>
           </div>
         </div>
       </section>
@@ -244,63 +249,73 @@ export function PublicCatalog() {
         ></div>
         
         {/* Top fade gradient to blend smoothly with the hero */}
-        <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-zinc-50 to-transparent dark:from-zinc-950"></div>
+        <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-zinc-50 to-transparent dark:from-[#121219]"></div>
         
         {/* Bottom fade gradient */}
-        <div className="absolute bottom-0 inset-x-0 h-64 bg-gradient-to-t from-zinc-50 to-transparent dark:from-zinc-950"></div>
+        <div className="absolute bottom-0 inset-x-0 h-64 bg-gradient-to-t from-zinc-50 to-transparent dark:from-[#121219]"></div>
       </div>
 
-      {/* Category Icons Row */}
-      <div id="categories" className="mx-auto max-w-7xl px-6 py-8 -mt-10 relative z-20">
-        
-        <div className="flex w-full items-center gap-4 overflow-x-auto rounded-3xl bg-white/80 p-4 shadow-xl shadow-black/5 ring-1 ring-zinc-200 dark:bg-zinc-900/80 dark:ring-zinc-800 no-scrollbar relative z-10 backdrop-blur-xl">
-          {[
-            { name: 'All Books', icon: BookOpen, active: !query },
-            { name: 'Computer Science', icon: Computer, active: query === 'Computer Science' },
-            { name: 'Business', icon: Briefcase, active: query === 'Business' },
-            { name: 'Engineering', icon: LayoutGrid, active: query === 'Engineering' },
-            { name: 'Education', icon: Users, active: query === 'Education' },
-            { name: 'Health Sciences', icon: Stethoscope, active: query === 'Health Sciences' },
-            { name: 'Arts & Humanities', icon: Palette, active: query === 'Arts' },
-          ].map(cat => {
-            const Icon = cat.icon;
-            return (
-              <button
-                key={cat.name}
-                onClick={() => setQuery(cat.name === 'All Books' ? '' : cat.name)}
-                className={`flex min-w-[120px] flex-col items-center justify-center gap-3 rounded-2xl p-4 transition-all duration-300 active:scale-95 ${cat.active ? 'bg-zinc-50 text-[#0b5ea2] dark:bg-zinc-800 dark:text-[#FFF200]' : 'text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 hover:text-[#0b5ea2] dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-[#FFF200]'}`}
-              >
-                <Icon size={28} strokeWidth={1.5} className={cat.active ? 'text-[#0b5ea2] dark:text-[#FFF200]' : ''} />
-                <span className="text-xs font-bold whitespace-nowrap">{cat.name}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Main Content */}
-      
-      <main id="browse" ref={browseRef} className="mx-auto max-w-7xl px-6 py-12 scroll-mt-24 relative z-10">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5">
+      <main id="browse" ref={browseRef} className="relative z-10 mx-auto max-w-7xl scroll-mt-24 px-6 py-12">
+        <div className="flex flex-col justify-between gap-4 pb-5 lg:flex-row lg:items-end">
           <div>
              <h2 className="text-3xl font-black tracking-tight font-display text-zinc-900 dark:text-white">
-               {query ? 'Search Results' : viewAll ? 'All Books' : 'Featured Books'}
+               {query ? 'Search Results' : selectedCategory ? selectedCategory.categoryName : viewAll ? 'All Books' : 'Featured Books'}
              </h2>
              <p className="mt-1 text-zinc-500 dark:text-zinc-400">
-               {query ? `Showing results for "${query}"` : viewAll ? 'Browse our complete library collection.' : 'Popular and recommended reads from our library collection.'}
+               {query
+                 ? `Showing results for "${query}"${selectedCategory ? ` in ${selectedCategory.categoryName}` : ''}${selectedProgram ? ` for ${selectedProgram.programName}` : ''}`
+                 : selectedProgram
+                   ? `Books linked to ${selectedProgram.programName}.`
+                   : viewAll ? 'Browse the book collection.' : 'Books from the library collection.'}
              </p>
           </div>
-          
-          {/* Secondary Search Bar for UX convenience */}
+
+          <div id="categories" className="flex w-full scroll-mt-24 flex-col gap-3 sm:flex-row sm:items-end lg:w-auto">
+            <div className="w-full sm:w-64">
+              <label htmlFor="catalog-course" className="mb-1.5 block text-sm font-bold text-zinc-800 dark:text-zinc-100">Course</label>
+              <select
+                id="catalog-course"
+                value={programId ?? ''}
+                onChange={(event) => {
+                  const next = event.target.value ? Number(event.target.value) : null
+                  setProgramId(Number.isSafeInteger(next) && next !== null && next > 0 ? next : null)
+                  setCategoryId(null)
+                }}
+                className="h-11 w-full rounded-full border border-zinc-200 bg-white px-4 text-sm font-bold text-zinc-900 outline-none focus:border-[#0b5ea2] focus:ring-1 focus:ring-[#0b5ea2] dark:border-white/15 dark:bg-[#22232e] dark:text-white dark:focus:border-[#FFF200] dark:focus:ring-[#FFF200]"
+              >
+                <option value="">All courses</option>
+                {programs.map((program) => (
+                  <option key={program.programId} value={program.programId}>{program.programName}</option>
+                ))}
+              </select>
+              {courseError ? <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400">{courseError}</p> : null}
+            </div>
+            <div className="w-full sm:w-64">
+              <label htmlFor="catalog-category" className="mb-1.5 block text-sm font-bold text-zinc-800 dark:text-zinc-100">Category</label>
+              <select
+                id="catalog-category"
+                value={categoryId ?? ''}
+                onChange={(event) => setCategoryId(event.target.value ? Number(event.target.value) : null)}
+                className="h-11 w-full rounded-full border border-zinc-200 bg-white px-4 text-sm font-bold text-zinc-900 outline-none focus:border-[#0b5ea2] focus:ring-1 focus:ring-[#0b5ea2] dark:border-white/15 dark:bg-[#22232e] dark:text-white dark:focus:border-[#FFF200] dark:focus:ring-[#FFF200]"
+              >
+                <option value="">All categories</option>
+                {categories.map((category) => (
+                  <option key={category.categoryId} value={category.categoryId}>{category.categoryName}</option>
+                ))}
+              </select>
+              {categoryError ? <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400">{categoryError}</p> : null}
+            </div>
           <div className="relative w-full sm:w-72 group flex-shrink-0 z-10">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 group-focus-within:text-[#0b5ea2] dark:group-focus-within:text-[#FFF200] transition-colors" />
             <input
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
+              aria-label="Search catalog"
               placeholder="Search catalog..."
-              className="w-full rounded-full border border-zinc-200 bg-white py-2.5 pl-11 pr-4 text-sm text-zinc-900 outline-none transition-all focus:border-[#0b5ea2] focus:ring-1 focus:ring-[#0b5ea2] dark:border-zinc-800 dark:bg-zinc-900 dark:text-white dark:focus:border-[#FFF200] dark:focus:ring-[#FFF200] shadow-sm"
+              className="h-11 w-full rounded-full border border-zinc-200 bg-white pl-11 pr-4 text-sm text-zinc-900 outline-none transition-colors focus:border-[#0b5ea2] focus:ring-1 focus:ring-[#0b5ea2] dark:border-white/15 dark:bg-[#22232e] dark:text-white dark:focus:border-[#FFF200] dark:focus:ring-[#FFF200]"
             />
+          </div>
           </div>
         </div>
 
@@ -325,16 +340,10 @@ export function PublicCatalog() {
               <article 
                 key={book.titleId} 
                 onClick={() => setSelectedBook(book)}
-                className="cursor-pointer group relative flex min-w-0 flex-col overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 transition-all duration-300 hover:shadow-xl dark:bg-zinc-900 dark:ring-zinc-800 sm:rounded-2xl"
+                className="cursor-pointer group relative flex min-w-0 flex-col overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 transition-all duration-300 hover:shadow-xl dark:bg-[#22232e] dark:ring-white/10 sm:rounded-2xl"
               >
-                <div className="aspect-[3/4] w-full bg-zinc-100 dark:bg-zinc-800 relative overflow-hidden">
-                  {book.coverImagePath ? (
-                    <img src={book.coverImagePath} alt={book.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = `https://placehold.co/400x600/f4f4f5/a1a1aa?text=${encodeURIComponent(book.title)}`; }} />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-zinc-300">
-                      <Book size={32} className="sm:h-12 sm:w-12" />
-                    </div>
-                  )}
+                <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#0b5ea2]">
+                  <BookCoverThumbnail title={book.title} coverImagePath={book.coverImagePath} className="h-full w-full rounded-none" />
                 </div>
                 <div className="flex flex-1 flex-col justify-between p-3 sm:p-5">
                   <div>
@@ -368,7 +377,7 @@ export function PublicCatalog() {
             {(!viewAll && !query) ? (
               <button
                 onClick={() => setViewAll(true)}
-                className="rounded-full bg-white px-8 py-3 text-sm font-bold text-[#0b5ea2] ring-1 ring-inset ring-[#0b5ea2]/20 hover:bg-[#0b5ea2] hover:text-white hover:ring-[#0b5ea2] dark:bg-zinc-900 dark:text-[#FFF200] dark:ring-[#FFF200]/20 dark:hover:bg-[#FFF200] dark:hover:text-[#0b5ea2] dark:hover:ring-[#FFF200] transition-all shadow-sm active:scale-95"
+                className="rounded-full bg-white px-8 py-3 text-sm font-bold text-[#0b5ea2] ring-1 ring-inset ring-[#0b5ea2]/20 hover:bg-[#0b5ea2] hover:text-white hover:ring-[#0b5ea2] dark:bg-[#22232e] dark:text-[#FFF200] dark:ring-[#FFF200]/20 dark:hover:bg-[#FFF200] dark:hover:text-[#0b5ea2] dark:hover:ring-[#FFF200] transition-all shadow-sm active:scale-95"
               >
                 View All Books
               </button>

@@ -126,6 +126,25 @@ html.dark body {
   background: var(--sl-bg);
 }
 
+/* Public pages: page #121219, raised fields and cards #22232e */
+html.dark .public-surface {
+  background-color: #121219;
+  color: #f7f9ff;
+}
+
+html.dark .public-surface input:not([type="checkbox"]):not([type="radio"]),
+html.dark .public-surface select,
+html.dark .public-surface textarea {
+  background-color: #22232e !important;
+  color: #f7f9ff !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+html.dark .public-surface option {
+  background-color: #22232e;
+  color: #f7f9ff;
+}
+
 html.dark ::selection {
   color: #ffffff;
   background: #0b5ea2;
@@ -327,6 +346,19 @@ html.dark .bg-\[\#0b5ea2\] [class*="text-white/"],
 html.dark .bg-\[\#0b5ea2\]\/90 [class*="text-[#FFFFFF]/"],
 html.dark .bg-\[\#0b5ea2\]\/90 [class*="text-white/"] {
   color: rgba(255, 255, 255, 0.82) !important;
+}
+
+/* Pale card fills that are not bg-white still need a dark surface, or lightened ink vanishes on them. */
+html.dark .bg-\[\#f8fafc\],
+html.dark .bg-\[\#F8FAFC\] {
+  background-color: #121219 !important;
+  color: #f7f9ff !important;
+}
+
+/* A yellow control can also carry the primary navy class. Keep the yellow plate and navy label. */
+html.dark .bg-\[\#FFF200\] {
+  background-color: #FFF200 !important;
+  color: #0b5ea2 !important;
 }
 
 /* Soft navy washes must NOT inherit solid-brand white text rules */

@@ -175,7 +175,7 @@ export function ResearchCatalog() {
         ) : items.length ? (
           <div className="grid auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {items.map((paper) => (
-              <article key={paper.titleId} className="flex h-full flex-col rounded-2xl border border-[#0b5ea2]/10 bg-[#f8fafc] p-3">
+              <article key={paper.titleId} className="flex h-full flex-col rounded-2xl border border-[#0b5ea2]/10 bg-[#f8fafc] p-3 dark:border-white/10 dark:bg-[#121219]">
                 <ThesisCoverCard
                   title={paper.title}
                   authors={paper.authors}

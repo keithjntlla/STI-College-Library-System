@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildCatalogSearchQuery, parseCatalogSearchFilters } from './catalog-search.repository.ts'
+import { buildCatalogSearchQuery, buildPublicBookCategoriesQuery, parseCatalogSearchFilters } from './catalog-search.repository.ts'
 
 test('builds one prepared query for combined category, author, year, availability, and text filters', () => {
   const filters = parseCatalogSearchFilters({
@@ -29,6 +29,28 @@ test('catalog results include the active research inventory identifier needed by
   const query = buildCatalogSearchQuery(parseCatalogSearchFilters({ scope: 'research' }))
   assert.match(query.dataSql, /MIN\(research_inventory_id\) AS research_inventory_id/)
   assert.match(query.dataSql, /ri_lookup\.research_inventory_id/)
+})
+
+test('public category list counts active books and omits shelf data', () => {
+  const query = buildPublicBookCategoriesQuery()
+  assert.match(query.sql, /t\.record_type = 'Book'/)
+  assert.match(query.sql, /t\.lifecycle_status = 'Active'/)
+  assert.match(query.sql, /COUNT\(DISTINCT t\.title_id\) AS book_count/)
+  assert.doesNotMatch(query.sql, /shelf_location|call_number|row_version|program_categories/)
+  assert.deepEqual(query.parameters, [])
+})
+
+test('public course filter narrows books and categories through program links', () => {
+  const books = buildCatalogSearchQuery(parseCatalogSearchFilters({ scope: 'books', programId: '3', categoryId: '9' }))
+  assert.match(books.dataSql, /program_link\.program_id = \?/)
+  assert.ok(books.dataParameters.includes(3))
+  assert.ok(!books.dataSql.includes('3'), 'course id must stay a bound parameter')
+
+  const categories = buildPublicBookCategoriesQuery(3)
+  assert.match(categories.sql, /program_categories pc/)
+  assert.match(categories.sql, /pc\.program_id = \?/)
+  assert.deepEqual(categories.parameters, [3])
+  assert.doesNotMatch(categories.sql, /shelf_location|call_number/)
 })
 
 test('catalog results expose the authoritative category shelf and actual active inventory shelves', () => {

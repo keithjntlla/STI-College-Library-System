@@ -94,6 +94,25 @@ export function createApp() {
   app.use('/api/auth', authRouter)
   app.use('/api/v1/auth', jwtAuthRouter)
 
+  app.get('/api/v1/public/catalog/programs', async (_req, res, next) => {
+    try {
+      const { queryCatalogPrograms } = await import('./modules/catalog/book-catalog.repository.ts');
+      const { db } = await import('./config/db.js');
+      const data = await queryCatalogPrograms(db);
+      res.json({ success: true, data });
+    } catch (e) { next(e) }
+  });
+
+  app.get('/api/v1/public/catalog/categories', async (req, res, next) => {
+    try {
+      const { listPublicBookCategories, parseCatalogSearchFilters } = await import('./modules/catalog/catalog-search.repository.ts');
+      const { db } = await import('./config/db.js');
+      const programId = parseCatalogSearchFilters(req.query).programId;
+      const data = await listPublicBookCategories(db, programId);
+      res.json({ success: true, data });
+    } catch (e) { next(e) }
+  });
+
   app.get('/api/v1/public/catalog/books', async (req, res, next) => {
     try {
       const { searchCatalog, parseCatalogSearchFilters } = await import('./modules/catalog/catalog-search.repository.ts');

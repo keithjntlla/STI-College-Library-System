@@ -13,7 +13,7 @@ const initialForm: StudentRegistrationInput = {
   year_grade_level: '', password: '', confirm_password: '',
 }
 
-const fieldClass = 'h-12 w-full rounded-xl border border-zinc-200 bg-white px-4 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-[#0b5ea2] focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-zinc-800 dark:bg-zinc-900 dark:text-white dark:focus:border-[#FFF200] dark:focus:ring-[#FFF200]/10'
+const fieldClass = 'h-12 w-full rounded-xl border border-zinc-200 bg-white px-4 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-[#0b5ea2] focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-white/15 dark:bg-[#22232e] dark:text-white dark:focus:border-[#FFF200] dark:focus:ring-[#FFF200]/10'
 
 export function RegistrationPage() {
   const navigate = useNavigate()
@@ -129,7 +129,7 @@ export function RegistrationPage() {
   }
 
   return (
-    <main className="relative grid min-h-screen bg-zinc-50 transition-colors lg:grid-cols-[1.05fr_.95fr] dark:bg-zinc-950">
+    <main className="public-surface relative grid min-h-screen bg-zinc-50 transition-colors lg:grid-cols-[1.05fr_.95fr] dark:bg-[#121219]">
       <div className="absolute right-4 top-4 z-20 sm:right-6 sm:top-6"><ThemeToggle /></div>
 
       <section
@@ -138,13 +138,6 @@ export function RegistrationPage() {
       >
         <div className="absolute inset-0 bg-[#0b5ea2]/85 dark:bg-[#001133]/90" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b5ea2] via-transparent to-transparent opacity-80" />
-        <div
-          className="absolute inset-0 opacity-[0.15] dark:opacity-20 pointer-events-none"
-          style={{
-            backgroundImage: 'radial-gradient(circle, #FFF200 1.5px, transparent 1.5px)',
-            backgroundSize: '28px 28px',
-          }}
-        />
 
         <div className="relative p-12 text-white flex flex-col justify-between h-full z-10">
           <div className="flex items-center gap-3">

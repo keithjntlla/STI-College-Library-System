@@ -19,7 +19,7 @@ const publicPrefix = env.supabase.url
 const TYPES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 const MAX_BYTES = 2 * 1024 * 1024
 
-export async function storeCoverImage(dataUri: string | null) {
+export async function storeCoverImage(dataUri: string | null, options?: { filenamePrefix?: 'generated' | 'generated-v2' | 'generated-v3' | 'generated-v4' }) {
   if (!dataUri) return null
   const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUri)
   if (!match || !TYPES[match[1]]) throw new HttpError(422, 'BOOK_COVER_INVALID', 'Book cover must be a JPEG, PNG, or WebP image.')
@@ -31,7 +31,7 @@ export async function storeCoverImage(dataUri: string | null) {
       ? buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
       : buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP'
   if (!validSignature) throw new HttpError(422, 'BOOK_COVER_INVALID', 'The uploaded file content does not match its declared image type.')
-  const filename = `${randomUUID()}.${TYPES[match[1]]}`
+  const filename = `${options?.filenamePrefix ? `${options.filenamePrefix}-` : ''}${randomUUID()}.${TYPES[match[1]]}`
   if (env.db.driver === 'postgres') {
     if (!storage) throw new HttpError(503, 'BOOK_COVER_STORAGE_UNAVAILABLE', 'Book cover storage is not configured.')
     const { error } = await storage.upload(filename, buffer, { contentType: match[1], upsert: false })
@@ -47,7 +47,7 @@ export async function storeCoverImage(dataUri: string | null) {
 export async function removeStoredCover(publicPath: string | null) {
   if (publicPrefix && publicPath?.startsWith(publicPrefix)) {
     const filename = publicPath.slice(publicPrefix.length)
-    if (/^[a-f0-9-]{36}\.(jpg|png|webp)$/.test(filename) && storage) await storage.remove([filename])
+    if (/^(?:generated-(?:v\d+-)?)?[a-f0-9-]{36}\.(jpg|png|webp)$/.test(filename) && storage) await storage.remove([filename])
     return
   }
   if (!publicPath?.startsWith('/api/assets/covers/')) return

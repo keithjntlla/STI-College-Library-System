@@ -50,7 +50,7 @@ export function AdminLoginPage() {
   }
 
   return (
-    <main className="relative grid min-h-screen bg-zinc-50 transition-colors lg:grid-cols-[.95fr_1.05fr] dark:bg-zinc-950">
+    <main className="public-surface relative grid min-h-screen bg-zinc-50 transition-colors lg:grid-cols-[.95fr_1.05fr] dark:bg-[#121219]">
       <div className="absolute left-4 top-4 z-20 sm:left-6 sm:top-6"><ThemeToggle /></div>
 
       {/* Form on the left */}
@@ -87,7 +87,7 @@ export function AdminLoginPage() {
                   value={schoolId}
                   onChange={(event) => setSchoolId(event.target.value)}
                   placeholder="Enter Librarian or Staff ID"
-                  className="h-12 w-full rounded-xl border border-zinc-200 bg-white pl-11 pr-4 text-sm uppercase text-zinc-900 outline-none transition placeholder:normal-case placeholder:text-zinc-400 focus:border-[#0b5ea2] focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-zinc-800 dark:bg-zinc-900 dark:text-white dark:focus:border-[#FFF200] dark:focus:ring-[#FFF200]/10"
+                  className="h-12 w-full rounded-xl border border-zinc-200 bg-white pl-11 pr-4 text-sm uppercase text-zinc-900 outline-none transition placeholder:normal-case placeholder:text-zinc-400 focus:border-[#0b5ea2] focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-white/15 dark:bg-[#22232e] dark:text-white dark:focus:border-[#FFF200] dark:focus:ring-[#FFF200]/10"
                 />
               </span>
               {errors.school_id ? <span className="mt-2 block text-xs font-bold text-red-500">{errors.school_id}</span> : null}
@@ -103,13 +103,13 @@ export function AdminLoginPage() {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="Enter your password"
-                  className="h-12 w-full rounded-xl border border-zinc-200 bg-white pl-11 pr-12 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-[#0b5ea2] focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-zinc-800 dark:bg-zinc-900 dark:text-white dark:focus:border-[#FFF200] dark:focus:ring-[#FFF200]/10"
+                  className="h-12 w-full rounded-xl border border-zinc-200 bg-white pl-11 pr-12 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-[#0b5ea2] focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-white/15 dark:bg-[#22232e] dark:text-white dark:focus:border-[#FFF200] dark:focus:ring-[#FFF200]/10"
                 />
                 <button
                   type="button"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                   onClick={() => setShowPassword((value) => !value)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
@@ -147,13 +147,6 @@ export function AdminLoginPage() {
       >
         <div className="absolute inset-0 bg-[#0b5ea2]/85 dark:bg-[#001133]/90" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b5ea2] via-transparent to-transparent opacity-80" />
-        <div
-          className="absolute inset-0 opacity-[0.15] dark:opacity-20 pointer-events-none"
-          style={{
-            backgroundImage: 'radial-gradient(circle, #FFF200 1.5px, transparent 1.5px)',
-            backgroundSize: '28px 28px',
-          }}
-        />
 
         <div className="relative p-12 text-white flex flex-col justify-between h-full z-10">
           <div className="flex items-center gap-3">

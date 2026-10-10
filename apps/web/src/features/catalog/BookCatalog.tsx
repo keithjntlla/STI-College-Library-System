@@ -188,9 +188,12 @@ export function BookCatalog() {
         </button>
       </div>
 
-      <section className="relative mb-5 overflow-hidden rounded-3xl border border-[#0b5ea2]/15 bg-cover bg-center p-5 text-white shadow-sm sm:p-6" style={{ backgroundImage: "url('/library-hero.webp')" }}>
-        <div className="absolute inset-0 bg-[#0b5ea2]/85 dark:bg-[#001133]/90" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0b5ea2] via-transparent to-transparent opacity-80" />
+      <section className="relative mb-5 overflow-hidden rounded-3xl bg-[#0b5ea2] p-5 text-white shadow-sm sm:p-6">
+        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/library-hero.webp')" }} />
+          <div className="absolute inset-0 bg-[#0b5ea2]/85 dark:bg-[#001133]/90" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0b5ea2] via-transparent to-transparent opacity-80" />
+        </div>
         <div className="relative z-10 max-w-2xl">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#FFF200]/90">Browse collection</p>
           <h2 className="mt-2 font-display text-2xl font-black sm:text-3xl">Find books available to borrow</h2>

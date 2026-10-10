@@ -15,6 +15,7 @@ export type CatalogSearchFilters = {
   query: string | null
   scope: CatalogScope
   categoryId: number | null
+  programId: number | null
   author: string | null
   publicationYear: number | null
   availability: string | null
@@ -66,6 +67,7 @@ export function parseCatalogSearchFilters(query: Record<string, unknown>): Catal
     query: firstQueryValue(query.q ?? query.query).trim().slice(0, 255) || null,
     scope: scopeValue as CatalogScope,
     categoryId: optionalPositiveInteger(query.categoryId, 'categoryId'),
+    programId: optionalPositiveInteger(query.programId ?? query.program_id, 'programId'),
     author: firstQueryValue(query.author).trim().slice(0, 255) || null,
     publicationYear,
     availability,
@@ -84,6 +86,14 @@ export function buildCatalogSearchQuery(filters: CatalogSearchFilters) {
   if (filters.categoryId !== null) {
     where.push('t.category_id = ?')
     parameters.push(filters.categoryId)
+  }
+  if (filters.programId !== null) {
+    where.push(`EXISTS (
+      SELECT 1 FROM program_categories program_link
+       WHERE program_link.category_id = t.category_id
+         AND program_link.program_id = ?
+    )`)
+    parameters.push(filters.programId)
   }
   if (filters.publicationYear !== null) {
     where.push('t.publication_year = ?')
@@ -222,6 +232,36 @@ function toCatalogItem(row: RowDataPacket) {
       viewingStatus: row.viewing_status,
     } : null,
   }
+}
+
+export function buildPublicBookCategoriesQuery(programId: number | null = null) {
+  const programJoin = programId === null
+    ? ''
+    : `INNER JOIN program_categories pc
+         ON pc.category_id = c.category_id
+        AND pc.program_id = ?`
+  return {
+    sql: `SELECT c.category_id, c.category_name, COUNT(DISTINCT t.title_id) AS book_count
+    FROM categories c
+    INNER JOIN titles t ON t.category_id = c.category_id
+     AND t.lifecycle_status = 'Active'
+     AND t.record_type = 'Book'
+    ${programJoin}
+    GROUP BY c.category_id, c.category_name
+    ORDER BY c.category_name ASC, c.category_id ASC`,
+    parameters: programId === null ? [] : [programId],
+  }
+}
+
+export async function listPublicBookCategories(database: Pool, programId: number | null = null) {
+  const query = buildPublicBookCategoriesQuery(programId)
+  const [rows] = await database.execute<RowDataPacket[]>(query.sql, query.parameters)
+  return rows.flatMap((row) => {
+    const bookCount = Number(row.book_count ?? 0)
+    const categoryName = row.category_name ? String(row.category_name) : ''
+    if (bookCount < 1 || !categoryName) return []
+    return [{ categoryId: Number(row.category_id), categoryName, bookCount }]
+  })
 }
 
 export async function searchCatalog(database: Pool, filters: CatalogSearchFilters) {
