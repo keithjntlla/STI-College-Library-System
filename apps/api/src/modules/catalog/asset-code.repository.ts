@@ -8,7 +8,6 @@ export type AssetCodeRecord = {
   author: string
   accessionNumber: string
   barcode: string
-  coverImagePath?: string | null
   shelfLocation: string
   conditionStatus: string
   qrCodeData?: string | null
@@ -34,14 +33,13 @@ function mapAsset(row: RowDataPacket, includeQr: boolean): AssetCodeRecord {
     author: String(row.author),
     accessionNumber: String(row.accession_number),
     barcode: String(row.barcode),
-    coverImagePath: row.cover_image_path ? String(row.cover_image_path) : null,
     shelfLocation: String(row.shelf_location),
     conditionStatus: String(row.condition_status),
     ...(includeQr ? { qrCodeData: row.qr_code_data ? String(row.qr_code_data) : null } : {}),
   }
 }
 
-const COPY_FIELDS = `pc.physical_copy_id, pc.title_id, t.title, t.cover_image_path,
+const COPY_FIELDS = `pc.physical_copy_id, pc.title_id, t.title,
   COALESCE((
     SELECT ${authorsAgg('a')}
       FROM authors a

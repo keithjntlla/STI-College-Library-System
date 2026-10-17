@@ -14,7 +14,6 @@ export type BookCatalogItem = {
   callNumber: string | null
   coverImagePath?: string | null
   shelfLocation: string | null
-  synopsis?: string | null
   currentAvailabilityStatus: BookAvailability
   currentConditionStatus?: string | null
   totalCopiesCount: number
@@ -52,10 +51,4 @@ export type Pagination = {
 export type BookCategory = {
   categoryId: number
   categoryName: string
-}
-
-export type CatalogProgram = {
-  programId: number
-  programName: string
-  programGroup: string
 }

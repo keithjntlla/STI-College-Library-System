@@ -57,7 +57,7 @@ const missing = required.filter((key) => !args[key])
 
 if (missing.length > 0) {
   console.error(`Missing required arguments: ${missing.map((key) => `--${key}`).join(', ')}`)
-  console.error('Example: npm run auth:create-user -w @sti-library/api -- --email librarian@ormoc.sti.edu.ph --role "Librarian" --id LIB-001 --name "Campus Librarian"')
+  console.error('Example: npm run auth:create-user -w @sti-library/api -- --email admin@ormoc.sti.edu.ph --role "System Administrator" --id ADMIN-001 --name "Campus Administrator"')
   process.exit(1)
 }
 
@@ -68,31 +68,21 @@ if (args.education && !['Senior High School', 'College'].includes(args.education
   throw new Error('Education must be either "Senior High School" or "College".')
 }
 
-const password = args.password || await readHiddenPassword('New password (8-72 characters): ')
+const password = await readHiddenPassword('New password (8-72 characters): ')
 if (password.length < 8 || password.length > 72) throw new Error('Password must contain between 8 and 72 characters.')
 
 try {
   const [roleRows] = await db.execute('SELECT role_id FROM roles WHERE role_name = ? LIMIT 1', [args.role])
   if (!Array.isArray(roleRows) || roleRows.length === 0) throw new Error('Role seed data is missing. Run database/mysql56-schema.sql first.')
 
-  const mappedRole = args.role === 'System Administrator' || args.role === 'Admin'
-    ? 'Librarian'
-    : (args.role === 'Library Staff' ? 'Staff' : args.role)
-
   const passwordHash = await bcrypt.hash(password, 12)
   await db.execute(
     `INSERT INTO users
       (role_id, user_role, institutional_id, school_id, full_name, email, password_hash, educational_level, course_or_strand, section, account_status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
-     ON DUPLICATE KEY UPDATE
-       role_id = VALUES(role_id),
-       user_role = VALUES(user_role),
-       full_name = VALUES(full_name),
-       password_hash = VALUES(password_hash),
-       account_status = VALUES(account_status)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')`,
     [
       roleRows[0].role_id,
-      mappedRole,
+      args.role === 'System Administrator' ? 'Admin' : args.role,
       args.id,
       args.id,
       args.name,
@@ -103,23 +93,7 @@ try {
       args.section || null,
     ],
   )
-
-  const [userRows] = await db.execute('SELECT user_id FROM users WHERE school_id = ? LIMIT 1', [args.id])
-  const userId = userRows[0]?.user_id
-
-  await db.execute(
-    `INSERT INTO accounts
-      (user_id, school_id, contact_number, password_hash, role, account_status)
-     VALUES (?, ?, NULL, ?, ?, 'Active')
-     ON DUPLICATE KEY UPDATE
-       password_hash = VALUES(password_hash),
-       role = VALUES(role),
-       account_status = VALUES(account_status),
-       user_id = IFNULL(accounts.user_id, VALUES(user_id))`,
-    [userId, args.id, passwordHash, mappedRole],
-  )
-
-  console.log(`Created active ${args.role} (${mappedRole}) account for ${email} with School ID ${args.id}.`)
+  console.log(`Created active ${args.role} account for ${email}.`)
 } finally {
   await db.end()
 }

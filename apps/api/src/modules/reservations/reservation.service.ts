@@ -2,10 +2,14 @@ import type { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import { db } from '../../config/db.js'
 import { forUpdate, isPostgres } from '../../config/sql-dialect.js'
 import { HttpError } from '../../core/http-error.ts'
+import { createBorrowingPolicyService } from '../circulation/borrowing-policy.service.ts'
+import { roleBookLimit, roleReservationLimit } from '../circulation/borrowing-policy.types.ts'
 import { parseQueueFilters, positiveId, validateReservationRequest, validateStatusAdjustment, type ReservationStatus } from './reservation.validation.ts'
 import { queryReservationQueue } from './reservation-query.repository.ts'
 import { cancelPendingCounterClaim, createPendingCounterClaim } from './reservation-claim.repository.ts'
 import { notifyReservationStatus } from './reservation-notification.ts'
+import { createBookRequestService } from './book-request.service.ts'
+import { requestEventStatus, requestInstructions, requestLabels } from './book-request-events.ts'
 
 // Claimed reservations are represented by their authoritative open loan and
 // must not remain in a user's capacity forever after that loan is returned.
@@ -35,7 +39,6 @@ async function findActiveBorrowConflict(connection: import('mysql2/promise').Poo
          OR (bt.physical_copy_id IS NULL AND borrowed_copy.material_id = bt.material_id)
       WHERE bt.user_id = ?
         AND bt.transaction_status IN ('Pending','Borrowed','Overdue')
-        AND bt.lost_confirmed_at IS NULL
         AND (? = 0 OR bt.reservation_id IS NULL OR bt.reservation_id <> ?)
         AND (
           (${nullableId} IS NOT NULL AND borrowed_copy.title_id = ?)
@@ -65,7 +68,8 @@ function activeBorrowConflictError(conflict: ActiveBorrowConflict, forAdmin = fa
   })
 }
 
-export function createReservationService(database: Pool = db) {
+export function createReservationService(database: Pool = db, clock: () => Date = () => new Date()) {
+  const policyService = createBorrowingPolicyService(database, clock)
   return {
     queue: (query: Record<string, unknown>) => queryReservationQueue(database, parseQueueFilters(query)),
 
@@ -75,10 +79,17 @@ export function createReservationService(database: Pool = db) {
       const userId = accounts[0]?.user_id ? Number(accounts[0].user_id) : null
       if (!userId) throw new HttpError(422, 'CIRCULATION_PROFILE_NOT_LINKED', 'This login account is not linked to a circulation profile.')
       const [rows] = await database.execute<RowDataPacket[]>(
-        `SELECT r.reservation_id, r.queue_position, r.reservation_status, r.reserved_at, r.pickup_deadline,
+        `SELECT r.reservation_id, r.queue_position, r.reservation_status, r.reserved_at, r.pickup_deadline, ${isPostgres ? 'r.request_kind,' : ''}
                 COALESCE(t.title, m.title) AS title, t.title_id, t.cover_image_path,
                 assigned_pc.accession_number, COALESCE(assigned_pc.barcode, assigned.barcode) AS barcode,
                 COALESCE(assigned_pc.condition_status, source_pc.condition_status) AS condition_status
+                ${isPostgres ? `, (r.pickup_deadline AT TIME ZONE 'Asia/Manila') AS deadline_iso,
+                  (r.reserved_at AT TIME ZONE 'Asia/Manila') AS requested_iso,
+                  r.preparation_started_at,r.ready_at,
+                  (SELECT json_agg(json_build_object('status',e.event_status,'at',e.occurred_at) ORDER BY e.occurred_at,e.event_id)
+                   FROM book_request_events e WHERE e.reservation_id=r.reservation_id) AS events,
+                  (SELECT d.status FROM book_request_email_deliveries d JOIN book_request_events e ON e.event_id=d.event_id
+                   WHERE e.reservation_id=r.reservation_id ORDER BY e.event_id DESC LIMIT 1) AS email_status` : ''}
            FROM reservations r INNER JOIN materials m ON m.material_id = r.material_id
            LEFT JOIN physical_copies source_pc ON source_pc.material_id = r.material_id
            LEFT JOIN titles t ON t.title_id = COALESCE(r.book_title_id, source_pc.title_id)
@@ -86,14 +97,20 @@ export function createReservationService(database: Pool = db) {
            LEFT JOIN physical_copies assigned_pc ON assigned_pc.physical_copy_id = r.assigned_physical_copy_id
           WHERE r.user_id = ? ORDER BY r.reserved_at DESC, r.reservation_id DESC`, [userId],
       )
-      return rows.map((row) => ({ reservationId: Number(row.reservation_id), title: row.title, titleId: row.title_id ? Number(row.title_id) : null,
+      return rows.map((row) => ({ requestKind:row.request_kind??'Reservation', reservationId: Number(row.reservation_id), title: row.title, titleId: row.title_id ? Number(row.title_id) : null,
         coverImagePath: row.cover_image_path ? String(row.cover_image_path) : null, queuePosition: Number(row.queue_position),
-        status: row.reservation_status, reservedAt: row.reserved_at, pickupDeadline: row.pickup_deadline,
+        status: row.reservation_status, reservedAt: isPostgres ? row.requested_iso : row.reserved_at,
+        pickupDeadline: isPostgres ? row.deadline_iso : row.pickup_deadline,
+        requestStatus: requestEventStatus(String(row.reservation_status),Boolean(row.barcode)),
+        statusLabel: row.request_kind==='CartHandover'&&row.reservation_status==='approved'?'Awaiting handover':requestLabels[requestEventStatus(String(row.reservation_status),Boolean(row.barcode))],
+        instructions: row.request_kind==='CartHandover'&&row.reservation_status==='approved'?'Bring your selected book to the library desk. Staff will confirm handover before the loan starts.':requestInstructions(requestEventStatus(String(row.reservation_status),Boolean(row.barcode)),row.deadline_iso ? new Date(row.deadline_iso) : null),
+        events: row.events ?? [], emailStatus: row.email_status ?? null,
         accessionNumber: row.accession_number ?? null, barcode: row.barcode ?? null,
         conditionStatus: row.condition_status ? String(row.condition_status) : null }))
     },
 
     async createForAccount(accountIdValue: unknown, body: unknown) {
+      if (isPostgres) return createBookRequestService(database,clock).createForAccount(accountIdValue,body)
       const accountId = positiveId(accountIdValue, 'accountId')
       const input = body && typeof body === 'object' ? body as Record<string, unknown> : {}
       const [accounts] = await database.execute<RowDataPacket[]>(
@@ -117,6 +134,7 @@ export function createReservationService(database: Pool = db) {
     },
 
     async create(userIdValue: unknown, body: unknown) {
+      if (isPostgres) return createBookRequestService(database,clock).create(userIdValue,body)
       const userId = positiveId(userIdValue, 'userId')
       const { materialId } = validateReservationRequest(body)
       const connection = await database.getConnection()
@@ -181,26 +199,37 @@ export function createReservationService(database: Pool = db) {
         )
         if (duplicates[0]) throw new HttpError(422, 'DUPLICATE_ACTIVE_RESERVATION', 'You already have an active reservation for this title.')
 
-        if (user.role_name === 'Student' && material.material_type === 'Book') {
+        const policy = await policyService.resolveActive(connection, clock())
+        if (material.material_type === 'Book') {
           const [activeRows] = await connection.execute<RowDataPacket[]>(
-            `SELECT COUNT(DISTINCT COALESCE(active.title_id, -active.material_id)) AS active_count
+            `SELECT COUNT(DISTINCT COALESCE(active.title_id, -active.material_id)) AS active_count,
+                    COUNT(DISTINCT CASE WHEN active.source = 'reservation' THEN COALESCE(active.title_id, -active.material_id) END) AS reservation_count
                FROM (
-                 SELECT r.material_id, COALESCE(r.book_title_id, rpc.title_id) AS title_id
+                 SELECT r.material_id, COALESCE(r.book_title_id, rpc.title_id) AS title_id, 'reservation' AS source
                    FROM reservations r LEFT JOIN physical_copies rpc ON rpc.material_id = r.material_id
                   WHERE r.user_id = ? AND r.reservation_status IN ${ACTIVE_STATUSES}
                  UNION ALL
-                 SELECT bt.material_id, bpc.title_id
+                 SELECT bt.material_id, bpc.title_id, 'loan' AS source
                    FROM borrow_transactions bt LEFT JOIN physical_copies bpc
                      ON bpc.physical_copy_id = bt.physical_copy_id
                      OR (bt.physical_copy_id IS NULL AND bpc.material_id = bt.material_id)
                   WHERE bt.user_id = ? AND bt.transaction_status IN ('Pending','Borrowed','Overdue')
-                    AND bt.lost_confirmed_at IS NULL
                ) active JOIN materials am ON am.material_id = active.material_id
               WHERE am.material_type = 'Book'`, [userId, userId],
           )
           const activeCount = Number(activeRows[0]?.active_count ?? 0)
-          if (activeCount >= 2) {
-            throw new HttpError(422, 'STUDENT_BORROW_LIMIT_REACHED', 'Transaction Blocked: Students cannot exceed 2 books', { activeCount, limit: 2 })
+          const reservationCount = Number(activeRows[0]?.reservation_count ?? 0)
+          const bookLimit = roleBookLimit(policy, String(user.role_name))
+          const reservationLimit = roleReservationLimit(policy, String(user.role_name))
+          if (bookLimit !== null && activeCount >= bookLimit) {
+            throw new HttpError(422, 'STUDENT_BORROW_LIMIT_REACHED', `Transaction Blocked: ${user.role_name} cannot exceed ${bookLimit} books`, {
+              activeCount, limit: bookLimit, policyVersionId: policy.versionId,
+            })
+          }
+          if (reservationLimit !== null && reservationCount >= reservationLimit) {
+            throw new HttpError(422, 'STUDENT_BORROW_LIMIT_REACHED', `Transaction Blocked: ${user.role_name} cannot exceed ${reservationLimit} active reservations`, {
+              activeCount: reservationCount, limit: reservationLimit, policyVersionId: policy.versionId,
+            })
           }
         }
 
@@ -220,9 +249,10 @@ export function createReservationService(database: Pool = db) {
         )
         const queuePosition = Number(queueRows[0]?.next_position ?? 1)
         const [insert] = await connection.execute<ResultSetHeader>(
-          `INSERT INTO reservations (user_id, material_id, book_title_id, accession_id, assigned_physical_copy_id, queue_position,
-             reservation_status, reserved_at, pickup_deadline, created_at)
-           VALUES (?, ?, ?, NULL, NULL, ?, 'pending', NOW(), NULL, NOW())`, [userId, materialId, material.title_id ?? null, queuePosition],
+          `INSERT INTO reservations (user_id, material_id, book_title_id, accession_id, assigned_physical_copy_id,
+             borrowing_policy_version_id, queue_position, reservation_status, reserved_at, pickup_deadline, created_at)
+           VALUES (?, ?, ?, NULL, NULL, ?, ?, 'pending', NOW(), NULL, NOW())`,
+          [userId, materialId, material.title_id ?? null, policy.versionId, queuePosition],
         )
         await connection.execute(
           `INSERT INTO admin_notifications
@@ -237,6 +267,7 @@ export function createReservationService(database: Pool = db) {
     },
 
     async cancelForAccount(accountIdValue: unknown, reservationIdValue: unknown) {
+      if (isPostgres) return createBookRequestService(database,clock).cancel(accountIdValue,reservationIdValue)
       const accountId = positiveId(accountIdValue, 'accountId')
       const reservationId = positiveId(reservationIdValue, 'reservationId')
       const connection = await database.getConnection()
@@ -283,6 +314,7 @@ export function createReservationService(database: Pool = db) {
     },
 
     async adjustStatus(adminUserIdValue: unknown, reservationIdValue: unknown, body: unknown) {
+      if (isPostgres) return createBookRequestService(database,clock).adjustStatus(adminUserIdValue,reservationIdValue,body)
       const adminUserId = positiveId(adminUserIdValue, 'adminUserId')
       const reservationId = positiveId(reservationIdValue, 'reservationId')
       const adjustment = validateStatusAdjustment(body)
@@ -320,15 +352,16 @@ export function createReservationService(database: Pool = db) {
           const [copies] = await connection.execute<RowDataPacket[]>(
             `SELECT candidate.material_id, candidate.barcode, pc.physical_copy_id
                FROM materials candidate INNER JOIN physical_copies pc ON pc.material_id = candidate.material_id
-              WHERE candidate.availability_status = 'Available' AND candidate.material_type = ?
-                AND pc.lifecycle_status = 'Active' AND pc.availability_status = 'Available'
+              WHERE (candidate.availability_status = 'Available'${isPostgres?' OR (candidate.availability_status = \'Reserved\' AND pc.physical_copy_id = ?)':''}) AND candidate.material_type = ?
+                AND pc.lifecycle_status = 'Active' AND (pc.availability_status = 'Available'${isPostgres?' OR (pc.availability_status = \'Reserved\' AND pc.physical_copy_id = ?)':''})
+                AND pc.condition_status NOT IN ('Lost','Damaged')
                 AND ((candidate.isbn IS NOT NULL AND ${nullableText} IS NOT NULL AND candidate.isbn = ?)
                   OR LOWER(TRIM(candidate.title)) = LOWER(TRIM(?)))
                 AND NOT EXISTS (SELECT 1 FROM reservations active
                   WHERE active.accession_id = candidate.material_id
                     AND active.reservation_status = 'ready_for_pickup')
               ORDER BY candidate.material_id ASC LIMIT 1 FOR UPDATE`,
-            [reservation.material_type, reservation.isbn, reservation.isbn, reservation.title],
+            [...(isPostgres?[reservation.assigned_physical_copy_id??null]:[]),reservation.material_type,...(isPostgres?[reservation.assigned_physical_copy_id??null]:[]), reservation.isbn, reservation.isbn, reservation.title],
           )
           const copy = copies[0]
           if (!copy) throw new HttpError(422, 'NO_AVAILABLE_ACCESSION', 'No available physical copy can be assigned to this reservation.')

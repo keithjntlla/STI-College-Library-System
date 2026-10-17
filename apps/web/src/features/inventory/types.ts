@@ -75,5 +75,4 @@ export type InventoryRemovalTarget = {
   item_title: string
   accession_number: string
   barcode: string
-  initialMode?: 'delete' | 'archive'
 }

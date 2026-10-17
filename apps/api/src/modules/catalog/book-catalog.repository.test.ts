@@ -7,7 +7,7 @@ import { parseBookCatalogFilters } from './book-catalog.validation.ts'
 test('book catalog query combines prepared title, author, ISBN, category, and year filters', () => {
   const filters = parseBookCatalogFilters({
     q: 'systems', title: 'Database', author: 'Date', isbn: '978',
-    category_id: '3', publication_year: '2019', page: '2', limit: '20', sort: 'title',
+    category_id: '3', publication_year: '2019', page: '2', limit: '20',
   })
   const query = buildBookCatalogQuery(filters)
 
@@ -21,10 +21,9 @@ test('book catalog query combines prepared title, author, ISBN, category, and ye
   assert.match(query.dataSql, /THEN 0 ELSE COALESCE\(stock\.available_copies_count/)
   assert.match(query.dataSql, /pc\.material_id IS NOT NULL/)
   assert.doesNotMatch(query.dataSql, /condition_status NOT IN/)
-  assert.match(query.dataSql, /pc\.availability_status = 'Available' AND pc\.condition_status != 'Lost' AND pc\.material_id IS NOT NULL/)
+  assert.match(query.dataSql, /pc\.availability_status = 'Available' AND pc\.material_id IS NOT NULL/)
   assert.match(query.dataSql, /visible_copy\.availability_status IN \('Available', 'Borrowed', 'Reserved'\)/)
   assert.match(query.countSql, /visible_copy\.lifecycle_status = 'Active'/)
-  assert.match(query.dataSql, /ORDER BY t\.title ASC, t\.title_id ASC/)
   assert.match(query.dataSql, /LIMIT 20 OFFSET 20/)
   assert.ok(!query.dataSql.includes('Database'), 'request values must never be interpolated into SQL')
   assert.deepEqual(query.dataParameters.slice(0, 5), [3, 2019, '%Database%', '%date%', '%978%'])
@@ -35,35 +34,6 @@ test('book catalog rejects injection-shaped numeric filters before repository ex
     () => parseBookCatalogFilters({ category_id: '1 OR 1=1' }),
     (error: unknown) => typeof error === 'object' && error !== null && 'status' in error && error.status === 422,
   )
-})
-
-test('book catalog available_only and available_first sort use stock joins without interpolating values', () => {
-  const filters = parseBookCatalogFilters({ available_only: 'true', sort: 'available_first' })
-  const query = buildBookCatalogQuery(filters)
-  assert.equal(filters.availableOnly, true)
-  assert.equal(filters.sort, 'available_first')
-  assert.match(query.dataSql, /COALESCE\(waiting\.active_waiting_count, 0\) = 0/)
-  assert.match(query.dataSql, /COALESCE\(stock\.available_copies_count, 0\) > 0/)
-  assert.match(query.dataSql, /ORDER BY \(CASE WHEN COALESCE\(waiting\.active_waiting_count/)
-  assert.match(query.countSql, /stock\.available_copies_count/)
-})
-
-test('book catalog program filter constrains titles to linked categories without interpolating the id', () => {
-  const filters = parseBookCatalogFilters({ program_id: '5' })
-  const query = buildBookCatalogQuery(filters)
-  assert.equal(filters.programId, 5)
-  assert.match(query.dataSql, /program_categories program_link/)
-  assert.match(query.dataSql, /program_link\.program_id = \?/)
-  assert.equal(query.dataParameters[0], 5)
-  assert.ok(!query.dataSql.includes('5'), 'program id must not be interpolated into SQL')
-})
-
-test('book catalog program plus category still verifies the category belongs to the program', () => {
-  const filters = parseBookCatalogFilters({ program_id: '5', category_id: '9' })
-  const query = buildBookCatalogQuery(filters)
-  assert.match(query.dataSql, /t\.category_id = \?/)
-  assert.match(query.dataSql, /EXISTS \(\s*SELECT 1 FROM program_categories program_link/)
-  assert.deepEqual(query.dataParameters.slice(0, 2), [9, 5])
 })
 
 test('viewer capacity counts normalized titles instead of duplicate compatibility material rows', async () => {
@@ -78,5 +48,4 @@ test('viewer capacity counts normalized titles instead of duplicate compatibilit
   assert.equal(await queryViewerActiveBookCount(database, 12), 1)
   assert.match(statement, /COUNT\(DISTINCT COALESCE\(activity\.title_id, -activity\.material_id\)\)/)
   assert.match(statement, /COALESCE\(r\.book_title_id, reserved_copy\.title_id\)/)
-  assert.match(statement, /bt\.lost_confirmed_at IS NULL/)
 })

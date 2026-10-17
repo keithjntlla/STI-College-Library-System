@@ -5,7 +5,6 @@ import {
   clearAccessToken, dashboardForRole, getCurrentIdentity, getCurrentClaims,
   type AuthenticatedIdentity, type AuthRole,
 } from './auth-storage'
-import { sessionEndLoginPath } from './auth-redirects'
 import { useMockAuth } from '../inventory/MockAuthContext'
 
 function LoadingAuthentication() {
@@ -38,16 +37,10 @@ export function ProtectedRoute({ roles }: { roles: AuthRole[] }) {
   const { identity, checking, error } = useResolvedIdentity()
   if (checking) return <LoadingAuthentication />
   if (error) return <main className="flex min-h-screen items-center justify-center bg-[#FFFFFF] p-6 text-center text-[#0b5ea2]"><div><h1 className="text-xl font-bold">Inventory preview could not start</h1><p className="mt-2 text-sm text-[#0b5ea2]/65">{error}</p><a className="mt-5 inline-flex rounded-xl bg-[#0b5ea2] px-4 py-2 text-sm font-bold text-[#FFFFFF]" href="/login">Use normal sign in</a></div></main>
-  if (!identity || !roles.includes(identity.role)) {
-    const claimsRole = tokenClaims?.role ?? null
+  if (identity && !roles.includes(identity.role)) return <Navigate to={dashboardForRole(identity.role)} replace />
+  if (!identity) {
     if (tokenClaims) clearAccessToken()
-    return (
-      <Navigate
-        to={sessionEndLoginPath(location.pathname, claimsRole)}
-        replace
-        state={{ deniedPath: location.pathname }}
-      />
-    )
+    return <Navigate to={roles.some(role => ['Admin', 'Librarian', 'Staff'].includes(role)) ? '/staff' : '/login'} replace state={{ deniedPath: location.pathname }} />
   }
   return <Outlet />
 }

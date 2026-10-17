@@ -1,24 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { catalogActionLabel, validateBookCartAddition, validateStudentBookCommitment } from './book-cart'
+import { catalogActionLabel, validateBookCartAddition } from './book-cart'
 
 describe('book cart safeguards', () => {
-  it('blocks a Student from selecting a third active book', () => {
+  it('limits the cart selection without counting already active loans or requests', () => {
+    expect(validateBookCartAddition({role:'Student',activeBookCount:2,selectedBookCount:0,alreadySelected:false})).toEqual({allowed:true,message:null})
     expect(validateBookCartAddition({
-      role: 'Student', activeBookCount: 1, selectedBookCount: 1, alreadySelected: false,
-    })).toEqual({
-      allowed: false,
-      message: 'You already have 2 of 2 active book commitments. Remove a cart item, cancel a waiting request, or return a book before adding or reserving another.',
-    })
+      role: 'Student', activeBookCount: 0, selectedBookCount: 2, alreadySelected: false,
+    })).toEqual({ allowed: false, message: 'Your cart can hold 2 books. Remove one before adding another.' })
   })
 
-  it('blocks reserve when cart selections already fill the student limit', () => {
-    expect(validateStudentBookCommitment({
-      role: 'Student', activeBookCount: 1, selectedBookCount: 1, bookLimit: 2,
-    }).allowed).toBe(false)
-  })
-
-  it('derives Add to cart or Request only from the live available-copy count', () => {
-    expect(catalogActionLabel(1)).toBe('Add to cart')
-    expect(catalogActionLabel(0)).toBe('Request')
+  it('derives Borrow or Reserve only from the live available-copy count', () => {
+    expect(catalogActionLabel(1)).toBe('Borrow')
+    expect(catalogActionLabel(0)).toBe('Reserve')
   })
 })

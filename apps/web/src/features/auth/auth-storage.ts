@@ -41,7 +41,7 @@ export function decodeAccessToken(token: string): AccessTokenClaims | null {
 
 export function dashboardForRole(role: AuthRole) {
   return ({
-    Admin: '/librarian/dashboard',
+    Admin: '/admin/dashboard',
     Librarian: '/librarian/dashboard',
     Faculty: '/faculty/dashboard',
     Student: '/student/dashboard',
@@ -59,7 +59,6 @@ export function getAccessToken() {
 
 export function clearAccessToken() {
   sessionStorage.removeItem(TOKEN_KEY)
-  cachedSessionIdentity = null
 }
 
 export function setSessionIdentity(identity: AuthenticatedIdentity | null) {
@@ -80,19 +79,6 @@ export function getCurrentClaims() {
 
 export function getCurrentIdentity(): AuthenticatedIdentity | null {
   const claims = getCurrentClaims()
-  if (!claims) return cachedSessionIdentity
-  const cached = cachedSessionIdentity
-  const sameAccount = Boolean(
-    cached
-    && cached.userId === claims.userId
-    && cached.schoolId === claims.schoolId
-    && cached.role === claims.role,
-  )
-  return {
-    userId: claims.userId,
-    schoolId: claims.schoolId,
-    role: claims.role,
-    fullName: sameAccount ? cached?.fullName : undefined,
-    source: 'jwt',
-  }
+  if (claims) return { userId: claims.userId, schoolId: claims.schoolId, role: claims.role, source: 'jwt' }
+  return cachedSessionIdentity
 }

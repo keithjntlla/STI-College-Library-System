@@ -5,7 +5,7 @@ export type TrackingPayload = { title_id: number; barcode: string; accession_num
 
 const qrOptions = {
   errorCorrectionLevel: 'H' as const, margin: 2, width: 640,
-  color: { dark: '#0b5ea2', light: '#FFFFFF' },
+  color: { dark: '#003399', light: '#FFFFFF' },
 }
 
 const barcodeOptions = (barcode: string, includeText: boolean) => ({

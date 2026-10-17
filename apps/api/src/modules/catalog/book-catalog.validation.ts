@@ -1,7 +1,5 @@
 import { HttpError } from '../../core/http-error.ts'
 
-export type BookCatalogSort = 'available_first' | 'title'
-
 export type BookCatalogFilters = {
   query: string | null
   title: string | null
@@ -9,10 +7,7 @@ export type BookCatalogFilters = {
   isbn: string | null
   categoryId: number | null
   categoryName: string | null
-  programId: number | null
   publicationYear: number | null
-  availableOnly: boolean
-  sort: BookCatalogSort
   page: number
   limit: number
 }
@@ -25,7 +20,7 @@ function text(value: unknown, maximum = 255) {
   return first(value).trim().slice(0, maximum) || null
 }
 
-export function positiveIntegerFromQuery(value: unknown, field: string) {
+function positiveInteger(value: unknown, field: string) {
   const raw = first(value).trim()
   if (!raw) return null
   const parsed = Number(raw)
@@ -35,24 +30,6 @@ export function positiveIntegerFromQuery(value: unknown, field: string) {
     })
   }
   return parsed
-}
-
-function positiveInteger(value: unknown, field: string) {
-  return positiveIntegerFromQuery(value, field)
-}
-
-function parseBooleanFlag(value: unknown) {
-  const raw = first(value).trim().toLowerCase()
-  return raw === '1' || raw === 'true' || raw === 'yes'
-}
-
-function parseSort(value: unknown): BookCatalogSort {
-  const raw = first(value).trim().toLowerCase()
-  if (!raw || raw === 'available_first') return 'available_first'
-  if (raw === 'title') return 'title'
-  throw new HttpError(422, 'BOOK_CATALOG_FILTER_INVALID', 'sort must be available_first or title.', {
-    errors: { sort: 'sort must be available_first or title.' },
-  })
 }
 
 export function parseBookCatalogFilters(query: Record<string, unknown>): BookCatalogFilters {
@@ -71,10 +48,7 @@ export function parseBookCatalogFilters(query: Record<string, unknown>): BookCat
     isbn: text(query.isbn, 17),
     categoryId: positiveInteger(query.category_id ?? query.categoryId, 'category_id'),
     categoryName: text(query.category_name ?? query.categoryName, 100),
-    programId: positiveInteger(query.program_id ?? query.programId, 'program_id'),
     publicationYear,
-    availableOnly: parseBooleanFlag(query.available_only ?? query.availableOnly),
-    sort: parseSort(query.sort),
     page: positiveInteger(query.page, 'page') ?? 1,
     limit: Math.min(positiveInteger(query.limit, 'limit') ?? 24, 100),
   }

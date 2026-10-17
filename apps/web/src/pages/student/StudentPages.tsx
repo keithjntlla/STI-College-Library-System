@@ -8,9 +8,7 @@ import {
   CheckCircle2,
   Clock3,
   FileText,
-  LayoutGrid,
   LibraryBig,
-  List,
   MapPin,
   PhilippinePeso,
   Printer,
@@ -27,7 +25,7 @@ import { BookCover, Button, CardLink, PageHeader, SectionCard, StatCard, StatusB
 
 export function StudentDashboard() {
   const quickActions = [
-    { label: 'Browse catalog', detail: 'Find books and check live availability', icon: Search, to: '/student/catalog', tone: 'bg-[#0b5ea2]/5 text-[#0b5ea2]' },
+    { label: 'Browse catalog', detail: 'Find books and check live availability', icon: Search, to: '/student/library', tone: 'bg-[#0b5ea2]/5 text-[#0b5ea2]' },
     { label: 'Request a print', detail: 'Upload a document for library pickup', icon: Printer, to: '/student/printing', tone: 'bg-[#0b5ea2]/5 text-[#0b5ea2]' },
     { label: 'Scan attendance', detail: 'Record your library visit with QR', icon: QrCode, to: '/student/attendance', tone: 'bg-[#0b5ea2]/5 text-[#0b5ea2]' },
   ]
@@ -45,7 +43,7 @@ export function StudentDashboard() {
             <h2 className="font-display max-w-2xl text-2xl font-bold tracking-tight sm:text-3xl">One place for books, research, printing, and every library visit.</h2>
             <p className="mt-3 max-w-xl text-sm leading-6 text-white/80">Search the collection before you arrive, track your transactions, and keep your clearance on schedule.</p>
             <div className="mt-5 flex flex-wrap gap-3">
-              <Link to="/student/catalog"><Button className="bg-[#FFF200] text-[#0b5ea2] hover:bg-[#FFF200]">Explore catalog <ArrowRight size={16} /></Button></Link>
+              <Link to="/student/library"><Button className="bg-[#FFF200] text-[#0b5ea2] hover:bg-[#FFF200]">Explore catalog <ArrowRight size={16} /></Button></Link>
               <Link to="/student/research"><Button variant="ghost" className="bg-white/10 text-white hover:bg-white/15 hover:text-white">Browse research</Button></Link>
             </div>
           </div>
@@ -80,7 +78,7 @@ export function StudentDashboard() {
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[.85fr_1.15fr]">
         <SectionCard className="p-5"><div className="mb-4"><p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]/45">Quick actions</p><h2 className="mt-1 font-display text-lg font-bold text-[#0b5ea2]">What would you like to do?</h2></div><div className="space-y-2">{quickActions.map(({ label, detail, icon: Icon, to, tone }) => <Link key={label} to={to} className="group flex items-center gap-3 rounded-2xl p-3 transition hover:bg-[#0b5ea2]/5"><span className={`rounded-xl p-2.5 ${tone}`}><Icon size={18} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#0b5ea2]">{label}</span><span className="block truncate text-xs text-[#0b5ea2]/65">{detail}</span></span><ArrowRight size={16} className="text-[#0b5ea2]/45 transition group-hover:translate-x-0.5 group-hover:text-[#0b5ea2]" /></Link>)}</div></SectionCard>
-        <SectionCard className="p-5"><div className="mb-4 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]/45">Recommended for BSIT</p><h2 className="mt-1 font-display text-lg font-bold text-[#0b5ea2]">Continue discovering</h2></div><Link to="/student/catalog"><CardLink>View all</CardLink></Link></div><div className="grid grid-cols-3 gap-3">{books.slice(1, 4).map((book) => <div key={book.id} className="min-w-0"><BookCover code={book.cover} accent={book.accent} className="w-full" /><p className="mt-2 line-clamp-2 text-xs font-bold text-[#0b5ea2]">{book.title}</p><p className="mt-0.5 truncate text-[11px] text-[#0b5ea2]/45">{book.author}</p></div>)}</div></SectionCard>
+        <SectionCard className="p-5"><div className="mb-4 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]/45">Recommended for BSIT</p><h2 className="mt-1 font-display text-lg font-bold text-[#0b5ea2]">Continue discovering</h2></div><Link to="/student/library"><CardLink>View all</CardLink></Link></div><div className="grid grid-cols-3 gap-3">{books.slice(1, 4).map((book) => <div key={book.id} className="min-w-0"><BookCover code={book.cover} accent={book.accent} className="w-full" /><p className="mt-2 line-clamp-2 text-xs font-bold text-[#0b5ea2]">{book.title}</p><p className="mt-0.5 truncate text-[11px] text-[#0b5ea2]/45">{book.author}</p></div>)}</div></SectionCard>
       </div>
     </>
   )
@@ -89,7 +87,6 @@ export function StudentDashboard() {
 export function CatalogPage() {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All')
-  const [layout, setLayout] = useState<'list' | 'grid'>('list')
   const categories = ['All', 'Programming', 'Database', 'Networking', 'UI/UX Design']
   const visibleBooks = useMemo(() => books.filter((book) => (category === 'All' || book.category === category) && `${book.title} ${book.author} ${book.isbn}`.toLowerCase().includes(query.toLowerCase())), [query, category])
 
@@ -97,54 +94,8 @@ export function CatalogPage() {
     <>
       <PageHeader eyebrow="Digital catalog" title="Find your next resource" description="Search books by title, author, ISBN, category, or shelf location and see their current availability." />
       <SectionCard className="mb-5 p-4 sm:p-5"><div className="flex flex-col gap-3 lg:flex-row"><TableSearch value={query} onChange={setQuery} placeholder="Search title, author, or ISBN..." /><div className="flex gap-2 overflow-x-auto pb-1 lg:pb-0">{categories.map((item) => <button key={item} onClick={() => setCategory(item)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-semibold transition ${category === item ? 'bg-[#0b5ea2] text-white' : 'bg-[#0b5ea2]/5 text-[#0b5ea2]/65 hover:bg-[#0b5ea2]/10'}`}>{item}</button>)}</div></div></SectionCard>
-      
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-[#0b5ea2]">{visibleBooks.length} resources found</p>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center rounded-xl bg-[#0b5ea2]/5 p-1">
-            <button onClick={() => setLayout('list')} className={`rounded-lg p-1.5 transition-all ${layout === 'list' ? 'bg-white text-[#0b5ea2] shadow-sm ring-1 ring-[#0b5ea2]/10' : 'text-[#0b5ea2]/45 hover:text-[#0b5ea2]'}`} aria-label="List view"><List size={16} /></button>
-            <button onClick={() => setLayout('grid')} className={`rounded-lg p-1.5 transition-all ${layout === 'grid' ? 'bg-white text-[#0b5ea2] shadow-sm ring-1 ring-[#0b5ea2]/10' : 'text-[#0b5ea2]/45 hover:text-[#0b5ea2]'}`} aria-label="Grid view"><LayoutGrid size={16} /></button>
-          </div>
-          <button className="text-xs font-semibold text-[#0b5ea2]/65 hover:text-[#0b5ea2] transition-colors">Sort: Relevance</button>
-        </div>
-      </div>
-
-      <div className={layout === 'list' ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-3" : "grid gap-6 grid-cols-2 lg:grid-cols-4 xl:grid-cols-5"}>
-        {visibleBooks.map((book) => (
-          layout === 'list' ? (
-            <SectionCard key={book.id} className="group p-4 transition hover:-translate-y-0.5 hover:border-[#0b5ea2]/15 hover:shadow-lg hover:shadow-[#0b5ea2]/5"><div className="flex gap-4"><BookCover code={book.cover} accent={book.accent} className="w-24 shrink-0" /><div className="min-w-0 flex-1"><div className="mb-2 flex items-start justify-between gap-2"><StatusBadge status={book.status} /><span className="text-[10px] font-bold text-[#0b5ea2]/45">{book.year}</span></div><h2 className="line-clamp-2 font-display font-bold leading-snug text-[#0b5ea2]">{book.title}</h2><p className="mt-1 truncate text-xs text-[#0b5ea2]/65">{book.author}</p><div className="mt-3 space-y-1 text-[11px] text-[#0b5ea2]/65"><p><span className="font-semibold text-[#0b5ea2]">Shelf:</span> {book.shelf}</p><p><span className="font-semibold text-[#0b5ea2]">Copies:</span> {book.available} of {book.total} available</p></div></div></div><div className="mt-4 flex gap-2"><Button variant="secondary" className="flex-1">View details</Button><Button className="flex-1" variant={book.available ? 'primary' : 'secondary'}>{book.available ? 'Borrow' : 'Reserve'}</Button></div></SectionCard>
-          ) : (
-            <article key={book.id} className="cursor-pointer group relative flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 transition-all duration-300 hover:shadow-xl dark:bg-[#001a4d] dark:ring-white/10">
-              <div className="relative overflow-hidden p-3 pb-0">
-                <BookCover code={book.cover} accent={book.accent} className="w-full transition-transform duration-500 group-hover:scale-105" />
-              </div>
-              <div className="flex flex-1 flex-col justify-between p-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <StatusBadge status={book.status} />
-                  </div>
-                  <h3 className="font-display text-sm font-bold leading-tight line-clamp-2 text-[#0b5ea2] dark:text-white">
-                    {book.title}
-                  </h3>
-                  <p className="mt-1 text-[11px] text-[#0b5ea2]/65 dark:text-zinc-400 line-clamp-1">
-                    {book.author}
-                  </p>
-                </div>
-                <div className="mt-4 pt-3 border-t border-[#0b5ea2]/5 dark:border-white/10 flex flex-col gap-2">
-                  <div className="space-y-1 text-[10px] text-[#0b5ea2]/65 mb-1">
-                    <p><span className="font-semibold text-[#0b5ea2] dark:text-[#FFF200]">Shelf:</span> {book.shelf}</p>
-                    <p><span className="font-semibold text-[#0b5ea2] dark:text-[#FFF200]">Copies:</span> {book.available} of {book.total}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="secondary" className="h-8 flex-1 px-2 text-[11px]">Details</Button>
-                    <Button variant={book.available ? 'primary' : 'secondary'} className="h-8 flex-1 px-2 text-[11px]">{book.available ? 'Borrow' : 'Reserve'}</Button>
-                  </div>
-                </div>
-              </div>
-            </article>
-          )
-        ))}
-      </div>
+      <div className="mb-4 flex items-center justify-between"><p className="text-sm font-semibold text-[#0b5ea2]">{visibleBooks.length} resources found</p><button className="text-xs font-semibold text-[#0b5ea2]/65">Sort: Relevance</button></div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{visibleBooks.map((book) => <SectionCard key={book.id} className="group p-4 transition hover:-translate-y-0.5 hover:border-[#0b5ea2]/15 hover:shadow-lg hover:shadow-[#0b5ea2]/5"><div className="flex gap-4"><BookCover code={book.cover} accent={book.accent} className="w-24 shrink-0" /><div className="min-w-0 flex-1"><div className="mb-2 flex items-start justify-between gap-2"><StatusBadge status={book.status} /><span className="text-[10px] font-bold text-[#0b5ea2]/45">{book.year}</span></div><h2 className="line-clamp-2 font-display font-bold leading-snug text-[#0b5ea2]">{book.title}</h2><p className="mt-1 truncate text-xs text-[#0b5ea2]/65">{book.author}</p><div className="mt-3 space-y-1 text-[11px] text-[#0b5ea2]/65"><p><span className="font-semibold text-[#0b5ea2]">Shelf:</span> {book.shelf}</p><p><span className="font-semibold text-[#0b5ea2]">Copies:</span> {book.available} of {book.total} available</p></div></div></div><div className="mt-4 flex gap-2"><Button variant="secondary" className="flex-1">View details</Button><Button className="flex-1" variant={book.available ? 'primary' : 'secondary'}>{book.available ? 'Borrow' : 'Reserve'}</Button></div></SectionCard>)}</div>
     </>
   )
 }
@@ -177,7 +128,7 @@ export function BorrowingPage() {
 export function StudentReservationsPage() {
   return (
     <>
-      <PageHeader eyebrow="My library" title="Book reservations" description="Follow your place in the waiting list and collect available resources before the reservation expires." action={<Link to="/student/catalog"><Button><Search size={16} /> Find a book</Button></Link>} />
+      <PageHeader eyebrow="My library" title="Book reservations" description="Follow your place in the waiting list and collect available resources before the reservation expires." action={<Link to="/student/library"><Button><Search size={16} /> Find a book</Button></Link>} />
       <div className="grid gap-4 lg:grid-cols-2">{reservations.slice(0, 2).map((reservation) => <SectionCard key={reservation.id} className="p-5"><div className="flex items-start justify-between gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#0b5ea2]/5 text-[#0b5ea2]"><BookMarked size={20} /></div><StatusBadge status={reservation.status} /></div><h2 className="mt-4 font-display text-lg font-bold text-[#0b5ea2]">{reservation.book}</h2><p className="mt-1 text-xs text-[#0b5ea2]/65">Request {reservation.id} · {reservation.requested}</p><div className="mt-5 flex items-center justify-between rounded-xl bg-[#0b5ea2]/5 p-3"><div><p className="text-[11px] font-semibold uppercase text-[#0b5ea2]/45">Queue position</p><p className="mt-0.5 text-lg font-bold text-[#0b5ea2]">#{reservation.queue}</p></div><Button variant="secondary">Cancel request</Button></div></SectionCard>)}</div>
     </>
   )

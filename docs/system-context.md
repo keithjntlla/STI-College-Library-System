@@ -2,7 +2,7 @@
 
 ## Product definition
 
-The STI Ormoc Smart Library Management System is a campus platform for students, faculty, librarians, and administrators. It unifies resource discovery and day-to-day library operations that were previously handled through logbooks, index cards, physical queues, and manually maintained records.
+The STI College Ormoc Integrated Library Management System is a campus platform for students, faculty, librarians, and administrators. It unifies resource discovery and day-to-day library operations that were previously handled through logbooks, index cards, physical queues, and manually maintained records.
 
 The product covers:
 
@@ -96,7 +96,7 @@ All backend modules share one Node.js process and one future MySQL database. Mod
 | `/admin/fines` | Penalties, payment status, and audit-ready export entry points |
 | `/admin/inventory` | Barcode-level copy condition and audit status |
 | `/admin/printing` | Print queue, status, price, and service volume |
-| `/librarian/supplies` | Manual ink bottles and paper reams, low-stock alerts, restock costs, and separate revenue/expense reports (not connected to printer hardware) |
+| `/admin/supplies` | Ink, paper, printer assignment, and reorder thresholds |
 | `/admin/attendance` | QR logs, occupancy, purposes, and peak usage |
 | `/admin/users` | Users, roles, activation state, and clearance standing |
 | `/admin/clearance` | Computed student standing and override entry points |

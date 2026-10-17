@@ -6,12 +6,43 @@ import request from 'supertest'
 import { env } from '../../config/env.js'
 import { HttpError } from '../../core/http-error.ts'
 import { jwtProtectedRouter } from './jwt-auth.routes.ts'
-import { createJwtAuthService, type JwtRole } from './jwt-auth.service.ts'
+import { createJwtAuthService as createService, type JwtRole } from './jwt-auth.service.ts'
 import { createActiveJwtAccountGuard, verifyAccessToken } from './jwt-auth.middleware.ts'
 
+const createJwtAuthService: typeof createService = (database, hasher, signer) => createService(database, hasher, signer, {
+  incrementAuthVersionForAccount: async () => 2,
+  incrementAuthVersionForUser: async () => 2,
+  clearOtherSessions: async () => {},
+  clearAllSessionsForUser: async () => {},
+  revokeCurrentVersion: async () => true,
+})
+
 const redirects: Record<JwtRole, string> = {
-  Admin: '/librarian/dashboard', Librarian: '/librarian/dashboard', Faculty: '/faculty/dashboard', Student: '/student/dashboard', Staff: '/staff/dashboard',
+  Admin: '/admin/dashboard', Librarian: '/librarian/dashboard', Faculty: '/faculty/dashboard', Student: '/student/dashboard', Staff: '/staff/dashboard',
 }
+
+test('a second successful login revokes the prior JWT through the stored account version', async () => {
+  let version = 3
+  let clears = 0
+  const account = { account_id: 8, user_id: 12, school_id: 'TEST-8', password_hash: 'hash', role: 'Librarian', account_status: 'Active', user_status: 'Active' }
+  const database = { execute: async () => [[{ ...account, auth_version: version }]] } as never
+  const sessions = {
+    incrementAuthVersionForAccount: async () => ++version,
+    incrementAuthVersionForUser: async () => ++version,
+    clearAllSessionsForUser: async () => { clears++ }, clearOtherSessions: async () => {},
+    revokeCurrentVersion: async () => true,
+  }
+  const service = createService(database, { compare: async () => true } as never, jwt, sessions)
+  const body = { portal: 'staff', school_id: 'TEST-8', password: 'test-only-password' }
+  const first = await service.login(body)
+  const second = await service.login(body)
+  const app = express()
+  app.use((req, res, next) => { res.locals.authenticatedUser = verifyAccessToken(String(req.headers.authorization).slice(7)); next() })
+  app.get('/protected', createActiveJwtAccountGuard(database), (_req, res) => res.json({ success: true }))
+  assert.equal((await request(app).get('/protected').set('Authorization', `Bearer ${first.token}`)).status, 401)
+  assert.equal((await request(app).get('/protected').set('Authorization', `Bearer ${second.token}`)).status, 200)
+  assert.equal(clears, 2)
+})
 
 test('authenticates all four roles, signs the required claims, and returns the correct redirect', async () => {
   let id = 0
@@ -57,7 +88,7 @@ test('correct pending role credentials explain the approval wait without issuing
     (error: unknown) => error instanceof HttpError && error.code === 'ACCOUNT_APPROVAL_PENDING')
 })
 
-test('looks up accounts by school ID without requiring login_as to match', async () => {
+test('does not include a client-selected role in credential queries', async () => {
   let queryValues: unknown[] = []
   const database = { execute: async (_sql: string, values: unknown[]) => { queryValues = values; return [[]] } } as never
   const service = createJwtAuthService(database, { compare: async () => false } as never, jwt)
@@ -69,7 +100,40 @@ test('looks up accounts by school ID without requiring login_as to match', async
   assert.deepEqual(queryValues, ['STI-2026-0042'])
 })
 
-test('blocks a Student bearer token from the Librarian dashboard data endpoint', async () => {
+test('user portal detects a Student account without a selected role', async () => {
+  let queryValues: unknown[] = []
+  const database = { execute: async (_sql: string, values: unknown[]) => {
+    queryValues = values
+    return [[{
+      account_id: 42, user_id: 99, school_id: 'STI-2026-0042', password_hash: 'bcrypt-hash',
+      role: 'Student', account_status: 'Active', first_name: 'Ada', last_name: 'Lovelace',
+    }]]
+  } } as never
+  const service = createJwtAuthService(database, { compare: async () => true } as never, jwt)
+
+  const result = await service.login({ portal: 'user', school_id: 'STI-2026-0042', password: 'CorrectHorse1' })
+
+  assert.equal(result.user.role, 'Student')
+  assert.deepEqual(queryValues, ['STI-2026-0042'])
+})
+
+test('user portal rejects staff credentials without revealing the stored role', async () => {
+  const database = { execute: async () => [[{
+    account_id: 1, user_id: 1, school_id: 'ADMIN-001', password_hash: 'bcrypt-hash',
+    role: 'Admin', account_status: 'Active', linked_status: 'Active',
+  }]] } as never
+  const service = createJwtAuthService(database, { compare: async () => true } as never, jwt)
+
+  await assert.rejects(
+    service.login({ portal: 'user', school_id: 'ADMIN-001', password: 'CorrectHorse1' }),
+    (error: unknown) => error instanceof HttpError
+      && error.status === 401
+      && error.code === 'INVALID_CREDENTIALS'
+      && error.message === 'Wrong credentials.',
+  )
+})
+
+test('blocks a Student bearer token from the Admin dashboard data endpoint', async () => {
   const token = jwt.sign(
     { userId: 77, schoolId: 'STI-2026-0077', role: 'Student' }, env.jwt.secret,
     { algorithm: 'HS256', expiresIn: 900, issuer: env.jwt.issuer, audience: env.jwt.audience, subject: '77' },
@@ -109,5 +173,33 @@ test('old bearer tokens are rejected after a status change or activation version
       guard({} as never, response as never, () => resolve({ next: true }))
     })
     assert.equal(outcome.code, 'ACCOUNT_ACCESS_REVOKED')
+  }
+})
+
+test('stored roles resolve within a portal; selecting another role cannot elevate access', async () => {
+  const service = createJwtAuthService({ execute: async () => [[{ account_id: 1, school_id: 'STAFF-1', password_hash: 'hash', role: 'Staff', account_status: 'Active' }]] } as never,
+    { compare: async () => true } as never, jwt)
+  const result = await service.login({ school_id: 'STAFF-1', portal: 'personnel', login_as: 'Librarian', password: 'GoodPassword1' })
+  assert.equal(result.user.role, 'Staff')
+  assert.equal(result.redirect, '/staff/dashboard')
+  await assert.rejects(service.login({ school_id: 'STAFF-1', portal: 'user', password: 'GoodPassword1' }),
+    (error: unknown) => error instanceof HttpError && error.code === 'INVALID_CREDENTIALS')
+})
+
+test('both personnel portal contracts authenticate stored staff roles and reject self-service accounts', async () => {
+  for (const role of Object.keys(redirects) as JwtRole[]) {
+    const service = createJwtAuthService({ execute: async () => [[{
+      account_id: 1, school_id: 'TEST-001', password_hash: 'hash', role, account_status: 'Active', linked_status: 'Active',
+    }]] } as never, { compare: async () => true } as never, jwt)
+    for (const portal of ['staff', 'personnel']) {
+      if (role === 'Student' || role === 'Faculty') {
+        await assert.rejects(service.login({ school_id: 'TEST-001', portal, password: 'GoodPassword1' }),
+          (error: unknown) => error instanceof HttpError && error.status === 401 && error.code === 'INVALID_CREDENTIALS')
+      } else {
+        const result = await service.login({ school_id: 'TEST-001', portal, password: 'GoodPassword1' })
+        assert.equal(result.user.role, role)
+        assert.equal(result.redirect, redirects[role])
+      }
+    }
   }
 })

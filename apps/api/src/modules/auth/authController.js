@@ -1,8 +1,9 @@
 import bcrypt from 'bcrypt'
 import { db } from '../../config/db.js'
 import { env } from '../../config/env.js'
-import { ALL_ROLES, dashboardForRole, webDashboardForRole } from './auth.constants.js'
+import { ALL_ROLES, dashboardForRole, toEffectiveRole, webDashboardForRole } from './auth.constants.js'
 import { createCsrfToken, sessionCookie } from './auth.middleware.js'
+import { createAuthSessionRepository } from './auth-session.repository.ts'
 import { validateLoginInput } from './auth.validation.js'
 
 const DUMMY_BCRYPT_HASH = '$2b$12$k1Pc4Uvw2o.7wwBZ1hQwHu5vTfEfRPRgRhhcaawYWpPJez0o7gaCq'
@@ -16,7 +17,11 @@ function saveSession(request) {
   return new Promise((resolve, reject) => request.session.save((error) => (error ? reject(error) : resolve())))
 }
 
-export function createLoginController({ database = db, passwordHasher = bcrypt } = {}) {
+export function createLoginController({
+  database = db,
+  passwordHasher = bcrypt,
+  sessions = createAuthSessionRepository(database),
+} = {}) {
   return async function login(request, response, next) {
     try {
       const validation = validateLoginInput(request.body)
@@ -46,26 +51,32 @@ export function createLoginController({ database = db, passwordHasher = bcrypt }
         return response.status(403).json({ success: false, code: 'ACCOUNT_DEACTIVATED', message: DEACTIVATED_MESSAGE })
       }
 
-      if (!ALL_ROLES.includes(user.role_name)) {
+      // Compatibility: roles table may still say System Administrator / Librarian.
+      const effectiveRole = toEffectiveRole(user.role_name)
+      if (!ALL_ROLES.includes(effectiveRole)) {
         return response.status(403).json({ success: false, code: 'ROLE_NOT_AUTHORIZED', message: 'Your assigned role is not authorized to access this system.' })
       }
 
+      const userId = Number(user.user_id)
+      const authVersion = await sessions.incrementAuthVersionForUser(userId)
+
       await regenerateSession(request)
       request.session.user = {
-        id: Number(user.user_id),
+        id: userId,
         fullName: user.full_name,
         email: user.email,
-        role: user.role_name,
+        role: effectiveRole,
       }
       request.session.lastActivity = Date.now()
-      request.session.authVersion = Number(user.auth_version ?? 1)
+      request.session.authVersion = authVersion
       request.session.csrfToken = createCsrfToken()
       await saveSession(request)
+      await sessions.clearOtherSessions(userId, request.sessionID)
 
       return response.json({
         success: true,
         message: 'Login successful.',
-        redirect: new URL(webDashboardForRole(user.role_name), env.webOrigin).toString(),
+        redirect: new URL(webDashboardForRole(effectiveRole), env.webOrigin).toString(),
         user: request.session.user,
       })
     } catch (error) {
@@ -86,15 +97,25 @@ export function currentUser(request, response) {
   response.json({ success: true, user: request.session.user, redirect: dashboardForRole(request.session.user.role) })
 }
 
-export function logout(request, response, next) {
-  request.session.destroy((error) => {
-    if (error) return next(error)
-    response.clearCookie(env.session.name, {
-      httpOnly: sessionCookie.httpOnly,
-      secure: sessionCookie.secure,
-      sameSite: sessionCookie.sameSite,
-      path: sessionCookie.path,
-    })
-    return response.redirect(303, '/login?logout=1')
-  })
+export function createLogoutController({ sessions = createAuthSessionRepository() } = {}) {
+  return async function logout(request, response, next) {
+    try {
+      const identity = response.locals.authenticationType === 'jwt'
+        ? { accountId: response.locals.authenticatedUser.accountId, authVersion: response.locals.authenticatedUser.authVersion }
+        : { userId: request.session.user.id, authVersion: Number(request.session.authVersion ?? 1) }
+      await sessions.revokeCurrentVersion(identity)
+      await new Promise((resolve, reject) => request.session.destroy(error => error ? reject(error) : resolve()))
+      response.clearCookie(env.session.name, {
+        httpOnly: sessionCookie.httpOnly,
+        secure: sessionCookie.secure,
+        sameSite: sessionCookie.sameSite,
+        path: sessionCookie.path,
+      })
+      return response.redirect(303, '/login?logout=1')
+    } catch (error) {
+      next(error)
+    }
+  }
 }
+
+export const logout = createLogoutController()

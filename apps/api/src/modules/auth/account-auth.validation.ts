@@ -1,8 +1,9 @@
 import type { JwtRole } from './jwt-auth.service.ts'
 
 export type FieldErrors = Record<string, string>
+export type LoginPortal = 'user' | 'staff'
 
-const PUBLIC_REGISTRATION_ROLES = new Set<JwtRole>(['Student', 'Faculty'])
+const ROLES = new Set<JwtRole>(['Admin', 'Librarian', 'Student', 'Faculty', 'Staff'])
 const SCHOOL_ID_PATTERN = /^[A-Z0-9][A-Z0-9._-]{2,49}$/
 const SCHOOL_EMAIL_PATTERN = /^[^\s@]+@ormoc\.sti\.edu\.ph$/i
 const COLLEGE_PROGRAMS = new Set([
@@ -27,10 +28,17 @@ export function normalizeSchoolId(value: unknown) {
 export function normalizeRole(value: unknown): JwtRole | '' {
   if (typeof value !== 'string') return ''
   const candidate = value.trim().toLowerCase()
-  return ([...PUBLIC_REGISTRATION_ROLES].find((role) => role.toLowerCase() === candidate) ?? '') as JwtRole | ''
+  return ([...ROLES].find((role) => role.toLowerCase() === candidate) ?? '') as JwtRole | ''
 }
 
-export function validateAccountRegistration(body: unknown) {
+export function normalizePortal(value: unknown): LoginPortal | '' {
+  if (typeof value !== 'string') return ''
+  const candidate = value.trim().toLowerCase()
+  if (candidate === 'personnel') return 'staff'
+  return candidate === 'user' || candidate === 'staff' ? candidate : ''
+}
+
+export function validateAccountRegistration(body: unknown, officialSchoolDetails = false) {
   const input = body && typeof body === 'object' ? body as Record<string, unknown> : {}
   const schoolId = normalizeSchoolId(input.school_id)
   const firstName = cleanText(input.first_name)
@@ -55,19 +63,17 @@ export function validateAccountRegistration(body: unknown) {
   else if (schoolEmail.length > 191 || !SCHOOL_EMAIL_PATTERN.test(schoolEmail)) errors.school_email = 'Use your @ormoc.sti.edu.ph school email.'
   if (requestedRole === 'Student') {
     if (!programStrand) errors.program_strand = 'Program or strand is required.'
-    else if (!(COLLEGE_PROGRAMS.has(programStrand) || SENIOR_HIGH_PROGRAMS.has(programStrand))) errors.program_strand = 'Select an offered Ormoc program or pathway.'
+    else if (programStrand.length>150 || (!officialSchoolDetails && !(COLLEGE_PROGRAMS.has(programStrand) || SENIOR_HIGH_PROGRAMS.has(programStrand)))) errors.program_strand = 'Select an offered Ormoc program or pathway.'
     if (!yearGradeLevel) errors.year_grade_level = 'Year or grade level is required.'
     else if (!['Grade 11', 'Grade 12', '1st Year', '2nd Year', '3rd Year', '4th Year'].includes(yearGradeLevel)) errors.year_grade_level = 'Select a valid year or grade level.'
-    else if (yearGradeLevel.startsWith('Grade') !== SENIOR_HIGH_PROGRAMS.has(programStrand)) errors.program_strand = 'Select a program that matches your year or grade level.'
+    else if (!officialSchoolDetails && yearGradeLevel.startsWith('Grade') !== SENIOR_HIGH_PROGRAMS.has(programStrand)) errors.program_strand = 'Select a program that matches your year or grade level.'
   } else {
     if (programStrand.length > 150) errors.program_strand = 'Program or strand must not exceed 150 characters.'
     if (yearGradeLevel.length > 100) errors.year_grade_level = 'Year or grade level must not exceed 100 characters.'
   }
 
-  if (!requestedRole) errors.role = 'Public registration accepts Student or Faculty only. Librarian and Staff accounts are provisioned by the librarian.'
-  else if (!PUBLIC_REGISTRATION_ROLES.has(requestedRole)) {
-    errors.role = 'Public registration accepts Student or Faculty only. Librarian and Staff accounts are provisioned by the librarian.'
-  }
+  if (!requestedRole) errors.role = 'The selected role is invalid.'
+  else if (requestedRole === 'Admin') errors.role = 'Administrator accounts cannot be registered publicly.'
 
   if (!password) errors.password = 'Password is required.'
   else if (password.length < 8) errors.password = 'Password must contain at least 8 characters.'
@@ -85,13 +91,19 @@ export function validateAccountRegistration(body: unknown) {
 export function validateRoleLogin(body: unknown) {
   const input = body && typeof body === 'object' ? body as Record<string, unknown> : {}
   const schoolId = normalizeSchoolId(input.school_id)
+  // login_as is accepted for older clients, but never selects the database role.
+  const legacyRole = normalizeRole(input.login_as)
+  const portal = input.portal === undefined
+    ? (['Admin', 'Librarian', 'Staff'].includes(legacyRole) ? 'staff' : 'user')
+    : normalizePortal(input.portal)
   const password = typeof input.password === 'string' ? input.password : ''
   const errors: FieldErrors = {}
 
+  if (!portal) errors.portal = 'Choose a valid sign-in page.'
   if (!schoolId) errors.school_id = 'School ID is required.'
   else if (!SCHOOL_ID_PATTERN.test(schoolId)) errors.school_id = 'Enter a valid school ID.'
   if (!password) errors.password = 'Password is required.'
   else if (password.length > 72) errors.password = 'Password must not exceed 72 characters.'
 
-  return { schoolId, password, errors, isValid: Object.keys(errors).length === 0 }
+  return { schoolId, role: legacyRole, portal, password, errors, isValid: Object.keys(errors).length === 0 }
 }

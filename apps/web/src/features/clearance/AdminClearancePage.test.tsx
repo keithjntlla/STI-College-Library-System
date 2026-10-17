@@ -5,8 +5,8 @@ import { MemoryRouter } from 'react-router-dom'
 import type { ClearanceRecord } from './types'
 
 const api = vi.hoisted(() => ({
-  list: vi.fn(), detail: vi.fn(), override: vi.fn(), revoke: vi.fn(),
-  decideLost: vi.fn(), settleLost: vi.fn(), resolveLost: vi.fn(),
+  terms: vi.fn().mockResolvedValue([]), schedule: vi.fn(), saveSchedule: vi.fn(), list: vi.fn(), detail: vi.fn(), override: vi.fn(), revoke: vi.fn(),
+  decideLost: vi.fn(), settleLost: vi.fn(),
 }))
 vi.mock('./clearance-api', () => ({ clearanceApi: api }))
 
@@ -39,7 +39,6 @@ describe('AdminClearancePage simplified exceptions', () => {
     render(<MemoryRouter><AdminClearancePage /></MemoryRouter>)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Review' }))
-    expect(await screen.findByRole('dialog', { name: blocked.student.name })).toBeTruthy()
     expect(await screen.findByRole('button', { name: 'Clear student as an exception' })).toBeTruthy()
     expect(document.querySelector('input[type="datetime-local"]')).toBeNull()
     expect(screen.queryByRole('combobox')).toBeNull()
@@ -51,17 +50,6 @@ describe('AdminClearancePage simplified exceptions', () => {
     await waitFor(() => expect(api.override).toHaveBeenCalledWith(7, {
       status: 'Cleared', reason: 'Approved while payment is being verified.', expiresAt: null,
     }))
-  })
-
-  it('closes the clearance review dialog with Escape', async () => {
-    api.list.mockResolvedValue(listWith(blocked))
-    api.detail.mockResolvedValue(blocked)
-    render(<MemoryRouter><AdminClearancePage /></MemoryRouter>)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Review' }))
-    expect(await screen.findByRole('dialog', { name: blocked.student.name })).toBeTruthy()
-    fireEvent.keyDown(window, { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: blocked.student.name })).toBeNull())
   })
 
   it('does not offer an override when the computed standing is already cleared', async () => {
@@ -82,7 +70,7 @@ describe('AdminClearancePage simplified exceptions', () => {
         borrowerName: blocked.student.name, role: 'Student', title: 'Emma', reportedAt: '2026-09-26T01:00:00.000Z' }],
     })
     api.detail.mockResolvedValue({ ...blocked, lostBooks: [{ lostBookReportId: 12, transactionId: 20,
-      titleId: 5, title: 'Emma', status: 'Pending', chargeResolution: 'Awaiting Review', quotationId: null, quotedAmount: null, replacementCharge: 0,
+      titleId: 5, title: 'Emma', status: 'Pending', quotationId: null, quotedAmount: null, replacementCharge: 0,
       paymentStatus: 'Unpaid', reportedAt: '2026-09-26T01:00:00.000Z', verifiedAt: null }] })
     render(<MemoryRouter initialEntries={['/librarian/clearance']}><AdminClearancePage /></MemoryRouter>)
 
@@ -92,119 +80,6 @@ describe('AdminClearancePage simplified exceptions', () => {
     await waitFor(() => expect(api.detail).toHaveBeenCalledWith(7))
     expect(await screen.findByText('Lost-book reports')).toBeTruthy()
     expect(screen.getByText('Awaiting quotation')).toBeTruthy()
-    const attach = screen.getByRole('link', { name: 'Attach quotation in catalog' })
-    expect(attach.getAttribute('href')).toBe('/librarian/catalog?titleId=5&action=quotation&title=Emma')
-  })
-
-  it('deep-links Upload supplier quotation to the title quotation modal', async () => {
-    api.list.mockResolvedValue(listWith(blocked))
-    api.detail.mockResolvedValue({
-      ...blocked,
-      lostBooks: [{
-        lostBookReportId: 12, transactionId: 20, titleId: 5, title: 'Emma', status: 'Confirmed',
-        chargeResolution: 'Awaiting Quotation', quotationId: null, quotedAmount: null, replacementCharge: 0,
-        paymentStatus: 'Unpaid', reportedAt: '2026-09-26T01:00:00.000Z', verifiedAt: '2026-09-26T02:00:00.000Z',
-      }],
-    })
-    render(<MemoryRouter initialEntries={['/librarian/clearance']}><AdminClearancePage /></MemoryRouter>)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Review' }))
-    const upload = await screen.findByRole('link', { name: 'Upload supplier quotation' })
-    expect(upload.getAttribute('href')).toBe('/librarian/catalog?titleId=5&action=quotation&title=Emma')
-  })
-
-  it('confirms a lost-book report through the in-app confirm modal', async () => {
-    api.list.mockResolvedValue({
-      ...listWith(blocked),
-      pendingLostReports: [{ lostBookReportId: 12, userId: 7, schoolId: blocked.student.schoolId,
-        borrowerName: blocked.student.name, role: 'Student', title: 'Emma', reportedAt: '2026-09-26T01:00:00.000Z' }],
-    })
-    api.detail.mockResolvedValue({ ...blocked, lostBooks: [{ lostBookReportId: 12, transactionId: 20,
-      titleId: 5, title: 'Emma', status: 'Pending', chargeResolution: 'Awaiting Review', quotationId: null, quotedAmount: null, replacementCharge: 0,
-      paymentStatus: 'Unpaid', reportedAt: '2026-09-26T01:00:00.000Z', verifiedAt: null }] })
-    api.decideLost.mockResolvedValue({ lostBookReportId: 12, status: 'Confirmed' })
-    render(<MemoryRouter initialEntries={['/librarian/clearance']}><AdminClearancePage /></MemoryRouter>)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Review report' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm loss' }))
-    expect(await screen.findByRole('dialog', { name: 'Confirm this loss?' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Yes, confirm loss' }))
-    await waitFor(() => expect(api.decideLost).toHaveBeenCalledWith(12, 'Confirmed'))
-  })
-
-  it('documents a non-monetary resolution through an in-app dialog', async () => {
-    const awaiting: ClearanceRecord = {
-      ...blocked,
-      lostBooks: [{
-        lostBookReportId: 12, transactionId: 20, titleId: 5, title: 'Emma', status: 'Confirmed',
-        chargeResolution: 'Awaiting Quotation', resolutionReason: null, quotationId: null, quotedAmount: null, replacementCharge: 0,
-        paymentStatus: 'Unpaid', reportedAt: '2026-09-26T01:00:00.000Z', verifiedAt: '2026-09-26T02:00:00.000Z',
-      }],
-    }
-    const waived: ClearanceRecord = {
-      ...awaiting,
-      status: 'Cleared',
-      computedStatus: 'Cleared',
-      reason: 'No library obligations',
-      summary: { ...awaiting.summary, unpaidOverdueFines: 0, totalOutstanding: 0, blockCount: 0 },
-      lostBooks: [{ ...awaiting.lostBooks[0], chargeResolution: 'Waived', resolutionReason: 'Replacement copy donated by the program.' }],
-    }
-    api.list.mockResolvedValue(listWith(awaiting))
-    api.detail.mockResolvedValue(awaiting)
-    api.resolveLost.mockResolvedValue({ lostBookReportId: 12, chargeResolution: 'Waived' })
-    render(<MemoryRouter initialEntries={['/librarian/clearance']}><AdminClearancePage /></MemoryRouter>)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Review' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Document non-monetary resolution' }))
-    expect(await screen.findByRole('dialog', { name: 'Document non-monetary resolution' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Record resolution' }))
-    expect((await screen.findByRole('alert')).textContent).toMatch(/at least 10 characters/i)
-    expect(api.resolveLost).not.toHaveBeenCalled()
-
-    fireEvent.change(screen.getByLabelText('Resolution reason'), {
-      target: { value: 'Replacement copy donated by the program.' },
-    })
-    api.detail.mockResolvedValue(waived)
-    fireEvent.click(screen.getByRole('button', { name: 'Record resolution' }))
-    await waitFor(() => expect(api.resolveLost).toHaveBeenCalledWith(
-      12, 'Waive', 'Replacement copy donated by the program.',
-    ))
-  })
-
-  it('confirms a quotation charge through an in-app confirm modal', async () => {
-    api.list.mockResolvedValue(listWith(blocked))
-    api.detail.mockResolvedValue({
-      ...blocked,
-      lostBooks: [{
-        lostBookReportId: 12, transactionId: 20, titleId: 5, title: 'Emma', status: 'Confirmed',
-        chargeResolution: 'Awaiting Quotation', resolutionReason: null, quotationId: 3, quotedAmount: 650, replacementCharge: 0,
-        paymentStatus: 'Unpaid', reportedAt: '2026-09-26T01:00:00.000Z', verifiedAt: '2026-09-26T02:00:00.000Z',
-      }],
-    })
-    api.resolveLost.mockResolvedValue({ lostBookReportId: 12, chargeResolution: 'Quoted' })
-    render(<MemoryRouter initialEntries={['/librarian/clearance']}><AdminClearancePage /></MemoryRouter>)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Review' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Confirm quotation charge/ }))
-    expect(await screen.findByRole('dialog', { name: 'Assess quotation charge?' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Yes, assess charge' }))
-    await waitFor(() => expect(api.resolveLost).toHaveBeenCalledWith(12, 'Charge', ''))
-  })
-
-  it('soft-refreshes the librarian lost-report worklist when the window regains focus', async () => {
-    api.list.mockResolvedValue(listWith(blocked))
-    render(<MemoryRouter initialEntries={['/librarian/clearance']}><AdminClearancePage /></MemoryRouter>)
-    expect(await screen.findByText('Lost-book reports awaiting review (0)')).toBeTruthy()
-    const calls = api.list.mock.calls.length
-    api.list.mockResolvedValue({
-      ...listWith(blocked),
-      pendingLostReports: [{ lostBookReportId: 12, userId: 7, schoolId: blocked.student.schoolId,
-        borrowerName: blocked.student.name, role: 'Student', title: 'Emma', reportedAt: '2026-09-26T01:00:00.000Z' }],
-    })
-    window.dispatchEvent(new Event('focus'))
-    await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(calls))
-    expect(await screen.findByText('Lost-book reports awaiting review (1)')).toBeTruthy()
-    expect(screen.getByText('Emma')).toBeTruthy()
   })
 })
 

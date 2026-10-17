@@ -13,6 +13,7 @@ function accountDatabase(reservationCount = 0, role = 'Student') {
     beginTransaction: async () => undefined,
     execute: async (sql: string, values: unknown[] = []) => {
       writes.push({ sql, values })
+      if (sql.includes('SELECT a.role,a.account_status')) return [[{role:'Librarian',account_status:'Active'}]]
       if (sql.includes('FROM accounts WHERE account_id')) return [[{ account_id: 9, user_id: 19, role, account_status: 'Active' }]]
       if (sql.includes('FROM borrow_transactions')) return [[{ active_count: 0 }]]
       if (sql.includes('FROM reservations')) return [[{ active_count: reservationCount }]]
@@ -35,12 +36,9 @@ test('deactivation synchronizes both identities and records the actor and reason
   assert.ok(fixture.writes.some(row => row.sql.includes('account_management_events') && row.values.includes(2) && row.values.includes('Student requested suspension')))
 })
 
-test('Librarian can deactivate a Staff account but cannot deactivate a Librarian account', async () => {
+test('Admin can deactivate a Staff account but cannot deactivate an Admin account', async () => {
   const staff = accountDatabase(0, 'Staff')
   assert.equal((await new UsersRepository(staff.pool).changeStatus(9, 2, { status: 'Deactivated', reason: 'Access withdrawn' })).account_status, 'Deactivated')
-  const librarian = accountDatabase(0, 'Librarian')
-  await assert.rejects(new UsersRepository(librarian.pool).changeStatus(9, 2, { status: 'Deactivated', reason: 'Access withdrawn' }),
-    (error: unknown) => error instanceof HttpError && error.code === 'USER_STATUS_PROTECTED')
   const admin = accountDatabase(0, 'Admin')
   await assert.rejects(new UsersRepository(admin.pool).changeStatus(9, 2, { status: 'Deactivated', reason: 'Access withdrawn' }),
     (error: unknown) => error instanceof HttpError && error.code === 'USER_STATUS_PROTECTED')
@@ -60,19 +58,23 @@ test('only the owner can edit a profile', async () => {
   assert.equal(fixture.writes.length, 0)
 })
 
-test('self profile identity fields are locked for the account owner', async () => {
+test('self profile editing keeps the school email, school ID and role fixed and audits changed fields', async () => {
   const fixture = accountDatabase()
-  await assert.rejects(new UsersRepository(fixture.pool).editProfile(9, 9, {
+  const result = await new UsersRepository(fixture.pool).editProfile(9, 9, {
     first_name: 'New', last_name: 'Name',
     program_strand: 'BSIT', year_grade_level: '2nd Year',
-  }), (error: unknown) => error instanceof HttpError && error.code === 'USER_PROFILE_LOCKED')
-  assert.equal(fixture.writes.length, 0)
+  })
+  assert.deepEqual(result.changed_fields, ['first_name', 'year_grade_level'])
+  assert.ok(fixture.writes.every(row => !row.sql.includes('SET school_id') && !row.sql.includes('SET role') && !row.sql.includes('SET full_name=?,email=')))
+  assert.ok(fixture.writes.every(row => !row.sql.includes('contact_number')))
+  assert.ok(fixture.writes.some(row => row.sql.includes('ProfileEdited') && row.values.includes('Updated by account owner')))
 })
 
 test('school email cannot be changed through the self-profile API', async () => {
   const fixture = accountDatabase()
   await assert.rejects(new UsersRepository(fixture.pool).editProfile(9, 9, {
     first_name: 'Old', last_name: 'Name', email: 'new@example.test', program_strand: 'BSIT', year_grade_level: '1st Year',
-  }), (error: unknown) => error instanceof HttpError && error.code === 'USER_PROFILE_LOCKED')
-  assert.equal(fixture.writes.length, 0)
+  }), (error: unknown) => error instanceof HttpError && error.code === 'USER_EMAIL_FIXED')
+  assert.equal(fixture.state().rolledBack, true)
+  assert.equal(fixture.writes.some(row => row.sql.startsWith('UPDATE')), false)
 })

@@ -1,8 +1,3 @@
-const DUE_HOUR = 8
-const DUE_MINUTE = 59
-const CLOSING_HOUR = 17
-const CLOSING_MINUTE = 0
-
 function localDateKey(value: Date) {
   const year = value.getFullYear()
   const month = String(value.getMonth() + 1).padStart(2, '0')
@@ -10,31 +5,47 @@ function localDateKey(value: Date) {
   return `${year}-${month}-${day}`
 }
 
-/** Sundays and configured campus closures are not operating days. */
-export function nextOperatingDueDate(borrowedAt: Date, closedDates: ReadonlySet<string> = new Set()) {
-  const due = new Date(borrowedAt)
-  due.setDate(due.getDate() + 1)
-  due.setHours(DUE_HOUR, DUE_MINUTE, 0, 0)
-  for (let inspected = 0; inspected < 366; inspected += 1) {
-    if (due.getDay() !== 0 && !closedDates.has(localDateKey(due))) return due
-    due.setDate(due.getDate() + 1)
+function parseCutoff(cutoff: string | { hour: number; minute: number }) {
+  if (typeof cutoff === 'string') {
+    const match = cutoff.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/)
+    if (!match) throw new Error(`Invalid due-time cutoff: ${cutoff}`)
+    return { hour: Number(match[1]), minute: Number(match[2]) }
   }
-  throw new Error('No operating day could be resolved within one year.')
+  return cutoff
 }
 
-/** Inside-library loans are due at closing the same operating day. */
-export function sameDayClosingDueDate(borrowedAt: Date, closesAt: string | null = null) {
+/** Advance by N operating days (skip Sundays and configured campus closures). */
+export function calculateOperatingDueDate(
+  borrowedAt: Date,
+  borrowingDays: number,
+  cutoff: string | { hour: number; minute: number } = { hour: 8, minute: 59 },
+  closedDates: ReadonlySet<string> = new Set(),
+) {
+  const days = Math.max(1, Math.floor(borrowingDays))
+  const { hour, minute } = parseCutoff(cutoff)
   const due = new Date(borrowedAt)
-  const match = closesAt?.match(/^(\d{1,2}):(\d{2})/)
-  if (match) {
-    due.setHours(Number(match[1]), Number(match[2]), 0, 0)
-  } else {
-    due.setHours(CLOSING_HOUR, CLOSING_MINUTE, 0, 0)
+  due.setSeconds(0, 0)
+  let remaining = days
+  for (let inspected = 0; inspected < 366 && remaining > 0; inspected += 1) {
+    due.setDate(due.getDate() + 1)
+    if (due.getDay() === 0 || closedDates.has(localDateKey(due))) continue
+    remaining -= 1
   }
-  if (due.getTime() <= borrowedAt.getTime()) {
-    due.setTime(borrowedAt.getTime() + 30 * 60 * 1000)
-  }
+  if (remaining > 0) throw new Error('No operating day could be resolved within one year.')
+  due.setHours(hour, minute, 0, 0)
   return due
 }
 
-export const circulationDuePolicy = { hour: DUE_HOUR, minute: DUE_MINUTE, closingHour: CLOSING_HOUR, closingMinute: CLOSING_MINUTE }
+/** Legacy helper: one operating day at 08:59. Prefer calculateOperatingDueDate with policy values. */
+export function nextOperatingDueDate(borrowedAt: Date, closedDates: ReadonlySet<string> = new Set()) {
+  return calculateOperatingDueDate(borrowedAt, 1, { hour: 8, minute: 59 }, closedDates)
+}
+
+export function formatDueCutoffLabel(cutoff: string | { hour: number; minute: number }) {
+  const { hour, minute } = parseCutoff(cutoff)
+  const period = hour >= 12 ? 'PM' : 'AM'
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12
+  return `${displayHour}:${String(minute).padStart(2, '0')} ${period}`
+}
+
+export const circulationDuePolicy = { hour: 8, minute: 59 }

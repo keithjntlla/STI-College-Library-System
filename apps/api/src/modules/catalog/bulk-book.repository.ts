@@ -22,6 +22,10 @@ export async function lockBookTitleByIsbn(connection: PoolConnection, isbn: stri
 }
 
 export async function ensureBookLocationExists(connection: PoolConnection, shelfLocation: string) {
+  if (isPostgres) {
+    const [locations] = await connection.execute<RowDataPacket[]>("SELECT location_id FROM catalog_locations WHERE name=? AND lifecycle_status='Active' LIMIT 1", [shelfLocation])
+    return locations.length > 0
+  }
   const [rows] = await connection.execute<RowDataPacket[]>(
     'SELECT category_id FROM categories WHERE shelf_location = ? UNION SELECT id AS category_id FROM floor_plan_shelves WHERE label = ? LIMIT 1', [shelfLocation, shelfLocation],
   )
@@ -52,10 +56,10 @@ export async function lockCategoryShelf(connection: PoolConnection, categoryId: 
 export async function createBulkBookTitle(connection: PoolConnection, input: BulkBookInput, coverImagePath: string | null) {
   const [result] = await connection.execute<ResultSetHeader>(
     `INSERT INTO titles
-       (category_id, record_type, title, normalized_title, isbn, publication_year, copyright_year, publisher, purchase_price,
+       (category_id, record_type, title, normalized_title, isbn, publication_year, publisher, purchase_price,
         call_number, cover_image_path, search_text, lifecycle_status, created_at)
-     VALUES (?, 'Book', ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'Active', NOW())`,
-    [input.categoryId, input.title, input.title.toLocaleLowerCase('en-US'), input.isbn, input.publicationYear, input.copyrightYear,
+     VALUES (?, 'Book', ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'Active', NOW())`,
+    [input.categoryId, input.title, input.title.toLocaleLowerCase('en-US'), input.isbn, input.publicationYear,
       input.publisher, input.callNumber, coverImagePath, `${input.title} ${input.author} ${input.isbn}`.toLocaleLowerCase('en-US')],
   )
   await connection.execute(

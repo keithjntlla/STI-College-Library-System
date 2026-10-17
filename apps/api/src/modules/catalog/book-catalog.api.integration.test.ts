@@ -23,7 +23,6 @@ function appWith(service: Record<string, unknown>) {
 
 test('GET /api/v1/catalog/books returns stock counts and viewer borrowing context', async () => {
   const response = await request(appWith({
-    programs: async () => [],
     categories: async () => [],
     list: async () => ({
       items: [{ titleId: 2, title: 'Clean Code', totalCopiesCount: 5, availableCopiesCount: 3 }],
@@ -40,7 +39,6 @@ test('GET /api/v1/catalog/books returns stock counts and viewer borrowing contex
 
 test('GET /api/v1/catalog/books/:titleId returns a complete overview contract', async () => {
   const response = await request(appWith({
-    programs: async () => [],
     categories: async () => [], list: async () => ({}), reserve: async () => ({}),
     overview: async () => ({
       titleId: 2, title: 'Clean Code', author: 'Robert C. Martin', isbn: '9780132350884',
@@ -56,7 +54,6 @@ test('GET /api/v1/catalog/books/:titleId returns a complete overview contract', 
 
 test('GET /api/v1/catalog/categories returns exact Admin-managed category IDs and names', async () => {
   const response = await request(appWith({
-    programs: async () => [],
     categories: async () => [
       { categoryId: 7, categoryName: 'Artificial Intelligence' },
       { categoryId: 11, categoryName: 'Cybersecurity' },
@@ -68,20 +65,5 @@ test('GET /api/v1/catalog/categories returns exact Admin-managed category IDs an
   assert.deepEqual(response.body.data, [
     { categoryId: 7, categoryName: 'Artificial Intelligence' },
     { categoryId: 11, categoryName: 'Cybersecurity' },
-  ])
-})
-
-test('GET /api/v1/catalog/programs returns campus programs for course browse', async () => {
-  const response = await request(appWith({
-    programs: async () => [
-      { programId: 1, programName: 'Bachelor of Science in Information Technology', programGroup: 'College' },
-    ],
-    categories: async () => [],
-    list: async () => ({}), overview: async () => ({}), reserve: async () => ({}),
-  })).get('/api/v1/catalog/programs')
-
-  assert.equal(response.status, 200)
-  assert.deepEqual(response.body.data, [
-    { programId: 1, programName: 'Bachelor of Science in Information Technology', programGroup: 'College' },
   ])
 })

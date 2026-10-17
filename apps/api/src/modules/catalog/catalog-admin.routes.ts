@@ -1,14 +1,10 @@
 import { Router, type NextFunction, type Request, type Response } from 'express'
-import multer from 'multer'
-import fs from 'fs'
 import { requireJwtRoles } from '../auth/jwt-auth.middleware.ts'
 import { catalogController } from './catalog.controller.ts'
 import { bookArchive } from './book-archive.ts'
 import { bookQuotationController, quotationUpload } from './book-quotation.ts'
 
-const upload = multer({ dest: 'uploads/' })
-
-type Controller = Pick<typeof catalogController, 'changeTitleCategory' | 'bulkImport' | 'bulkImportResearch'>
+type Controller = Pick<typeof catalogController, 'changeTitleCategory'>
 
 export function createCatalogAdminRouter(controller: Controller = catalogController) {
   const router = Router()
@@ -22,8 +18,6 @@ export function createCatalogAdminRouter(controller: Controller = catalogControl
   router.get('/titles/:titleId/quotations', requireJwtRoles('Librarian'), bookQuotationController.list)
   router.post('/titles/:titleId/quotations', requireJwtRoles('Librarian'), quotationUpload, bookQuotationController.upload)
   router.get('/titles/:titleId/quotations/:quotationId/file', requireJwtRoles('Librarian'), bookQuotationController.download)
-  router.post('/bulk-import', requireJwtRoles('Librarian', 'Admin'), upload.single('file'), controller.bulkImport)
-  router.post('/bulk-import-research', requireJwtRoles('Librarian', 'Admin'), upload.single('file'), controller.bulkImportResearch)
   return router
 }
 

@@ -48,19 +48,17 @@ export type Category = { categoryId: number; categoryName: string; shelfLocation
 
 export type GeneratedBookLabel = {
   physicalCopyId: number
-  materialId?: number
+  materialId: number
   titleId: number
   title: string
   author: string
-  isbn?: string
+  isbn: string
   shelfLocation: string
   shelfColumn?: number
   shelfRow?: number
   accessionNumber: string
   barcode: string
-  conditionStatus?: string | null
-  coverImagePath?: string | null
-  qrCodeData?: string
+  qrCodeData: string
   barcodeImageData: string
 }
 

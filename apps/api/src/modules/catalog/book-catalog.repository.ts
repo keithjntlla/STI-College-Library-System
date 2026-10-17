@@ -3,8 +3,8 @@ import { authorsAgg, isPostgres, sumEquals } from '../../config/sql-dialect.js'
 import type { BookCatalogFilters } from './book-catalog.validation.ts'
 
 const availableCopyCount = isPostgres
-  ? `COUNT(*) FILTER (WHERE pc.availability_status = 'Available' AND pc.condition_status != 'Lost' AND pc.material_id IS NOT NULL)`
-  : `SUM(pc.availability_status = 'Available' AND pc.condition_status != 'Lost' AND pc.material_id IS NOT NULL)`
+  ? `COUNT(*) FILTER (WHERE pc.availability_status = 'Available' AND pc.material_id IS NOT NULL AND pc.condition_status NOT IN ('Lost','Damaged','For Repair'))`
+  : `SUM(pc.availability_status = 'Available' AND pc.material_id IS NOT NULL)`
 
 const currentConditionStatus = isPostgres
   ? `(array_agg(pc.condition_status ORDER BY (pc.availability_status = 'Available') DESC, pc.physical_copy_id ASC))[1]`
@@ -20,11 +20,11 @@ const STOCK_JOIN = `LEFT JOIN (
       ${availableCopyCount} AS available_copies_count,
       ${sumEquals('pc.availability_status', 'Borrowed')} AS borrowed_copies_count,
       ${sumEquals('pc.availability_status', 'Reserved')} AS reserved_copies_count,
-      MIN(CASE WHEN pc.availability_status = 'Available' AND pc.condition_status != 'Lost' AND pc.material_id IS NOT NULL THEN pc.shelf_location END) AS available_shelf_location,
-      MIN(CASE WHEN pc.availability_status = 'Available' AND pc.condition_status != 'Lost' AND pc.material_id IS NOT NULL THEN pc.barcode END) AS preview_barcode,
+      MIN(CASE WHEN pc.availability_status = 'Available' AND pc.material_id IS NOT NULL THEN pc.shelf_location END) AS available_shelf_location,
+      MIN(CASE WHEN pc.availability_status = 'Available' AND pc.material_id IS NOT NULL THEN pc.barcode END) AS preview_barcode,
       ${currentConditionStatus} AS current_condition_status,
       MIN(pc.shelf_location) AS any_shelf_location,
-      MIN(pc.material_id) AS reservable_material_id
+      MIN(CASE WHEN pc.material_id IS NOT NULL THEN pc.material_id END) AS reservable_material_id
     FROM physical_copies pc
     WHERE pc.lifecycle_status = 'Active'
     GROUP BY pc.title_id
@@ -49,7 +49,6 @@ const WAITLIST_JOIN = `LEFT JOIN (
 const SELECT_FIELDS = `SELECT
     t.title_id,
     t.title,
-    t.synopsis,
     COALESCE(credits.author, 'Unknown author') AS author,
     t.isbn,
     t.publisher,
@@ -60,13 +59,13 @@ const SELECT_FIELDS = `SELECT
     COALESCE(c.category_name, 'Uncategorized') AS category_name,
     COALESCE(stock.available_shelf_location, stock.any_shelf_location, t.call_number) AS shelf_location,
     COALESCE(stock.total_copies_count, 0) AS total_copies_count,
-    CASE WHEN COALESCE(waiting.active_waiting_count, 0) > 0
-      THEN 0 ELSE COALESCE(stock.available_copies_count, 0) END AS available_copies_count,
+    ${isPostgres ? 'COALESCE(stock.available_copies_count, 0)' : `CASE WHEN COALESCE(waiting.active_waiting_count, 0) > 0
+      THEN 0 ELSE COALESCE(stock.available_copies_count, 0) END`} AS available_copies_count,
     stock.reservable_material_id,
     stock.preview_barcode,
     stock.current_condition_status,
     CASE
-      WHEN COALESCE(waiting.active_waiting_count, 0) > 0 THEN 'Reserved'
+      ${isPostgres ? '' : "WHEN COALESCE(waiting.active_waiting_count, 0) > 0 THEN 'Reserved'"}
       WHEN COALESCE(stock.available_copies_count, 0) > 0 THEN 'Available'
       WHEN COALESCE(stock.reserved_copies_count, 0) > 0 THEN 'Reserved'
       WHEN COALESCE(stock.borrowed_copies_count, 0) > 0 THEN 'Borrowed'
@@ -87,6 +86,7 @@ export function buildBookCatalogQuery(filters: BookCatalogFilters) {
        WHERE visible_copy.title_id = t.title_id
          AND visible_copy.lifecycle_status = 'Active'
          AND visible_copy.availability_status IN ('Available', 'Borrowed', 'Reserved')
+         AND visible_copy.material_id IS NOT NULL
     )`,
   ]
   const parameters: Array<string | number> = []
@@ -94,21 +94,6 @@ export function buildBookCatalogQuery(filters: BookCatalogFilters) {
   if (filters.categoryId !== null) {
     where.push('t.category_id = ?')
     parameters.push(filters.categoryId)
-    if (filters.programId !== null) {
-      where.push(`EXISTS (
-        SELECT 1 FROM program_categories program_link
-         WHERE program_link.category_id = t.category_id
-           AND program_link.program_id = ?
-      )`)
-      parameters.push(filters.programId)
-    }
-  } else if (filters.programId !== null) {
-    where.push(`t.category_id IN (
-      SELECT program_link.category_id
-        FROM program_categories program_link
-       WHERE program_link.program_id = ?
-    )`)
-    parameters.push(filters.programId)
   }
   if (filters.categoryName) {
     where.push('LOWER(c.category_name) = LOWER(?)')
@@ -139,29 +124,18 @@ export function buildBookCatalogQuery(filters: BookCatalogFilters) {
     )`)
     parameters.push(pattern, pattern, pattern, filters.query, pattern)
   }
-  if (filters.availableOnly) {
-    where.push('COALESCE(waiting.active_waiting_count, 0) = 0')
-    where.push('COALESCE(stock.available_copies_count, 0) > 0')
-  }
 
   const fromSql = `FROM titles t
     LEFT JOIN categories c ON c.category_id = t.category_id
     ${AUTHOR_JOIN}
     ${STOCK_JOIN}
     ${WAITLIST_JOIN}`
-  const countFromSql = `FROM titles t
-    LEFT JOIN categories c ON c.category_id = t.category_id
-    ${STOCK_JOIN}
-    ${WAITLIST_JOIN}`
   const whereSql = `WHERE ${where.join('\n AND ')}`
   const offset = (filters.page - 1) * filters.limit
-  const orderSql = filters.sort === 'title'
-    ? 'ORDER BY t.title ASC, t.title_id ASC'
-    : `ORDER BY (CASE WHEN COALESCE(waiting.active_waiting_count, 0) > 0 THEN 0 ELSE COALESCE(stock.available_copies_count, 0) END) DESC, t.title ASC, t.title_id ASC`
 
   return {
-    dataSql: `${SELECT_FIELDS}\n${fromSql}\n${whereSql}\n${orderSql}\nLIMIT ${filters.limit} OFFSET ${offset}`,
-    countSql: `SELECT COUNT(*) AS total ${countFromSql} ${whereSql}`,
+    dataSql: `${SELECT_FIELDS}\n${fromSql}\n${whereSql}\nORDER BY t.title ASC, t.title_id ASC\nLIMIT ${filters.limit} OFFSET ${offset}`,
+    countSql: `SELECT COUNT(*) AS total FROM titles t LEFT JOIN categories c ON c.category_id = t.category_id ${whereSql}`,
     dataParameters: [...parameters],
     countParameters: [...parameters],
   }
@@ -171,7 +145,6 @@ function mapBook(row: RowDataPacket) {
   return {
     titleId: Number(row.title_id),
     title: String(row.title),
-    synopsis: row.synopsis ? String(row.synopsis) : null,
     author: String(row.author),
     isbn: row.isbn ? String(row.isbn) : null,
     publisher: row.publisher ? String(row.publisher) : null,
@@ -208,45 +181,15 @@ export async function queryBookCatalog(database: Pool, filters: BookCatalogFilte
   }
 }
 
-export async function queryBookCategories(database: Pool, programId: number | null = null) {
-  const [rows] = programId === null
-    ? await database.execute<RowDataPacket[]>(
-      `SELECT c.category_id, c.category_name
-         FROM categories c
-        ORDER BY c.category_name ASC`,
-    )
-    : await database.execute<RowDataPacket[]>(
-      `SELECT c.category_id, c.category_name
-         FROM categories c
-         JOIN program_categories pc ON pc.category_id = c.category_id
-        WHERE pc.program_id = ?
-        ORDER BY c.category_name ASC`,
-      [programId],
-    )
+export async function queryBookCategories(database: Pool) {
+  const [rows] = await database.execute<RowDataPacket[]>(
+    `SELECT c.category_id, c.category_name
+       FROM categories c
+      ORDER BY c.category_name ASC`,
+  )
   return rows.map((row) => ({
     categoryId: Number(row.category_id),
     categoryName: String(row.category_name),
-  }))
-}
-
-export async function queryCatalogPrograms(database: Pool) {
-  const [rows] = await database.execute<RowDataPacket[]>(
-    `SELECT program_id, program_name, program_group
-       FROM programs
-      WHERE is_active = ${isPostgres ? 'TRUE' : '1'}
-      ORDER BY
-        CASE program_group
-          WHEN 'College' THEN 1
-          WHEN 'SHS Academic' THEN 2
-          WHEN 'SHS TechPro' THEN 3
-          ELSE 4
-        END,
-        program_name ASC`,
-  )
-  return rows.map((row) => ({
-    programId: Number(row.program_id),
-    programName: String(row.program_name),
-    programGroup: String(row.program_group),
   }))
 }
 
@@ -264,6 +207,7 @@ export async function queryBookOverview(database: Pool, titleId: number) {
           WHERE visible_copy.title_id = t.title_id
             AND visible_copy.lifecycle_status = 'Active'
             AND visible_copy.availability_status IN ('Available', 'Borrowed', 'Reserved')
+            AND visible_copy.material_id IS NOT NULL
        )
      LIMIT 1`,
     [titleId],
@@ -292,7 +236,6 @@ export async function queryViewerActiveBookCount(database: Pool, accountId: numb
              ON borrowed_copy.physical_copy_id = bt.physical_copy_id
              OR (bt.physical_copy_id IS NULL AND borrowed_copy.material_id = bt.material_id)
           WHERE bt.transaction_status IN ('Pending', 'Borrowed', 'Overdue')
-            AND bt.lost_confirmed_at IS NULL
          UNION ALL
          SELECT r.user_id, r.material_id, COALESCE(r.book_title_id, reserved_copy.title_id) AS title_id
            FROM reservations r

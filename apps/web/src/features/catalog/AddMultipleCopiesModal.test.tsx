@@ -22,6 +22,7 @@ describe('AddMultipleCopiesModal', () => {
     fireEvent.change(isbn, { target: { value: '9780132350884' } })
     fireEvent.blur(isbn)
     await waitFor(() => expect(api.lookupIsbn).toHaveBeenCalledWith('9780132350884', expect.any(AbortSignal)))
+    await screen.findByDisplayValue('Clean Code')
     expect((screen.getByLabelText(/Title \*/i) as HTMLInputElement).value).toBe('Clean Code')
     expect((screen.getByLabelText(/Author \*/i) as HTMLInputElement).value).toBe('Robert C. Martin')
     expect((screen.getByLabelText(/Publisher/i) as HTMLInputElement).value).toBe('Prentice Hall')
@@ -30,11 +31,11 @@ describe('AddMultipleCopiesModal', () => {
     expect((screen.getByLabelText(/Call number/i) as HTMLInputElement).value).toBe('005.1 MAR')
     expect((screen.getByLabelText(/Category \*/i) as HTMLSelectElement).value).toBe('2')
     expect((screen.getByLabelText(/Book location \*/i) as HTMLInputElement).value).toBe('Aisle 3')
-    expect((screen.getByLabelText(/Book location \*/i) as HTMLInputElement).readOnly).toBe(true)
+    expect(screen.getByLabelText(/Book location \*/i).tagName).toBe('SELECT')
     expect(screen.getByText(/Book information found from Google Books/i)).toBeTruthy()
   })
 
-  it('uses the category shelf as the read-only book location and renders the inline preview', async () => {
+  it('defaults to the category shelf and renders the inline preview', async () => {
     api.createBulkBook.mockResolvedValue({ titleId: 8, createdTitle: true, numberOfCopies: 2, copies: [] })
     const created = vi.fn()
     render(<AddMultipleCopiesModal categories={categories} onCreated={created} onClose={() => undefined} />)

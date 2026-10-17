@@ -4,27 +4,46 @@ import type { Pool } from 'mysql2/promise'
 import { HttpError } from '../../core/http-error.ts'
 import { createCirculationService } from './circulation.service.ts'
 
+const legacyPolicyRow = {
+  borrowing_policy_version_id: 1, effective_on: '2000-01-01', student_max_active_books: 2, faculty_max_active_books: null,
+  borrowing_days: 1, due_time_cutoff: '08:59:00', max_renewals: 1, renewal_extension_days: 1,
+  student_max_active_reservations: 2, faculty_max_active_reservations: null,
+  block_renewal_if_overdue: 1, block_renewal_if_unpaid_fines: 1, block_renewal_if_reserved: 1,
+  long_overdue_after_days: null, change_reason: 'Legacy baseline', created_by_user_id: null, created_at: '2000-01-01',
+}
+
+test('cart reconciliation reads only the owner active loans and queue titles without writing',async()=>{
+  let calls=0
+  const database={execute:async(sql:string,args:unknown[])=>{
+    calls++;assert.deepEqual(args,[7]);assert.match(sql,/WHERE a.account_id=\?/)
+    assert.match(sql,/transaction_status IN \('Pending','Borrowed','Overdue'\)/)
+    assert.match(sql,/reservation_status IN \('pending','approved','ready_for_pickup'\)/)
+    assert.doesNotMatch(sql,/\b(INSERT|UPDATE|DELETE)\b/)
+    return [[{title_id:'12'},{title_id:20}]]
+  }} as unknown as Pool
+  assert.deepEqual(await createCirculationService(database).cartState(7),{activeTitleIds:[12,20]})
+  await assert.rejects(createCirculationService(database).cartState(0))
+  assert.equal(calls,1)
+})
+
 function checkoutPool(role: 'Student' | 'Faculty', activeCount = 0, readyClaim: boolean | 'cart' = false, condition = 'Good') {
-  const state = { commits: 0, rollbacks: 0, borrowInserts: 0, queueCompactions: 0, notifications: 0, capacitySql: '' }
+  const state = { commits: 0, rollbacks: 0, borrowInserts: 0, queueCompactions: 0, notifications: 0, overrideInserts: 0 }
   const connection = {
     async beginTransaction() {}, async commit() { state.commits += 1 }, async rollback() { state.rollbacks += 1 }, release() {},
     async execute(sql: string) {
+      if (sql.includes('FROM borrowing_policy_versions')) return [[legacyPolicyRow]]
+      if (sql.includes('FROM borrowing_policy_material_rules')) return [[{ borrowing_policy_version_id: 1, material_type: 'Book', is_borrowable: 1 }, { borrowing_policy_version_id: 1, material_type: 'Thesis/Manuscript', is_borrowable: 0 }]]
       if (sql.includes('SELECT user_id FROM accounts')) return [[{ user_id: 2 }]]
       if (sql.includes('FROM users u INNER JOIN roles')) return [[{ user_id: 7, full_name: 'Test Borrower', institutional_id: 'STI-7', school_id: 'STI-7', role_name: role, account_status: 'Active' }]]
       if (sql.includes('FROM physical_copies pc INNER JOIN titles')) return [[{ physical_copy_id: 20, title_id: 10, material_id: 30, accession_number: 'ACC-20', barcode: 'BOOK-20', condition_status: condition, availability_status: 'Available', lifecycle_status: 'Active', title: 'Clean Code', material_type: 'Book' }]]
       if (sql.includes('SELECT transaction_id, user_id, transaction_status')) return [readyClaim ? [{ transaction_id: 54, user_id: 7, transaction_status: 'Pending', request_group_id: 'group-1', reservation_id: readyClaim === true ? 99 : null }] : []]
       if (sql.includes('FROM reservations') && sql.includes('ORDER BY queue_position')) return [readyClaim === true ? [{ reservation_id: 99, user_id: 7, queue_position: 1, reservation_status: 'ready_for_pickup' }] : []]
-      if (sql.includes('COUNT(DISTINCT activity.title_id)')) {
-        state.capacitySql = sql
-        return [[{ active_count: activeCount, target_already_active: 0 }]]
-      }
-      if (sql.includes('as unpaid')) return [[{ unpaid: 0 }]]
-      if (sql.includes('as overdue')) return [[{ overdue: 0 }]]
+      if (sql.includes('SELECT queue_position FROM reservations')) return [[{ queue_position: 1 }]]
+      if (sql.includes('COUNT(DISTINCT activity.title_id)')) return [[{ active_count: activeCount, target_already_active: 0 }]]
+      if (sql.includes("transaction_status IN ('Borrowed','Overdue')")) return [[{ active_count: 0 }]]
       if (sql.includes('FROM library_closed_days')) return [[]]
-      if (sql.includes('FROM library_operating_schedule')) return [[{ closes_at: '17:00:00', is_open: 1 }]]
-      if (sql.includes('FROM attendance_logs')) return [[{ log_id: 1 }]]
-      if (sql.includes('INSERT INTO attendance_logs')) return [{ insertId: 1, affectedRows: 1 }]
       if (sql.includes('INSERT INTO borrow_transactions')) { state.borrowInserts += 1; return [{ insertId: 55, affectedRows: 1 }] }
+      if (sql.includes('INSERT INTO circulation_override_events')) { state.overrideInserts += 1; return [{ insertId: 1, affectedRows: 1 }] }
       if (sql.includes('UPDATE borrow_transactions')) return [{ affectedRows: 1 }]
       if (sql.includes("UPDATE reservations SET reservation_status = 'claimed'")) return [{ affectedRows: 1 }]
       if (sql.includes('UPDATE reservations SET queue_position')) { state.queueCompactions += 1; return [{ affectedRows: 1 }] }
@@ -33,7 +52,7 @@ function checkoutPool(role: 'Student' | 'Faculty', activeCount = 0, readyClaim: 
       throw new Error(`Unexpected SQL: ${sql}`)
     },
   }
-  return { state, database: { getConnection: async () => connection } as unknown as Pool }
+  return { state, database: { getConnection: async () => connection, execute: connection.execute.bind(connection) } as unknown as Pool }
 }
 
 test('student checkout at the combined two-item cap rolls back before inserting', async () => {
@@ -42,7 +61,6 @@ test('student checkout at the combined two-item cap rolls back before inserting'
     assert.ok(error instanceof HttpError); assert.equal(error.status, 422); assert.equal(error.code, 'STUDENT_BORROW_LIMIT_REACHED'); return true
   })
   assert.equal(state.borrowInserts, 0); assert.equal(state.commits, 0); assert.equal(state.rollbacks, 1)
-  assert.match(state.capacitySql, /lost_confirmed_at IS NULL/)
 })
 
 test('faculty checkout bypasses the cap and commits synchronized availability and alerts', async () => {
@@ -52,13 +70,37 @@ test('faculty checkout bypasses the cap and commits synchronized availability an
   assert.equal(state.borrowInserts, 1); assert.equal(state.notifications, 2); assert.equal(state.commits, 1); assert.equal(state.rollbacks, 0)
 })
 
-test('checkout accepts a damaged copy when its manual availability is Available', async () => {
+test('damaged Available checkout requires confirmation and writes an override audit row', async () => {
   const { state, database } = checkoutPool('Student', 0, false, 'Damaged')
-  const result = await createCirculationService(database).confirmCheckout(1, { barcode: 'book-20', school_id: 'sti-7' })
+  const service = createCirculationService(database)
+  await assert.rejects(service.confirmCheckout(1, { barcode: 'book-20', school_id: 'sti-7' }), (error: unknown) => {
+    assert.ok(error instanceof HttpError)
+    assert.equal(error.code, 'CIRCULATION_CONFIRMATION_REQUIRED')
+    return true
+  })
+  assert.equal(state.rollbacks, 1)
+  const preflight = await service.preflightCheckout(1, { barcode: 'book-20', school_id: 'sti-7', flow: 'walk_in' })
+  assert.equal(preflight.decision, 'confirmation_required')
+  assert.ok(preflight.preflightToken)
+  const result = await service.confirmCheckout(1, {
+    barcode: 'book-20',
+    school_id: 'sti-7',
+    preflightToken: preflight.preflightToken,
+    overrideReason: 'Cover is worn but pages and binding are usable.',
+  })
   assert.equal(result.transactionId, 55)
   assert.equal(state.borrowInserts, 1)
+  assert.equal(state.overrideInserts, 1)
   assert.equal(state.commits, 1)
-  assert.equal(state.rollbacks, 0)
+})
+
+test('preflight performs no database writes', async () => {
+  const { state, database } = checkoutPool('Student', 0)
+  const result = await createCirculationService(database).preflightCheckout(1, { barcode: 'book-20', school_id: 'sti-7', flow: 'walk_in' })
+  assert.equal(result.decision, 'ready')
+  assert.equal(state.borrowInserts, 0)
+  assert.equal(state.commits, 0)
+  assert.equal(state.overrideInserts, 0)
 })
 
 test('physical desk fulfillment activates only the matching ready reservation claim', async () => {
@@ -161,6 +203,10 @@ test('student owner can cancel their pending request while another student is fo
 test('borrowing history exposes the normalized title cover path', async () => {
   const database = {
     async execute(sql: string) {
+      if (sql.includes('FROM borrowing_policy_versions')) return [[legacyPolicyRow]]
+      if (sql.includes('FROM borrowing_policy_material_rules')) {
+        return [[{ borrowing_policy_version_id: 1, material_type: 'Book', is_borrowable: 1 }, { borrowing_policy_version_id: 1, material_type: 'Thesis/Manuscript', is_borrowable: 0 }]]
+      }
       if (sql.includes('SELECT user_id, role FROM accounts')) return [[{ user_id: 7, role: 'Student' }]]
       if (sql.includes('FROM borrow_transactions bt INNER JOIN materials')) return [[{
         transaction_id: 41, title_id: 9, title: 'Clean Code', author: 'Robert C. Martin',
@@ -175,103 +221,6 @@ test('borrowing history exposes the normalized title cover path', async () => {
 
   const result = await createCirculationService(database).history(1, { page: 1, limit: 25 })
   assert.equal(result.items[0].coverImagePath, '/api/assets/covers/clean-code.png')
-})
-
-function eligibilityPool(row: Record<string, unknown> | null, loans: Array<Record<string, unknown>> = [], checkedIn = false) {
-  return {
-    async execute(sql: string, params: unknown[]) {
-      if (sql.includes('FROM users u')) {
-        assert.match(sql, /lost_confirmed_at IS NULL/)
-        assert.deepEqual(params, ['STI-7'])
-        return [row ? [row] : []]
-      }
-      if (sql.includes('FROM borrow_transactions bt')) {
-        assert.deepEqual(params, [row?.user_id])
-        return [loans]
-      }
-      if (sql.includes('unpaid_replacement_count')) {
-        assert.deepEqual(params, [row?.user_id, row?.user_id, row?.user_id])
-        return [[{ overdue_count: 0, unpaid_fine_count: 0, unpaid_replacement_count: 0 }]]
-      }
-      if (sql.includes("reservation_status='ready_for_pickup'")) {
-        assert.deepEqual(params, [row?.user_id])
-        return [[]]
-      }
-      if (sql.includes('FROM attendance_logs')) {
-        assert.deepEqual(params, [row?.user_id])
-        return [checkedIn ? [{ log_id: 1 }] : []]
-      }
-      throw new Error(`Unexpected eligibility SQL: ${sql}`)
-    },
-  } as unknown as Pool
-}
-
-test('checkout scan rejects a student who already holds the two-book limit', async () => {
-  const result = await createCirculationService(eligibilityPool({
-    user_id: 7, full_name: 'Ada Student', school_id: 'STI-7', role_name: 'Student', account_status: 'Active', active_loans: 2,
-  })).checkoutEligibility('sti-7')
-  assert.equal(result.allowed, false)
-  assert.equal(result.activeLoans, 2)
-  assert.equal(result.loanLimit, 2)
-  assert.deepEqual(result.openLoans, [])
-  assert.match(result.message ?? '', /2 active loans/)
-})
-
-test('checkout scan includes open loans so a blocked student can be returned from the desk', async () => {
-  const result = await createCirculationService(eligibilityPool({
-    user_id: 7, full_name: 'Ada Student', school_id: 'STI-7', role_name: 'Student', account_status: 'Active', active_loans: 2,
-  }, [
-    { transaction_id: 11, title: 'Clean Code', accession_number: 'ACC-11', barcode: 'BOOK-11', due_at: '2026-08-24T08:59:00', transaction_status: 'Borrowed' },
-    { transaction_id: 12, title: 'Database Systems', accession_number: null, barcode: 'BOOK-12', due_at: '2026-08-23T08:59:00', transaction_status: 'Overdue' },
-  ])).checkoutEligibility('sti-7')
-  assert.equal(result.allowed, false)
-  assert.deepEqual(result.openLoans, [
-    { transactionId: 11, title: 'Clean Code', accessionNumber: 'ACC-11', barcode: 'BOOK-11', dueDate: '2026-08-24T08:59:00', status: 'Borrowed' },
-    { transactionId: 12, title: 'Database Systems', accessionNumber: null, barcode: 'BOOK-12', dueDate: '2026-08-23T08:59:00', status: 'Overdue' },
-  ])
-})
-
-test('checkout scan still accepts a student with an open loan slot', async () => {
-  const result = await createCirculationService(eligibilityPool({
-    user_id: 7, full_name: 'Ada Student', school_id: 'STI-7', role_name: 'Student', account_status: 'Active', active_loans: 1,
-  }, [], true)).checkoutEligibility('STI-7')
-  assert.equal(result.allowed, true)
-  assert.deepEqual(result.openLoans, [])
-  assert.equal(result.message, null)
-  assert.equal(result.checkedIn, true)
-})
-
-test('checkout scan blocks a student who is not checked in', async () => {
-  const result = await createCirculationService(eligibilityPool({
-    user_id: 7, full_name: 'Ada Student', school_id: 'STI-7', role_name: 'Student', account_status: 'Active', active_loans: 1,
-  })).checkoutEligibility('STI-7')
-  assert.equal(result.allowed, false)
-  assert.equal(result.checkedIn, false)
-  assert.match(result.message ?? '', /must check in at attendance/i)
-})
-
-test('checkout scan does not apply the student loan cap to faculty', async () => {
-  const result = await createCirculationService(eligibilityPool({
-    user_id: 8, full_name: 'Jun Faculty', school_id: 'STI-7', role_name: 'Faculty', account_status: 'Active', active_loans: 6,
-  }, [], true)).checkoutEligibility('STI-7')
-  assert.equal(result.allowed, true)
-  assert.equal(result.loanLimit, null)
-})
-
-test('confirm checkout rejects borrowers without an open attendance visit', async () => {
-  const { state, database } = checkoutPool('Student', 0)
-  const connection = await database.getConnection()
-  const originalExecute = connection.execute.bind(connection)
-  connection.execute = async (sql: string) => {
-    if (sql.includes('FROM attendance_logs')) return [[]]
-    return originalExecute(sql)
-  }
-  await assert.rejects(createCirculationService(database).confirmCheckout(1, { barcode: 'book-20', school_id: 'sti-7' }), (error: unknown) => {
-    assert.ok(error instanceof HttpError)
-    assert.equal(error.code, 'ATTENDANCE_REQUIRED')
-    return true
-  })
-  assert.equal(state.borrowInserts, 0)
-  assert.equal(state.commits, 0)
-  assert.equal(state.rollbacks, 1)
+  assert.equal(result.summary.loanLimit, 2)
+  assert.equal(result.summary.dueCutoffLabel, 'See the exact due date and time for each loan')
 })

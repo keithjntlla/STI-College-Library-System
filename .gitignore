@@ -10,12 +10,13 @@ dist/
 # Runtime uploads and generated assets
 apps/storage/
 apps/api/public/assets/covers/
-apps/api/uploads/
-apps/web/public/covers/
 .vercel
 .env*
 
-# Local skill binaries
-.cursor/skills/**/bin/
-.cursor/skills/**/*.exe
+# Local chat attachments and generated previews/deliverables
+/.codex-remote-attachments/
+/output/
 
+# Python bytecode generated while producing documentation
+__pycache__/
+*.pyc

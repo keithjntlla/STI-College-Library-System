@@ -59,7 +59,6 @@ export function createAssetCodeService(database: Pool = db) {
         physicalCopyId: asset.physicalCopyId,
         titleId: asset.titleId,
         title: asset.title,
-        coverImagePath: asset.coverImagePath,
         author: asset.author,
         accessionNumber: asset.accessionNumber,
         barcode: asset.barcode,

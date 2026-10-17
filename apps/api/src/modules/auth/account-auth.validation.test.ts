@@ -16,15 +16,13 @@ test('registration validator trims identity fields and accepts the mobile form c
   assert.equal(result.schoolEmail, 'juan.1234@ormoc.sti.edu.ph')
 })
 
-test('Faculty registration accepts optional academic fields but requires school email', () => {
+test('nonstudent registration accepts optional academic fields but requires school email', () => {
   const result = validateAccountRegistration({
-    role: 'Faculty', school_id: 'FAC-104', school_email: 'faculty.104@ormoc.sti.edu.ph',
-    first_name: 'Campus', last_name: 'Faculty', password: 'LibraryPass9', confirm_password: 'LibraryPass9',
+    role: 'Staff', school_id: 'STAFF-104', school_email: 'staff.104@ormoc.sti.edu.ph',
+    first_name: 'Library', last_name: 'Assistant', password: 'LibraryPass9', confirm_password: 'LibraryPass9',
   })
   assert.equal(result.isValid, true)
-  assert.equal(result.role, 'Faculty')
-  assert.equal(validateAccountRegistration({ ...result, role: 'Staff' }).isValid, false)
-  assert.equal(validateAccountRegistration({ ...result, role: 'Librarian' }).isValid, false)
+  assert.equal(result.role, 'Staff')
   assert.equal(validateAccountRegistration({ ...result, role: 'Admin' }).isValid, false)
 })
 
@@ -40,9 +38,28 @@ test('registration validator returns field errors for missing data and mismatche
   assert.equal(result.errors.confirm_password, 'Password confirmation does not match.')
 })
 
-test('login validator requires school ID and password', () => {
-  const invalid = validateRoleLogin({ school_id: '', password: '' })
+test('login validator requires a supported portal, school ID, and password', () => {
+  const invalid = validateRoleLogin({ portal: 'Visitor', school_id: '', password: '' })
   assert.equal(invalid.isValid, false)
+  assert.ok(invalid.errors.portal)
   assert.ok(invalid.errors.school_id)
   assert.ok(invalid.errors.password)
+})
+
+test('login infers the role rather than requiring a role selection', () => {
+  const result = validateRoleLogin({school_id:'STUDENT-123',password:'Password123'})
+  assert.equal(result.isValid,true)
+  assert.equal(result.portal,'user')
+})
+
+test('login accepts current portals and the previous personnel alias without a role selector', () => {
+  for (const portal of ['user', 'staff', 'personnel']) {
+    const result = validateRoleLogin({ portal, school_id: 'STI-2026-1234', password: 'LibraryPass9' })
+    assert.equal(result.isValid, true)
+    assert.equal(result.portal, portal === 'personnel' ? 'staff' : portal)
+    assert.equal(result.role, '')
+  }
+  for (const portal of [null, 42, 'admin', '']) {
+    assert.equal(validateRoleLogin({ portal, school_id: 'STI-2026-1234', password: 'LibraryPass9' }).isValid, false)
+  }
 })

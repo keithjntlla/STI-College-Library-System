@@ -15,7 +15,6 @@ export type CatalogSearchFilters = {
   query: string | null
   scope: CatalogScope
   categoryId: number | null
-  programId: number | null
   author: string | null
   publicationYear: number | null
   availability: string | null
@@ -67,7 +66,6 @@ export function parseCatalogSearchFilters(query: Record<string, unknown>): Catal
     query: firstQueryValue(query.q ?? query.query).trim().slice(0, 255) || null,
     scope: scopeValue as CatalogScope,
     categoryId: optionalPositiveInteger(query.categoryId, 'categoryId'),
-    programId: optionalPositiveInteger(query.programId ?? query.program_id, 'programId'),
     author: firstQueryValue(query.author).trim().slice(0, 255) || null,
     publicationYear,
     availability,
@@ -86,14 +84,6 @@ export function buildCatalogSearchQuery(filters: CatalogSearchFilters) {
   if (filters.categoryId !== null) {
     where.push('t.category_id = ?')
     parameters.push(filters.categoryId)
-  }
-  if (filters.programId !== null) {
-    where.push(`EXISTS (
-      SELECT 1 FROM program_categories program_link
-       WHERE program_link.category_id = t.category_id
-         AND program_link.program_id = ?
-    )`)
-    parameters.push(filters.programId)
   }
   if (filters.publicationYear !== null) {
     where.push('t.publication_year = ?')
@@ -127,11 +117,10 @@ export function buildCatalogSearchQuery(filters: CatalogSearchFilters) {
     const like = `%${filters.query}%`
     where.push(`(
       t.title LIKE ? OR t.isbn LIKE ? OR t.call_number LIKE ? OR
-      c.category_name LIKE ? OR
       rr.research_code LIKE ? OR rr.abstract_text LIKE ? OR
       EXISTS (SELECT 1 FROM authors aq WHERE aq.title_id = t.title_id AND aq.author_name LIKE ?)
     )`)
-    parameters.push(like, like, like, like, like, like, like)
+    parameters.push(like, like, like, like, like, like)
   }
 
   const whereSql = `WHERE ${where.join('\n AND ')}`
@@ -151,7 +140,7 @@ export function buildCatalogSearchQuery(filters: CatalogSearchFilters) {
   const safeLimit = Math.min(Math.max(Math.trunc(filters.limit), 1), 100)
   const safeOffset = Math.max((Math.trunc(filters.page) - 1) * safeLimit, 0)
   const dataSql = `SELECT
-      t.title_id, t.record_type, t.title, t.cover_image_path, t.isbn, t.publication_year, t.synopsis,
+      t.title_id, t.record_type, t.title, t.cover_image_path, t.isbn, t.publication_year,
       t.publisher, t.call_number, t.category_id, t.row_version, c.category_name,
       c.shelf_location AS category_shelf_location,
       rr.research_record_id, rr.research_code, rr.adviser_name,
@@ -173,7 +162,7 @@ export function buildCatalogSearchQuery(filters: CatalogSearchFilters) {
     LEFT JOIN authors a ON a.title_id = t.title_id
     LEFT JOIN physical_copies pc ON pc.title_id = t.title_id
     ${whereSql}
-    GROUP BY t.title_id, t.record_type, t.title, t.cover_image_path, t.isbn, t.publication_year, t.synopsis,
+    GROUP BY t.title_id, t.record_type, t.title, t.cover_image_path, t.isbn, t.publication_year,
       t.publisher, t.call_number, t.category_id, t.row_version, c.category_name, c.shelf_location,
       rr.research_record_id, rr.research_code, rr.adviser_name,
       rr.department_or_program, rr.abstract_text, rr.keywords_text, rr.viewing_status,
@@ -203,7 +192,6 @@ function toCatalogItem(row: RowDataPacket) {
     recordType: row.record_type,
     title: row.title,
     coverImagePath: row.cover_image_path ? String(row.cover_image_path) : null,
-    synopsis: row.synopsis ? String(row.synopsis) : null,
     authors: row.authors ? String(row.authors).split(', ') : [],
     isbn: row.isbn,
     publicationYear: row.publication_year,
@@ -232,36 +220,6 @@ function toCatalogItem(row: RowDataPacket) {
       viewingStatus: row.viewing_status,
     } : null,
   }
-}
-
-export function buildPublicBookCategoriesQuery(programId: number | null = null) {
-  const programJoin = programId === null
-    ? ''
-    : `INNER JOIN program_categories pc
-         ON pc.category_id = c.category_id
-        AND pc.program_id = ?`
-  return {
-    sql: `SELECT c.category_id, c.category_name, COUNT(DISTINCT t.title_id) AS book_count
-    FROM categories c
-    INNER JOIN titles t ON t.category_id = c.category_id
-     AND t.lifecycle_status = 'Active'
-     AND t.record_type = 'Book'
-    ${programJoin}
-    GROUP BY c.category_id, c.category_name
-    ORDER BY c.category_name ASC, c.category_id ASC`,
-    parameters: programId === null ? [] : [programId],
-  }
-}
-
-export async function listPublicBookCategories(database: Pool, programId: number | null = null) {
-  const query = buildPublicBookCategoriesQuery(programId)
-  const [rows] = await database.execute<RowDataPacket[]>(query.sql, query.parameters)
-  return rows.flatMap((row) => {
-    const bookCount = Number(row.book_count ?? 0)
-    const categoryName = row.category_name ? String(row.category_name) : ''
-    if (bookCount < 1 || !categoryName) return []
-    return [{ categoryId: Number(row.category_id), categoryName, bookCount }]
-  })
 }
 
 export async function searchCatalog(database: Pool, filters: CatalogSearchFilters) {

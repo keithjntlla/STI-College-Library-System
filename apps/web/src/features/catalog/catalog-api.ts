@@ -1,4 +1,4 @@
-import type { GeneratedBookLabel,  AdminBookAsset, BulkBookResult, CatalogFilters, CatalogItem, Category, CategoryAssignmentResult, IsbnMetadata, PhysicalCopy } from './types'
+import type { AdminBookAsset, BulkBookResult, CatalogFilters, CatalogItem, Category, CategoryAssignmentResult, IsbnMetadata, PhysicalCopy } from './types'
 import { getAccessToken } from '../auth/auth-storage'
 
 export class ApiError extends Error {
@@ -72,57 +72,7 @@ export const catalogApi = {
   ),
   createBook: (body: unknown) => request('/api/catalog/books', { method: 'POST', body: JSON.stringify(body) }),
   createBulkBook: (body: unknown) => request<BulkBookResult>('/api/v1/admin/catalog/bulk-entry', { method: 'POST', body: JSON.stringify(body) }),
-  async bulkImport(file: File) {
-    const body = new FormData()
-    body.set('file', file)
-    const headers = new Headers({ Accept: 'application/json' })
-    const token = getAccessToken()
-    if (token) headers.set('Authorization', `Bearer ${token}`)
-    const response = await fetch('/api/v1/admin/catalog/bulk-import', {
-      method: 'POST',
-      body,
-      headers,
-      credentials: 'include',
-    })
-    const payload = await response.json() as {
-      success?: boolean
-      message?: string
-      code?: string
-      data?: { booksCreated: number; copiesCreated: number }
-    }
-    if (!response.ok || !payload.success || !payload.data) {
-      throw new ApiError(payload.message ?? 'The CSV import could not be completed.', payload.code ?? 'BULK_IMPORT_FAILED')
-    }
-    return { ...payload.data, message: payload.message ?? `Successfully imported ${payload.data.booksCreated} books and ${payload.data.copiesCreated} copies.` }
-  },
-  async bulkImportResearch(file: File) {
-    const body = new FormData()
-    body.set('file', file)
-    const headers = new Headers({ Accept: 'application/json' })
-    const token = getAccessToken()
-    if (token) headers.set('Authorization', `Bearer ${token}`)
-    const response = await fetch('/api/v1/admin/catalog/bulk-import-research', {
-      method: 'POST',
-      body,
-      headers,
-      credentials: 'include',
-    })
-    const payload = await response.json() as {
-      success?: boolean
-      message?: string
-      code?: string
-      data?: { thesesCreated: number }
-    }
-    if (!response.ok || !payload.success || !payload.data) {
-      throw new ApiError(payload.message ?? 'The research CSV import could not be completed.', payload.code ?? 'BULK_IMPORT_FAILED')
-    }
-    return {
-      thesesCreated: payload.data.thesesCreated,
-      message: payload.message ?? `Successfully imported ${payload.data.thesesCreated} research theses.`,
-    }
-  },
   lookupIsbn: (isbn: string, signal?: AbortSignal) => request<IsbnMetadata>(`/api/v1/admin/books/isbn/${encodeURIComponent(isbn)}`, { signal }),
-  copyByBarcode: (barcode: string, signal?: AbortSignal) => request<GeneratedBookLabel>(`/api/catalog/books/copies/${encodeURIComponent(barcode)}`, { signal }),
   asset: (physicalCopyId: number, signal?: AbortSignal) => request<AdminBookAsset>(`/api/v1/admin/books/assets/${physicalCopyId}`, { signal }),
   researchAsset: (researchInventoryId: number, signal?: AbortSignal) => request<AdminBookAsset>(`/api/v1/admin/research/assets/${researchInventoryId}`, { signal }),
   async downloadAssetPng(assetId: number, kind: 'barcode' | 'qr', assetType: 'book' | 'research' = 'book') {

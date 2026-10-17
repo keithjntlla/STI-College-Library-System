@@ -2,6 +2,7 @@ import type { Pool, RowDataPacket } from 'mysql2/promise'
 import { db } from '../../config/db.js'
 import { isPostgres } from '../../config/sql-dialect.js'
 import { HttpError } from '../../core/http-error.ts'
+import { requireLibraryActor } from '../../core/library-permissions.ts'
 
 const statuses = ['Active', 'Deactivated', 'Archived'] as const
 type Status = typeof statuses[number]
@@ -16,6 +17,13 @@ function reason(value: unknown) {
   const result = typeof value === 'string' ? value.trim() : ''
   if (result.length < 3 || result.length > 500) throw new HttpError(422, 'USER_REASON_REQUIRED', 'Give a reason between 3 and 500 characters.')
   return result
+}
+function profile(body: Record<string, unknown>) {
+  const firstName = String(body.first_name ?? '').trim(), lastName = String(body.last_name ?? '').trim()
+  const program = String(body.program_strand ?? '').trim(), year = String(body.year_grade_level ?? '').trim()
+  if (!firstName || firstName.length > 100 || !lastName || lastName.length > 100) throw new HttpError(422, 'USER_NAME_INVALID', 'Enter first and last names up to 100 characters each.')
+  if (program.length > 150 || year.length > 100) throw new HttpError(422, 'USER_ACADEMIC_DETAILS_INVALID', 'Program and year or grade level are too long.')
+  return { firstName, lastName, program, year }
 }
 export function parseUserFilters(q: Record<string, unknown>): UserFilters {
   const status = String(q.status ?? '').trim()
@@ -78,8 +86,7 @@ export class UsersRepository {
     const [rows] = await this.pool.execute<RowDataPacket[]>(
       `SELECT a.account_id id,a.school_id,a.role,a.account_status,u.email,u.user_id,
               sp.first_name,sp.last_name,sp.program_strand,sp.year_grade_level,
-              COALESCE(NULLIF(CONCAT_WS(' ',sp.first_name,sp.last_name),''),NULLIF(u.full_name,''),a.school_id) full_name,
-              u.course_or_strand
+              COALESCE(u.full_name,a.school_id) full_name, u.course_or_strand
          FROM accounts a LEFT JOIN users u ON u.user_id=a.user_id
          LEFT JOIN student_profiles sp ON sp.account_id=a.account_id WHERE a.account_id=?`, [accountId])
     if (!rows[0]) throw new HttpError(404, 'USER_NOT_FOUND', 'Account not found.')
@@ -129,10 +136,44 @@ export class UsersRepository {
     records.profile_pictures = avatarHistory
     return { ...rows[0], events, records }
   }
-  async editProfile(value: unknown, actorValue: unknown, _body: Record<string, unknown>) {
-    const accountId = id(value), actor = id(actorValue)
+  async editProfile(value: unknown, actorValue: unknown, body: Record<string, unknown>) {
+    const accountId = id(value), actor = id(actorValue), input = profile(body)
     if (accountId !== actor) throw new HttpError(403, 'USER_PROFILE_OWNER_REQUIRED', 'Only the account owner can edit this profile.')
-    throw new HttpError(403, 'USER_PROFILE_LOCKED', 'Name, program, and grade level are fixed. Contact the library if your identity details need a correction.')
+    const connection = await this.pool.getConnection()
+    try {
+      await connection.beginTransaction()
+      const [accounts] = await connection.execute<RowDataPacket[]>('SELECT account_id,user_id,role,account_status FROM accounts WHERE account_id=? FOR UPDATE', [accountId])
+      const account = accounts[0]
+      if (!account) throw new HttpError(404, 'USER_NOT_FOUND', 'Account not found.')
+      if (account.account_status !== 'Active') throw new HttpError(403, 'USER_ACCOUNT_INACTIVE', 'This account cannot edit its profile.')
+      if (!account.user_id) throw new HttpError(409, 'USER_PROFILE_NOT_LINKED', 'This account needs its operational profile linked before editing.')
+      const [users] = await connection.execute<RowDataPacket[]>('SELECT full_name,email,course_or_strand FROM users WHERE user_id=? FOR UPDATE', [account.user_id])
+      if (!users[0]) throw new HttpError(409, 'USER_PROFILE_NOT_LINKED', 'This account needs its operational profile linked before editing.')
+      if (body.email !== undefined && String(body.email).trim().toLowerCase() !== String(users[0].email ?? '').toLowerCase()) throw new HttpError(422, 'USER_EMAIL_FIXED', 'School email cannot be changed.')
+      const [profiles] = account.role === 'Student'
+        ? await connection.execute<RowDataPacket[]>('SELECT first_name,last_name,program_strand,year_grade_level FROM student_profiles WHERE account_id=? FOR UPDATE', [accountId])
+        : [[] as RowDataPacket[]]
+      if (account.role === 'Student' && (!input.program || !input.year)) throw new HttpError(422, 'USER_ACADEMIC_DETAILS_INVALID', 'Enter a program and year or grade level.')
+      const parts = String(users[0].full_name ?? '').trim().split(/\s+/)
+      const old = { first_name: profiles[0]?.first_name ?? parts[0] ?? '', last_name: profiles[0]?.last_name ?? parts.slice(1).join(' '), program_strand: profiles[0]?.program_strand ?? users[0]?.course_or_strand ?? '', year_grade_level: profiles[0]?.year_grade_level ?? '' }
+      const next = { first_name: input.firstName, last_name: input.lastName, program_strand: account.role === 'Student' ? input.program : old.program_strand, year_grade_level: account.role === 'Student' ? input.year : old.year_grade_level }
+      const changedFields = (Object.keys(next) as Array<keyof typeof next>).filter(key => String(old[key]) !== String(next[key]))
+      if (!changedFields.length) throw new HttpError(422, 'USER_NO_CHANGES', 'Change at least one profile field before saving.')
+      if (account.role === 'Student') await connection.execute('UPDATE users SET full_name=?,course_or_strand=?,updated_at=NOW() WHERE user_id=?', [`${input.firstName} ${input.lastName}`, input.program, account.user_id])
+      else await connection.execute('UPDATE users SET full_name=?,updated_at=NOW() WHERE user_id=?', [`${input.firstName} ${input.lastName}`, account.user_id])
+      if (account.role === 'Student') {
+        if (profiles[0]) await connection.execute('UPDATE student_profiles SET first_name=?,last_name=?,program_strand=?,year_grade_level=?,updated_at=NOW() WHERE account_id=?', [input.firstName, input.lastName, input.program, input.year, accountId])
+        else await connection.execute('INSERT INTO student_profiles(account_id,first_name,last_name,program_strand,year_grade_level) VALUES (?,?,?,?,?)', [accountId, input.firstName, input.lastName, input.program, input.year])
+      }
+      await connection.execute(`INSERT INTO account_management_events(account_id,actor_account_id,action_code,previous_status,new_status,changed_fields,reason)
+        VALUES (?,?,'ProfileEdited',?,?,?,?)`, [accountId, actor, account.account_status, account.account_status, changedFields.join(','), 'Updated by account owner'])
+      await connection.commit()
+      return { id: accountId, changed_fields: changedFields }
+    } catch (error) {
+      await connection.rollback()
+      if (['23505', 'ER_DUP_ENTRY'].includes((error as { code?: string })?.code ?? '')) throw new HttpError(422, 'USER_EMAIL_IN_USE', 'This email address is already used by another account.')
+      throw error
+    } finally { connection.release() }
   }
   async changeStatus(value: unknown, actorValue: unknown, body: Record<string, unknown>) {
     const accountId = id(value), actor = id(actorValue), next = String(body.status ?? '') as Status
@@ -140,10 +181,11 @@ export class UsersRepository {
     const auditReason = reason(body.reason), connection = await this.pool.getConnection()
     try {
       await connection.beginTransaction()
+      await requireLibraryActor(connection, actor, 'accounts.manage')
       const [accounts] = await connection.execute<RowDataPacket[]>('SELECT account_id,user_id,role,account_status FROM accounts WHERE account_id=? FOR UPDATE', [accountId])
       const account = accounts[0]
       if (!account) throw new HttpError(404, 'USER_NOT_FOUND', 'Account not found.')
-      if (account.role === 'Admin' || account.role === 'Librarian' || accountId === actor) throw new HttpError(403, 'USER_STATUS_PROTECTED', 'This account cannot be deactivated from User Management.')
+      if (account.role === 'Admin' || accountId === actor) throw new HttpError(403, 'USER_STATUS_PROTECTED', 'This account cannot be deactivated from User Management.')
       if (!account.user_id) throw new HttpError(409, 'USER_PROFILE_NOT_LINKED', 'This account needs its operational profile linked before changing its status.')
       if (account.account_status === next) throw new HttpError(409, 'USER_STATUS_UNCHANGED', `This account is already ${next.toLowerCase()}.`)
       await connection.execute('UPDATE accounts SET account_status=?,auth_version=auth_version+1,updated_at=NOW() WHERE account_id=?', [next, accountId])

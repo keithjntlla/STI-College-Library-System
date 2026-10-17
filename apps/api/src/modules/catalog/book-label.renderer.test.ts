@@ -10,5 +10,5 @@ test('renders a high-density Base64 QR image and a Base64 Code 128 SVG', async (
   assert.match(result.barcodeImageData, /^data:image\/svg\+xml;base64,/)
   const svg = Buffer.from(result.barcodeImageData.split(',')[1], 'base64').toString('utf8')
   assert.match(svg, /<svg/)
-  assert.match(svg, /stroke="#0b5ea2"/)
+  assert.match(svg, /stroke="#003399"/)
 })

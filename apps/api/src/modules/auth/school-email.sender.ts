@@ -1,4 +1,5 @@
 import { HttpError } from '../../core/http-error.ts'
+import { SYSTEM_SHORT_NAME } from '../../config/branding.ts'
 import nodemailer from 'nodemailer'
 
 const unavailable = () => new HttpError(503, 'EMAIL_SENDER_NOT_CONFIGURED', 'School-email verification is not configured yet. Please contact the library administrator.')
@@ -34,8 +35,24 @@ export function requireVerificationSender(address: string) {
 
 /** Send from configured Gmail, Resend, or an institution-approved Microsoft 365 mailbox. */
 export async function sendSchoolVerificationCode(address: string, code: string) {
+  return sendSchoolCode(address, code, 'registration')
+}
+
+export async function sendSchoolPasswordResetCode(address: string, code: string) {
+  return sendSchoolCode(address, code, 'recovery')
+}
+
+async function sendSchoolCode(address: string, code: string, purpose: 'registration' | 'recovery') {
+  const subject = `${SYSTEM_SHORT_NAME} ${purpose === 'recovery' ? 'password reset' : 'verification'} code`
+  const content = purpose === 'recovery'
+    ? `Your ${SYSTEM_SHORT_NAME} password reset code is ${code}. It expires in 10 minutes. If you did not request a password reset, ignore this message. Your password has not changed. Never share this code.`
+    : `Your ${SYSTEM_SHORT_NAME} verification code is ${code}. It expires in 10 minutes. If you did not request an account, ignore this message.`
+  return sendSchoolEmail(address, subject, content)
+}
+
+/** Reuse the configured server-side sender for transactional library notices. */
+export async function sendSchoolEmail(address: string, subject: string, content: string) {
   const sender = requireVerificationSender(address)
-  const content = `Your Smart Library verification code is ${code}. It expires in 10 minutes. If you did not request an account, ignore this message.`
   if (sender.provider === 'gmail') {
     try {
       const transport = nodemailer.createTransport({
@@ -48,7 +65,7 @@ export async function sendSchoolVerificationCode(address: string, code: string) 
       await transport.sendMail({
         from: sender.user,
         to: address,
-        subject: 'STI Ormoc Smart Library verification code',
+        subject,
         text: content,
       })
     } catch {
@@ -62,7 +79,7 @@ export async function sendSchoolVerificationCode(address: string, code: string) 
       response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${sender.key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: sender.from, to: [address], subject: 'STI Ormoc Smart Library verification code', text: content }),
+        body: JSON.stringify({ from: sender.from, to: [address], subject, text: content }),
         signal: AbortSignal.timeout(10000),
       })
     } catch {
@@ -84,7 +101,7 @@ export async function sendSchoolVerificationCode(address: string, code: string) 
   const sendResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender.sender)}/sendMail`, {
     method: 'POST', headers: { Authorization: `Bearer ${token.access_token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: {
-      subject: 'STI Ormoc Smart Library verification code',
+      subject,
       body: { contentType: 'Text', content },
       toRecipients: [{ emailAddress: { address } }],
     } }), signal: AbortSignal.timeout(10000),

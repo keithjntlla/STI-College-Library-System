@@ -2,12 +2,22 @@ import { Bell, CheckCircle2 } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getAccessToken, getCurrentIdentity } from '../auth/auth-storage'
-import { isNotificationAuthError, notificationApi } from './notification-api'
+import { notificationApi } from './notification-api'
 import type { NotificationItem } from './types'
+
+type BellRole = 'student' | 'faculty' | 'admin' | 'librarian' | 'staff'
 
 function formatWhen(value: string) {
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function inboxPath(role: BellRole) {
+  if (role === 'faculty') return '/faculty/notifications'
+  if (role === 'admin') return '/admin/notifications'
+  if (role === 'librarian') return '/librarian/notifications'
+  if (role === 'staff') return '/staff/notifications'
+  return '/student/notifications'
 }
 
 function resolveActionPath(path: string | null) {
@@ -15,7 +25,7 @@ function resolveActionPath(path: string | null) {
   return getCurrentIdentity()?.role === 'Faculty' ? path.replace('/student/', '/faculty/') : path
 }
 
-export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
+export function NotificationBell({ role }: { role: BellRole }) {
   const [open, setOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [items, setItems] = useState<NotificationItem[]>([])
@@ -26,16 +36,12 @@ export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
   const menuRef = useRef<HTMLDivElement>(null)
   const menuId = useId()
   const navigate = useNavigate()
-  const inboxPath = role === 'faculty' ? '/faculty/notifications' : '/student/notifications'
 
   useEffect(() => {
     if (authStopped) return
     let active = true
-    let timer: number | undefined
-
     const pollUnread = async () => {
-      const token = getAccessToken()
-      if (!token) {
+      if (!getAccessToken()) {
         if (active) {
           setUnreadCount(0)
           setAuthStopped(true)
@@ -45,23 +51,18 @@ export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
       try {
         const data = await notificationApi.list({ limit: 1, status: 'unread' })
         if (active) setUnreadCount(Number(data.unreadCount ?? 0))
-      } catch (cause) {
-        if (isNotificationAuthError(cause)) {
-          if (active) {
-            setUnreadCount(0)
-            setAuthStopped(true)
-          }
-          return
-        }
+      } catch {
         /* Quiet background poll: connectivity issues stay off the page. */
       }
     }
-
     void pollUnread()
-    timer = window.setInterval(() => void pollUnread(), 60_000)
+    const timer = window.setInterval(() => void pollUnread(), 60_000)
+    const update = () => { if (!document.hidden) void pollUnread() }
+    window.addEventListener('smartlib:notifications-updated', update)
     return () => {
       active = false
-      if (timer) window.clearInterval(timer)
+      window.clearInterval(timer)
+      window.removeEventListener('smartlib:notifications-updated', update)
     }
   }, [authStopped, role])
 
@@ -82,8 +83,7 @@ export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
   }, [open])
 
   async function loadPanel() {
-    const token = getAccessToken()
-    if (!token) {
+    if (!getAccessToken()) {
       setAuthStopped(true)
       setError('')
       setItems([])
@@ -97,13 +97,6 @@ export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
       setItems(data.items)
       setUnreadCount(Number(data.unreadCount ?? 0))
     } catch (cause) {
-      if (isNotificationAuthError(cause)) {
-        setAuthStopped(true)
-        setItems([])
-        setUnreadCount(0)
-        setError('')
-        return
-      }
       setError(cause instanceof Error ? cause.message : 'Unable to load notifications.')
     } finally {
       setLoading(false)
@@ -119,18 +112,13 @@ export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
   async function openItem(item: NotificationItem) {
     setBusy(true)
     try {
-      if (!item.isRead) await notificationApi.markRead(item.notificationId)
+      if (!item.isRead && getAccessToken()) await notificationApi.markRead(item.notificationId)
       const target = resolveActionPath(item.actionPath)
       setOpen(false)
       if (target) navigate(target)
       else await loadPanel()
       setUnreadCount((count) => (item.isRead ? count : Math.max(0, count - 1)))
     } catch (cause) {
-      if (isNotificationAuthError(cause)) {
-        setAuthStopped(true)
-        setOpen(false)
-        return
-      }
       setError(cause instanceof Error ? cause.message : 'Unable to open this notification.')
     } finally {
       setBusy(false)
@@ -138,6 +126,7 @@ export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
   }
 
   async function markAllRead() {
+    if (!getAccessToken()) return
     setBusy(true)
     setError('')
     try {
@@ -145,11 +134,6 @@ export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
       setItems((current) => current.map((item) => ({ ...item, isRead: true })))
       setUnreadCount(0)
     } catch (cause) {
-      if (isNotificationAuthError(cause)) {
-        setAuthStopped(true)
-        setOpen(false)
-        return
-      }
       setError(cause instanceof Error ? cause.message : 'Unable to mark notifications as read.')
     } finally {
       setBusy(false)
@@ -167,7 +151,7 @@ export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
         aria-controls={menuId}
         aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
         onClick={() => void toggleOpen()}
-        className="relative rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 dark:border-white/15 dark:bg-white/10 dark:text-[#f4f6f8]/80 dark:hover:bg-white/15"
+        className="relative rounded-xl border border-[#0b5ea2]/15 bg-white p-2.5 text-[#0b5ea2]/65 transition hover:bg-[#0b5ea2]/5 dark:border-white/15 dark:bg-[#22232e] dark:text-white/80 dark:hover:bg-white/10"
       >
         <Bell size={18} />
         {unreadCount > 0 ? (
@@ -182,12 +166,12 @@ export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
           id={menuId}
           role="dialog"
           aria-label="Notifications"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-white/15 dark:bg-[#1a1b22]"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[#0b5ea2]/15 bg-white shadow-xl dark:border-white/15 dark:bg-[#22232e]"
         >
-          <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-2.5 dark:border-white/10">
+          <div className="flex items-center justify-between border-b border-[#0b5ea2]/10 px-3 py-2.5 dark:border-white/10">
             <div>
-              <p className="text-sm font-bold text-zinc-900 dark:text-white">Notifications</p>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{unreadCount} unread</p>
+              <p className="text-sm font-bold text-[#0b5ea2] dark:text-white">Notifications</p>
+              <p className="text-xs text-[#0b5ea2]/60 dark:text-white/60">{unreadCount} unread</p>
             </div>
             <button
               type="button"
@@ -199,12 +183,11 @@ export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
               Mark all read
             </button>
           </div>
-
           <div className="max-h-80 overflow-y-auto">
             {error ? <p role="alert" className="px-3 py-3 text-sm font-semibold text-red-600 dark:text-red-400">{error}</p> : null}
-            {loading ? <p className="px-3 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">Loading…</p> : null}
+            {loading ? <p className="px-3 py-8 text-center text-sm text-[#0b5ea2]/60 dark:text-white/60">Loading…</p> : null}
             {!loading && !error && items.length === 0 ? (
-              <p className="px-3 py-8 text-center text-sm font-semibold text-zinc-500 dark:text-zinc-400">You are all caught up.</p>
+              <p className="px-3 py-8 text-center text-sm font-semibold text-[#0b5ea2]/60 dark:text-white/60">You are all caught up.</p>
             ) : null}
             {!loading ? items.map((item) => (
               <button
@@ -212,24 +195,23 @@ export function NotificationBell({ role }: { role: 'student' | 'faculty' }) {
                 type="button"
                 disabled={busy}
                 onClick={() => void openItem(item)}
-                className={`flex w-full flex-col gap-1 border-b border-zinc-100 px-3 py-3 text-left transition last:border-b-0 hover:bg-zinc-50 disabled:opacity-60 dark:border-white/10 dark:hover:bg-white/5 ${item.isRead ? '' : 'bg-[#FFF200]/15 dark:bg-[#FFF200]/10'}`}
+                className={`flex w-full flex-col gap-1 border-b border-[#0b5ea2]/10 px-3 py-3 text-left transition last:border-b-0 hover:bg-[#0b5ea2]/5 disabled:opacity-60 dark:border-white/10 dark:hover:bg-white/5 ${item.isRead ? '' : 'bg-[#FFF200]/20'}`}
               >
                 <span className="flex items-start justify-between gap-2">
-                  <span className="min-w-0 text-sm font-bold text-zinc-900 dark:text-white">{item.title}</span>
+                  <span className="min-w-0 text-sm font-bold text-[#0b5ea2] dark:text-white">{item.title}</span>
                   {!item.isRead ? <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#0b5ea2]" aria-hidden /> : null}
                 </span>
-                <span className="line-clamp-2 text-xs leading-5 text-zinc-600 dark:text-zinc-400">{item.body}</span>
-                <span className="text-[11px] text-zinc-400 dark:text-zinc-500">{item.type} · {formatWhen(item.createdAt)}</span>
+                <span className="line-clamp-2 text-xs leading-5 text-[#0b5ea2]/70 dark:text-white/70">{item.body}</span>
+                <span className="text-[11px] text-[#0b5ea2]/45 dark:text-white/45">{item.type} · {formatWhen(item.createdAt)}</span>
               </button>
             )) : null}
           </div>
-
-          <div className="border-t border-zinc-100 p-2 dark:border-white/10">
+          <div className="border-t border-[#0b5ea2]/10 p-2 dark:border-white/10">
             <button
               type="button"
               onClick={() => {
                 setOpen(false)
-                navigate(inboxPath)
+                navigate(inboxPath(role))
               }}
               className="w-full rounded-xl px-3 py-2.5 text-sm font-bold text-[#0b5ea2] transition hover:bg-[#0b5ea2]/5 dark:text-[#FFF200] dark:hover:bg-white/10"
             >

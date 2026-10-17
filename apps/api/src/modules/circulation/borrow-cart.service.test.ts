@@ -4,8 +4,16 @@ import type { Pool } from 'mysql2/promise'
 import { HttpError } from '../../core/http-error.ts'
 import { createCirculationService } from './circulation.service.ts'
 
+const legacyPolicyRow = {
+  borrowing_policy_version_id: 1, effective_on: '2000-01-01', student_max_active_books: 2, faculty_max_active_books: null,
+  borrowing_days: 1, due_time_cutoff: '08:59:00', max_renewals: 1, renewal_extension_days: 1,
+  student_max_active_reservations: 2, faculty_max_active_reservations: null,
+  block_renewal_if_overdue: 1, block_renewal_if_unpaid_fines: 1, block_renewal_if_reserved: 1,
+  long_overdue_after_days: null, change_reason: 'Legacy baseline', created_by_user_id: null, created_at: '2000-01-01',
+}
+
 function cartPool(role: 'Student' | 'Faculty', activeCount: number, firstCondition = 'Good', waitingReservation = false) {
-  const state = { commits: 0, rollbacks: 0, inserts: 0, copiesReserved: 0, materialsReserved: 0, adminAlerts: 0, capacitySql: '' }
+  const state = { commits: 0, rollbacks: 0, inserts: 0, copiesReserved: 0, materialsReserved: 0, adminAlerts: 0 }
   const copies = [
     { title_id: 10, title: 'Database Systems', physical_copy_id: 100, material_id: 200, accession_number: 'ACC-100', barcode: 'BC-100', condition_status: firstCondition, availability_status: 'Available', lifecycle_status: 'Active', material_type: 'Book' },
     { title_id: 11, title: 'Computer Networks', physical_copy_id: 101, material_id: 201, accession_number: 'ACC-101', barcode: 'BC-101', condition_status: 'Fair', availability_status: 'Available', lifecycle_status: 'Active', material_type: 'Book' },
@@ -13,12 +21,11 @@ function cartPool(role: 'Student' | 'Faculty', activeCount: number, firstConditi
   const connection = {
     async beginTransaction() {}, async commit() { state.commits += 1 }, async rollback() { state.rollbacks += 1 }, release() {},
     async execute(sql: string) {
+      if (sql.includes('FROM borrowing_policy_versions')) return [[legacyPolicyRow]]
+      if (sql.includes('FROM borrowing_policy_material_rules')) return [[{ borrowing_policy_version_id: 1, material_type: 'Book', is_borrowable: 1 }, { borrowing_policy_version_id: 1, material_type: 'Thesis/Manuscript', is_borrowable: 0 }]]
       if (sql.includes('SELECT user_id FROM accounts')) return [[{ user_id: 7 }]]
       if (sql.includes('FROM users u INNER JOIN roles')) return [[{ user_id: 7, full_name: 'Library User', institutional_id: 'STI-7', school_id: 'STI-7', role_name: role, account_status: 'Active' }]]
-      if (sql.includes('COUNT(DISTINCT activity.title_id)')) {
-        state.capacitySql = sql
-        return [[{ active_count: activeCount, requested_active_count: 0 }]]
-      }
+      if (sql.includes('COUNT(DISTINCT activity.title_id)')) return [[{ active_count: activeCount, requested_active_count: 0 }]]
       if (sql.includes('FROM titles t') && sql.includes('FOR UPDATE')) return [copies]
       if (sql.includes('FROM reservations r INNER JOIN titles t')) return [waitingReservation ? [{
         reservation_id: 88, book_title_id: 10, user_id: 99, queue_position: 1,
@@ -32,7 +39,7 @@ function cartPool(role: 'Student' | 'Faculty', activeCount: number, firstConditi
       throw new Error(`Unexpected SQL: ${sql}`)
     },
   }
-  return { state, database: { getConnection: async () => connection } as unknown as Pool }
+  return { state, database: { getConnection: async () => connection, execute: connection.execute.bind(connection) } as unknown as Pool }
 }
 
 test('student with one active commitment cannot submit two additional cart items', async () => {
@@ -43,14 +50,13 @@ test('student with one active commitment cannot submit two additional cart items
       assert.ok(error instanceof HttpError)
       assert.equal(error.status, 422)
       assert.equal(error.code, 'STUDENT_BORROW_LIMIT_REACHED')
-      assert.deepEqual(error.details, { activeCount: 1, incomingCount: 2, projectedCount: 3, limit: 2 })
+      assert.deepEqual(error.details, { activeCount: 1, incomingCount: 2, projectedCount: 3, limit: 2, policyVersionId: 1 })
       return true
     },
   )
   assert.equal(state.inserts, 0)
   assert.equal(state.commits, 0)
   assert.equal(state.rollbacks, 1)
-  assert.match(state.capacitySql, /lost_confirmed_at IS NULL/)
 })
 
 test('faculty with three active commitments can submit two more books atomically', async () => {

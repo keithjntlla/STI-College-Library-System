@@ -1,6 +1,6 @@
 # Book cart and checkout
 
-SmartLib keeps cart state in browser session storage for navigation continuity, but treats it only as a display selection. `POST /api/v1/borrow/submit-request` revalidates identity, role, capacity, copy condition, availability, and reservation ownership inside one MySQL transaction.
+The system keeps cart state in browser session storage for navigation continuity, but treats it only as a display selection. `POST /api/v1/borrow/submit-request` revalidates identity, role, capacity, copy condition, availability, and reservation ownership inside one MySQL transaction.
 
 ## Transaction lifecycle
 
@@ -13,4 +13,4 @@ SmartLib keeps cart state in browser session storage for navigation continuity, 
 7. The admin circulation monitor displays these rows in its pending-counter-claim ledger.
 8. A librarian scans the assigned barcode and school ID. The existing Pending row becomes Borrowed, its due time is set to 8:59 AM on the next operating day, and availability becomes Borrowed.
 
-The `borrow_records` database view is read-only compatibility output. All writes continue through `borrow_transactions`.Espresso2025**
+The `borrow_records` database view is read-only compatibility output. All writes continue through `borrow_transactions`.

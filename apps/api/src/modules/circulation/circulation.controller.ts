@@ -15,6 +15,8 @@ function asyncController(handler: (request: Request, response: Response) => Prom
 }
 export function createCirculationController(service: Service = circulationService) {
   return {
+    myBooks: asyncController(async (_request, response) => { response.set('Cache-Control', 'private, no-store').json({ success: true, data: await service.myBooks(authenticatedAccount(response)) }) }),
+    cartState: asyncController(async (_request,response) => { response.set('Cache-Control','private, no-store').json({success:true,data:await service.cartState(authenticatedAccount(response))}) }),
     history: asyncController(async (request, response) => { response.json({ success: true, data: await service.history(authenticatedAccount(response), request.query as Record<string, unknown>) }) }),
     submitBorrowRequest: asyncController(async (_request, response) => {
       const data = await service.submitBorrowRequest(authenticatedAccount(response), response.locals.borrowCart)
@@ -28,9 +30,11 @@ export function createCirculationController(service: Service = circulationServic
       })
     }),
     monitor: asyncController(async (request, response) => { response.json({ success: true, data: await service.monitor(request.query as Record<string, unknown>) }) }),
-    checkoutEligibility: asyncController(async (request, response) => {
-      const schoolId = request.query.school_id ?? request.query.schoolId
-      response.json({ success: true, data: await service.checkoutEligibility(schoolId) })
+    preflightCheckout: asyncController(async (request, response) => {
+      response.json({
+        success: true,
+        data: await service.preflightCheckout(authenticatedAccount(response), request.body),
+      })
     }),
     confirmCheckout: asyncController(async (request, response) => { response.status(201).json({ success: true, message: 'Checkout confirmed successfully.', data: await service.confirmCheckout(authenticatedAccount(response), request.body) }) }),
     fulfillClaim: asyncController(async (request, response) => {

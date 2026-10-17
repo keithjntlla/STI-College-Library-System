@@ -4,8 +4,8 @@ import { HttpError } from '../../core/http-error.ts'
 import { createRegistrationService } from './registration.service.ts'
 
 const application = {
-  role: 'Faculty', school_id: 'FAC-123', school_email: 'faculty.123@ormoc.sti.edu.ph',
-  first_name: 'Campus', last_name: 'Faculty', password: 'GoodPassword123', confirm_password: 'GoodPassword123',
+  role: 'Staff', school_id: 'STAFF-123', school_email: 'staff.123@ormoc.sti.edu.ph',
+  first_name: 'Library', last_name: 'Worker', password: 'GoodPassword123', confirm_password: 'GoodPassword123',
 }
 
 function fakeDatabase() {
@@ -14,6 +14,7 @@ function fakeDatabase() {
   }
   const execute = async (sql: string, values: unknown[] = []) => {
     state.writes.push(sql)
+    if (sql.includes('SELECT a.role,a.account_status')) return [[{role:'Librarian',account_status:'Active'}]]
     if (sql.startsWith('SELECT account_id FROM accounts') || sql.startsWith('SELECT user_id FROM users')) return [[]]
     if (sql.startsWith('SELECT request_id FROM registration_requests')) return [[]]
     if (sql.startsWith('INSERT INTO registration_requests')) {
@@ -41,7 +42,7 @@ function fakeDatabase() {
   return { state, database: { execute, getConnection: async () => connection } as never }
 }
 
-test('Faculty registration verifies email before Librarian approval creates an account', async () => {
+test('Staff registration verifies email before Admin approval creates an account', async () => {
   const { state, database } = fakeDatabase()
   let delivered = ''
   const service = createRegistrationService(database, async (_email, code) => { delivered = code }, { hash: async () => 'secure-hash' } as never, 'postgres')
@@ -66,7 +67,7 @@ test('Faculty registration verifies email before Librarian approval creates an a
   assert.equal(state.writes.some(sql => sql.startsWith('INSERT INTO users')), true)
 })
 
-test('Student and Faculty registrations also wait for Librarian approval after email verification', async () => {
+test('Student and Faculty registrations also wait for Admin approval after email verification', async () => {
   for (const role of ['Student', 'Faculty'] as const) {
     const { state, database } = fakeDatabase()
     let delivered = ''
@@ -82,7 +83,7 @@ test('Student and Faculty registrations also wait for Librarian approval after e
   }
 })
 
-test('rejecting a verified registration creates no account and stores the Librarian decision', async () => {
+test('rejecting a verified registration creates no account and stores the Admin decision', async () => {
   const { state, database } = fakeDatabase()
   let delivered = ''
   const service = createRegistrationService(database, async (_email, code) => { delivered = code }, { hash: async () => 'secure-hash' } as never, 'postgres')
@@ -105,10 +106,4 @@ test('registration refuses MySQL even when a sender is available', async () => {
   const { database } = fakeDatabase()
   const service = createRegistrationService(database, async () => undefined, { hash: async () => 'secure-hash' } as never, 'mysql')
   await assert.rejects(service.register(application), (error: unknown) => error instanceof HttpError && error.code === 'SUPABASE_REQUIRED')
-})
-
-test('pending registration list is empty on MySQL so Approvals can still load pictures', async () => {
-  const { database } = fakeDatabase()
-  const service = createRegistrationService(database, async () => undefined, { hash: async () => 'secure-hash' } as never, 'mysql')
-  assert.deepEqual(await service.pendingApprovals(), [])
 })

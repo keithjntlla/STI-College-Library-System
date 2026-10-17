@@ -1,3 +1,4 @@
+import { printingInvoice, createPrintingInvoicePdf } from './printing-invoice.ts'
 import type { NextFunction,Request,Response } from 'express'
 import { createBrandedTablePdf } from '../reports/branded-table-pdf.ts'
 import { printingRepository } from './printing.repository.ts'
@@ -10,6 +11,8 @@ const handle=(fn:(request:Request,response:Response)=>Promise<void>)=>(request:R
 const wholeStock=(value:unknown)=>value==null?'Legacy':String(Math.trunc(Number(value)))
 
 export const printingController={
+  invoice:handle(async(request,response)=>{const invoice=await printingInvoice(actor(request,response),request.params.id,request.baseUrl.includes('/admin/'));response.set('Cache-Control','no-store').json({success:true,data:invoice})}),
+  invoicePdf:handle(async(request,response)=>{const invoice=await printingInvoice(actor(request,response),request.params.id,request.baseUrl.includes('/admin/'));response.set({'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="${invoice.invoiceNumber}.pdf"`,'Cache-Control':'no-store'});createPrintingInvoicePdf(invoice).pipe(response)}),
   availability:handle(async(_request,response)=>{response.json({success:true,data:await printingService.serviceStatus()})}),
   serviceStatus:handle(async(_request,response)=>{response.json({success:true,data:await printingService.serviceStatus()})}),
   setServiceStatus:handle(async(request,response)=>{response.json({success:true,message:'Printing service availability updated.',data:await printingService.setServiceStatus(actor(request,response),request.body)})}),
@@ -18,7 +21,7 @@ export const printingController={
   myReceipts:handle(async(request,response)=>{response.json({success:true,data:await printingService.ownReceipts(actor(request,response))})}),
   myReceipt:handle(async(request,response)=>{response.json({success:true,data:await printingService.ownReceipt(actor(request,response),request.params.id)})}),
   myReceiptPdf:handle(async(request,response)=>{const receipt=await printingService.ownReceipt(actor(request,response),request.params.id) as unknown as PrintingReceipt;const report=createPrintingReceiptPdf(receipt);response.status(200).set({'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="${receipt.receipt_number}.pdf"`,'Cache-Control':'no-store'});report.pipe(response)}),
-  submit:handle(async(request,response)=>{const data=await printingService.submit(actor(request,response),request.body,request.file);response.status(201).json({success:true,message:'Print request submitted. Staff will print your file. Pay cash when you pick it up.',data})}),
+  submit:handle(async(request,response)=>{const data=await printingService.submit(actor(request,response),request.body,request.file);response.status(201).json({success:true,message:'Print request submitted. Pay cash at the library counter before printing starts.',data})}),
   quote:handle(async(request,response)=>{response.json({success:true,data:await printingService.quote(actor(request,response),request.body,request.file)})}),
   cancel:handle(async(request,response)=>{response.json({success:true,message:'The pending print request was cancelled.',data:await printingService.cancelOwn(actor(request,response),request.params.id)})}),
   summary:handle(async(_request,response)=>{response.json({success:true,data:await printingService.summary()})}),
@@ -35,14 +38,10 @@ export const printingController={
   revenueEntries:handle(async(request,response)=>{response.json({success:true,data:await printingService.revenueEntries(request.query as Record<string,unknown>)})}),
   expenseSummary:handle(async(request,response)=>{response.json({success:true,data:await printingService.expenseSummary(request.query as Record<string,unknown>)})}),
   restockHistory:handle(async(request,response)=>{response.json({success:true,data:await printingService.restockHistory(request.query as Record<string,unknown>)})}),
-  stockUsageHistory:handle(async(request,response)=>{response.json({success:true,data:await printingService.stockUsageHistory(request.query as Record<string,unknown>)})}),
-  reportPackage:handle(async(request,response)=>{response.json({success:true,data:await printingService.reportPackage(request.query as Record<string,unknown>)})}),
+  stockUsageHistory:handle(async(request,response)=>{response.json({success:true,data:await printingService.stockUsageHistory(request.query.limit)})}),
   movements:handle(async(request,response)=>{response.json({success:true,data:await printingService.movements(request.query.limit)})}),
   inkMovement:handle(async(request,response)=>{response.status(201).json({success:true,message:'Ink bottle stock updated.',data:await printingService.inkMovement(actor(request,response),request.params.id,request.body)})}),
   createInk:handle(async(request,response)=>{response.status(201).json({success:true,message:'Ink bottle stock registered.',data:await printingService.createInkStock(actor(request,response),request.body)})}),
-  createPaper:handle(async(request,response)=>{response.status(201).json({success:true,message:'Bond paper stock registered.',data:await printingService.createPaperStock(actor(request,response),request.body)})}),
-  updateInkThreshold:handle(async(request,response)=>{response.json({success:true,message:'Ink low-stock alert updated.',data:await printingService.updateInkThreshold(actor(request,response),request.params.id,request.body)})}),
-  updatePaperThreshold:handle(async(request,response)=>{response.json({success:true,message:'Paper low-stock alert updated.',data:await printingService.updatePaperThreshold(actor(request,response),request.params.id,request.body)})}),
   paperMovement:handle(async(request,response)=>{response.status(201).json({success:true,message:'Paper stock updated.',data:await printingService.paperMovement(actor(request,response),request.params.id,request.body)})}),
   restockInk:handle(async(request,response)=>{response.status(201).json({success:true,message:'Ink bottles added successfully.',data:await printingService.restockInk(actor(request,response),request.params.id,request.body)})}),
   restockPaper:handle(async(request,response)=>{response.status(201).json({success:true,message:'Paper reams added successfully.',data:await printingService.restockPaper(actor(request,response),request.params.id,request.body)})}),

@@ -1,9 +1,8 @@
 import { getAccessToken } from '../auth/auth-storage'
-import type { BookCatalogItem, BookCatalogViewer, BookCategory, CatalogCopyAsset, CatalogProgram, Pagination } from './book-catalog-types'
+import type { BookCatalogItem, BookCatalogViewer, BookCategory, CatalogCopyAsset, Pagination } from './book-catalog-types'
 
 const BASE_URL = '/api/v1/catalog/books'
 const CATEGORY_URL = '/api/v1/catalog/categories'
-const PROGRAM_URL = '/api/v1/catalog/programs'
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => null) as { success?: boolean; message?: string; data?: T } | null
@@ -16,37 +15,20 @@ function authorizationHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-export type BookCatalogSort = 'available_first' | 'title'
-
 export type BookCatalogRequest = {
   query?: string
   categoryName?: string
   categoryId?: number
-  programId?: number
   title?: string
   author?: string
   isbn?: string
   publicationYear?: number
-  availableOnly?: boolean
-  sort?: BookCatalogSort
   page?: number
   signal?: AbortSignal
 }
 
-export async function fetchCatalogPrograms(signal?: AbortSignal) {
-  const response = await fetch(PROGRAM_URL, {
-    headers: { Accept: 'application/json', ...authorizationHeaders() },
-    credentials: 'include',
-    signal,
-  })
-  return parseResponse<CatalogProgram[]>(response)
-}
-
-export async function fetchBookCategories(signal?: AbortSignal, programId: number | null = null) {
-  const parameters = new URLSearchParams()
-  if (programId !== null) parameters.set('program_id', String(programId))
-  const query = parameters.toString()
-  const response = await fetch(query ? `${CATEGORY_URL}?${query}` : CATEGORY_URL, {
+export async function fetchBookCategories(signal?: AbortSignal) {
+  const response = await fetch(CATEGORY_URL, {
     headers: { Accept: 'application/json', ...authorizationHeaders() },
     credentials: 'include',
     signal,
@@ -59,13 +41,10 @@ export async function fetchBookCatalog(request: BookCatalogRequest = {}) {
   if (request.query) parameters.set('q', request.query)
   if (request.categoryName) parameters.set('category_name', request.categoryName)
   if (request.categoryId) parameters.set('category_id', String(request.categoryId))
-  if (request.programId) parameters.set('program_id', String(request.programId))
   if (request.title) parameters.set('title', request.title)
   if (request.author) parameters.set('author', request.author)
   if (request.isbn) parameters.set('isbn', request.isbn)
   if (request.publicationYear) parameters.set('publication_year', String(request.publicationYear))
-  if (request.availableOnly) parameters.set('available_only', 'true')
-  if (request.sort) parameters.set('sort', request.sort)
   parameters.set('page', String(request.page ?? 1))
   parameters.set('limit', '24')
 
@@ -104,12 +83,12 @@ export async function fetchCatalogCopyAsset(barcode: string, signal?: AbortSigna
   return parseResponse<CatalogCopyAsset>(response)
 }
 
-export async function reserveBookTitle(titleId: number) {
+export async function reserveBookTitle(titleId: number, requestId?: string) {
   const response = await fetch(`${BASE_URL}/${titleId}/reservations`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...authorizationHeaders() },
     credentials: 'include',
-    body: '{}',
+    body: JSON.stringify({requestId}),
   })
-  return parseResponse<{ reservationId: number; queuePosition: number; status: string }>(response)
+  return parseResponse<{ reservationId: number; queuePosition: number; status: string; statusLabel?: string; instructions?:string }>(response)
 }

@@ -6,12 +6,14 @@ type Controller = ReturnType<typeof createCirculationController>
 
 export function createUserCirculationRouter(controller: Controller = circulationController) {
   const router = Router()
+  router.get('/my-books', controller.myBooks)
   router.get('/history', controller.history)
   return router
 }
 
 export function createBorrowCartRouter(controller: Controller = circulationController) {
   const router = Router()
+  router.get('/cart-state',controller.cartState)
   router.post('/submit-request', validateBorrowCartBody, controller.submitBorrowRequest)
   return router
 }
@@ -26,7 +28,7 @@ export function createCirculationRequestRouter(controller: Controller = circulat
 export function createAdminCirculationRouter(controller: Controller = circulationController) {
   const router = Router()
   router.get('/borrowing/monitor', controller.monitor)
-  router.get('/borrowing/checkout-eligibility', controller.checkoutEligibility)
+  router.post('/borrowing/preflight', controller.preflightCheckout)
   router.post('/borrowing/confirm-checkout', controller.confirmCheckout)
   router.put('/borrowing/:transactionId/return', controller.returnBook)
   router.post('/borrowing/:transactionId/calculate-penalty', controller.calculatePenalty)

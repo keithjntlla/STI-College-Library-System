@@ -1,40 +1,41 @@
 import type { Pool } from 'mysql2/promise'
 import { db } from '../../config/db.js'
 import { HttpError } from '../../core/http-error.ts'
+import { createBorrowingPolicyService } from '../circulation/borrowing-policy.service.ts'
+import { roleBookLimit } from '../circulation/borrowing-policy.types.ts'
 import { reservationService } from '../reservations/reservation.service.ts'
 import {
   queryBookCatalog,
   queryBookCategories,
   queryBookOverview,
   queryBookCopyDetails,
-  queryCatalogPrograms,
   queryReservationTarget,
   queryViewerActiveBookCount,
 } from './book-catalog.repository.ts'
-import { parseBookCatalogFilters, parseBookTitleId, positiveIntegerFromQuery } from './book-catalog.validation.ts'
+import { parseBookCatalogFilters, parseBookTitleId } from './book-catalog.validation.ts'
 
-export type CatalogViewer = { accountId: number; role: 'Admin' | 'Librarian' | 'Student' | 'Faculty' }
+export type CatalogViewer = { accountId: number; role: 'Librarian' | 'Student' | 'Faculty' }
 
 export function createBookCatalogService(database: Pool = db) {
   return {
-    programs: () => queryCatalogPrograms(database),
-
-    categories(query: Record<string, unknown> = {}) {
-      const programId = positiveIntegerFromQuery(query.program_id ?? query.programId, 'program_id')
-      return queryBookCategories(database, programId)
-    },
+    categories: () => queryBookCategories(database),
 
     async list(query: Record<string, unknown>, viewer: CatalogViewer) {
-      const [catalog, activeBookCount] = await Promise.all([
+      const policyService = createBorrowingPolicyService(database)
+      const [catalog, activeBookCount, policy] = await Promise.all([
         queryBookCatalog(database, parseBookCatalogFilters(query)),
-        viewer.role === 'Student' ? queryViewerActiveBookCount(database, viewer.accountId) : Promise.resolve(0),
+        viewer.role === 'Student' || viewer.role === 'Faculty'
+          ? queryViewerActiveBookCount(database, viewer.accountId)
+          : Promise.resolve(0),
+        policyService.resolveActive(database),
       ])
       return {
         ...catalog,
         viewer: {
           role: viewer.role,
           activeBookCount,
-          bookLimit: viewer.role === 'Student' ? 2 : null,
+          bookLimit: roleBookLimit(policy, viewer.role),
+          policyVersionId: policy.versionId,
         },
       }
     },
@@ -46,7 +47,7 @@ export function createBookCatalogService(database: Pool = db) {
       return { ...book, copies: await queryBookCopyDetails(database, titleId) }
     },
 
-    async reserve(titleIdValue: unknown, viewer: CatalogViewer) {
+    async reserve(titleIdValue: unknown, viewer: CatalogViewer, body: unknown = {}) {
       if (!['Student', 'Faculty'].includes(viewer.role)) {
         throw new HttpError(403, 'BOOK_RESERVATION_ROLE_FORBIDDEN', 'Only Student or Faculty accounts may reserve catalog books.')
       }
@@ -55,7 +56,8 @@ export function createBookCatalogService(database: Pool = db) {
       if (!target || !target.userId || !target.materialId) {
         throw new HttpError(422, 'BOOK_RESERVATION_UNAVAILABLE', 'This account or title is not linked to a reservable physical copy.')
       }
-      return reservationService.create(target.userId, { materialId: target.materialId })
+      return reservationService.create(target.userId, { materialId: target.materialId,
+        requestId: body && typeof body==='object' ? (body as Record<string,unknown>).requestId : undefined })
     },
   }
 }

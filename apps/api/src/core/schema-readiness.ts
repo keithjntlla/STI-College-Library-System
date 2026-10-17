@@ -11,8 +11,11 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
   inventory_audit_events: ['inventory_audit_event_id', 'physical_copy_id', 'barcode_snapshot', 'event_type', 'action_reason', 'created_at'],
   research_inventory: ['research_inventory_id', 'title_id', 'title', 'authors', 'adviser', 'publication_year', 'accession_number', 'barcode', 'qr_code_data', 'condition_state', 'availability_status', 'lifecycle_status', 'shelf_location', 'archived_at', 'archive_reason'],
   research_inventory_audit_events: ['research_inventory_audit_event_id', 'research_inventory_id', 'barcode_snapshot', 'event_type', 'action_reason', 'created_at'],
-  reservations: ['reservation_id', 'user_id', 'material_id', 'book_title_id', 'accession_id', 'assigned_physical_copy_id', 'reservation_status', 'reserved_at', 'pickup_deadline'],
-  borrow_transactions: ['transaction_id', 'user_id', 'material_id', 'physical_copy_id', 'reservation_id', 'request_group_id', 'borrowed_at', 'due_at', 'returned_at', 'reported_lost_at', 'lost_confirmed_at', 'transaction_status'],
+  reservations: ['reservation_id', 'user_id', 'material_id', 'book_title_id', 'accession_id', 'assigned_physical_copy_id', 'borrowing_policy_version_id', 'reservation_status', 'reserved_at', 'pickup_deadline'],
+  borrow_transactions: ['transaction_id', 'user_id', 'material_id', 'physical_copy_id', 'reservation_id', 'borrowing_policy_version_id', 'request_group_id', 'borrowed_at', 'due_at', 'returned_at', 'reported_lost_at', 'lost_confirmed_at', 'transaction_status'],
+  borrowing_policy_versions: ['borrowing_policy_version_id', 'effective_on', 'student_max_active_books', 'faculty_max_active_books', 'borrowing_days', 'due_time_cutoff', 'max_renewals', 'renewal_extension_days', 'student_max_active_reservations', 'faculty_max_active_reservations', 'change_reason', 'created_at'],
+  borrowing_policy_material_rules: ['borrowing_policy_version_id', 'material_type', 'is_borrowable'],
+  circulation_override_events: ['override_event_id', 'borrow_transaction_id', 'borrower_user_id', 'physical_copy_id', 'approved_by_user_id', 'warning_codes', 'override_reason', 'preflight_decision_id', 'approved_at'],
   admin_notifications: ['admin_notification_id', 'event_type', 'reservation_id', 'borrow_transaction_id', 'book_title_id', 'created_at'],
   library_closed_days: ['closed_date', 'reason', 'created_at'],
   library_operating_schedule: ['day_of_week', 'is_open', 'opens_at', 'closes_at'],
@@ -59,7 +62,32 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
 export type SchemaReadiness = { ready: boolean; missingTables: string[]; missingColumns: string[] }
 
 export async function checkSchemaReadiness(database: Pool = db as Pool): Promise<SchemaReadiness> {
-  const tableNames = Object.keys(REQUIRED_COLUMNS)
+  const requiredColumns = dbDriver === 'postgres' ? {
+    ...REQUIRED_COLUMNS,
+    login_attempt_windows: ['identifier_hash', 'failed_count', 'window_started_at', 'locked_until'],
+    login_otp_challenges: ['challenge_id', 'account_id', 'auth_version', 'code_hash', 'failed_count', 'expires_at', 'sent_at', 'consumed_at', 'resend_count'],
+    library_login_sessions: ['session_id', 'account_id', 'auth_version', 'last_activity_at', 'revoked_at'],
+    clearance_semester_schedules: ['academic_term_id', 'deadline_at', 'row_version', 'updated_by', 'updated_at'],
+    clearance_schedule_events: ['event_id', 'academic_term_id', 'previous_deadline', 'deadline_at', 'actor_id', 'created_at'],
+    collection_reference_versions:['reference_id','academic_year','reference_year','review_age','approved_by','approval_source'],
+    collection_review_settings:['settings_id','reference_id','row_version'],
+    collection_age_status:['title_id','reference_id','age_status'],
+    collection_review_decisions:['decision_id','title_id','reference_id','decision','note','evidence','decided_by'],
+    collection_requirement_versions:['requirement_id','program_id','course_id','minimum_count','minimum_recent','maximum_age','year_basis','approved','mapping_verified'],
+    collection_review_alerts:['alert_id','dedupe_key','title_id','requirement_id','reference_id'],
+    collection_requirement_status:['requirement_id','status','checked_at'],
+    reservations:[...REQUIRED_COLUMNS.reservations,'client_request_id','preparation_started_at','ready_at','request_kind'],
+    in_library_uses:['use_id','research_inventory_id','user_id','physical_copy_id','attendance_log_id','started_at','hand_back_by','ended_at','status'],
+    book_request_events:['event_id','reservation_id','event_status','physical_copy_id','occurred_at'],
+    book_request_email_deliveries:['delivery_id','event_id','status','attempts','lease_token'],
+    circulation_scan_receipts:['request_id','actor_account_id','operation','payload_digest','result'],
+    attendance_operation_settings:['settings_id','service_purposes','preclosing_minutes','configured','row_version'],
+    library_operational_events:['event_id','starts_at','ends_at','seat_capacity','allow_walk_ins','allow_borrowing','allow_printing','row_version'],
+    attendance_scan_receipts:['request_id','user_id','actor_account_id','log_id','action'],
+    attendance_logs:[...REQUIRED_COLUMNS.attendance_logs,'seat_visit','checkout_source','checked_in_at','checked_out_at'],
+    account_recovery_challenges: ['account_id', 'public_id', 'account_version', 'code_hash', 'code_expires_at', 'code_sent_at', 'code_attempts', 'locked_until', 'reset_token_hash', 'reset_expires_at'],
+  } : REQUIRED_COLUMNS
+  const tableNames = Object.keys(requiredColumns)
   const placeholders = tableNames.map(() => '?').join(', ')
   const [rows] = dbDriver === 'postgres'
     ? await database.execute<RowDataPacket[]>(
@@ -83,7 +111,7 @@ export async function checkSchemaReadiness(database: Pool = db as Pool): Promise
   }
   const missingTables = tableNames.filter((table) => !found.has(table))
   const missingColumns = tableNames.flatMap((table) =>
-    missingTables.includes(table) ? [] : REQUIRED_COLUMNS[table]
+    missingTables.includes(table) ? [] : requiredColumns[table]
       .filter((column) => !found.get(table)?.has(column))
       .map((column) => `${table}.${column}`),
   )

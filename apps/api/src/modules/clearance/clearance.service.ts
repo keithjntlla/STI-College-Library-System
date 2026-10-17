@@ -30,42 +30,13 @@ function requireLibrarian(actor: ClearanceActor) {
   if (actor.role !== 'Librarian') throw new HttpError(403, 'CLEARANCE_LIBRARIAN_ONLY', 'Only Librarian accounts can manage lost-book charges.')
 }
 
-/** Confirmed losses that still block standing: awaiting quotation, or quoted and unpaid. */
-function isOpenConfirmedLost(row: { report_status?: unknown; charge_resolution?: unknown; payment_status?: unknown }) {
-  if (String(row.report_status) !== 'Confirmed') return false
-  const resolution = String(row.charge_resolution ?? '')
-  if (resolution === 'Waived') return false
-  if (String(row.payment_status) === 'Paid') return false
-  return resolution === 'Awaiting Quotation' || resolution === 'Quoted'
-}
-
-function openConfirmedLostReasons(lostRows: Array<{ report_status?: unknown; charge_resolution?: unknown; payment_status?: unknown; replacement_charge?: unknown }>) {
-  const open = lostRows.filter(isOpenConfirmedLost)
-  const awaitingQuotation = open.filter((row) => String(row.charge_resolution) === 'Awaiting Quotation').length
-  const unpaidQuoted = open.filter((row) => String(row.charge_resolution) === 'Quoted' && String(row.payment_status) === 'Unpaid')
-  const unpaidReplacement = unpaidQuoted.reduce((sum, row) => sum + Number(row.replacement_charge ?? 0), 0)
-  return {
-    openConfirmedLosses: open.length,
-    awaitingQuotation,
-    unpaidReplacement,
-    reasons: [
-      awaitingQuotation ? `${awaitingQuotation} confirmed lost ${awaitingQuotation === 1 ? 'book' : 'books'} awaiting quotation` : '',
-      unpaidReplacement > 0 ? `PHP ${unpaidReplacement.toFixed(2)} unpaid lost-book replacement charges` : '',
-    ].filter(Boolean),
-  }
-}
-
 export function createClearanceService(database: Pool = db) {
   async function aggregateStudents() {
     const [rows] = await database.execute<RowDataPacket[]>(
       `SELECT u.user_id,u.school_id,u.full_name,u.course_or_strand,u.section,u.account_status,
-              COALESCE(loans.active_loans,0) AS active_loans,
+              COALESCE(loans.active_loans,0) ${isPostgres?'+ (SELECT COUNT(*) FROM in_library_uses iu WHERE iu.user_id=u.user_id AND iu.ended_at IS NULL)':''} AS active_loans,
               COALESCE(fines.unpaid_fines,0) AS unpaid_fines,
               COALESCE(losses.unpaid_replacement,0) AS unpaid_replacement,
-              COALESCE(losses.open_confirmed_losses,0) AS open_confirmed_losses,
-              COALESCE(losses.awaiting_quotation,0) AS awaiting_quotation,
-              COALESCE(prints.unpaid_print_charges,0) AS unpaid_print_charges,
-              COALESCE(prints.unpaid_print_jobs,0) AS unpaid_print_jobs,
               active_override.clearance_override_id,active_override.override_status,active_override.reason AS override_reason
          FROM users u
          LEFT JOIN (
@@ -84,22 +55,9 @@ export function createClearanceService(database: Pool = db) {
             WHERE f.payment_status IN ('Accruing','Unpaid','Partially Paid') GROUP BY f.user_id
          ) fines ON fines.user_id=u.user_id
          LEFT JOIN (
-           SELECT user_id,
-                  SUM(CASE WHEN charge_resolution='Quoted' AND payment_status='Unpaid' THEN replacement_charge ELSE 0 END) AS unpaid_replacement,
-                  SUM(CASE WHEN charge_resolution IN ('Awaiting Quotation','Quoted') AND payment_status<>'Paid' THEN 1 ELSE 0 END) AS open_confirmed_losses,
-                  SUM(CASE WHEN charge_resolution='Awaiting Quotation' THEN 1 ELSE 0 END) AS awaiting_quotation
-             FROM lost_book_reports
-            WHERE report_status='Confirmed' AND charge_resolution<>'Waived'
-            GROUP BY user_id
+           SELECT user_id,SUM(replacement_charge) AS unpaid_replacement FROM lost_book_reports
+            WHERE report_status='Confirmed' AND charge_resolution='Quoted' AND payment_status='Unpaid' GROUP BY user_id
          ) losses ON losses.user_id=u.user_id
-         LEFT JOIN (
-           SELECT user_id,
-                  SUM(calculated_cost) AS unpaid_print_charges,
-                  COUNT(*) AS unpaid_print_jobs
-             FROM print_requests
-            WHERE payment_status='Unpaid' AND started_at IS NOT NULL
-            GROUP BY user_id
-         ) prints ON prints.user_id=u.user_id
          LEFT JOIN clearance_overrides active_override
            ON active_override.clearance_override_id=(
              SELECT recent.clearance_override_id FROM clearance_overrides recent
@@ -113,45 +71,26 @@ export function createClearanceService(database: Pool = db) {
       const activeLoans = Number(row.active_loans ?? 0)
       const unpaidFines = Number(row.unpaid_fines ?? 0)
       const unpaidReplacement = Number(row.unpaid_replacement ?? 0)
-      const unpaidPrintCharges = Number(row.unpaid_print_charges ?? 0)
-      const unpaidPrintJobs = Number(row.unpaid_print_jobs ?? 0)
-      const openConfirmedLosses = Number(row.open_confirmed_losses ?? 0)
-      const awaitingQuotation = Number(row.awaiting_quotation ?? 0)
-      const computedStatus = activeLoans || unpaidFines > 0 || openConfirmedLosses > 0 || unpaidPrintCharges > 0 ? 'Not Cleared' : 'Cleared'
+      const computedStatus = activeLoans || unpaidFines > 0 || unpaidReplacement > 0 ? 'Not Cleared' : 'Cleared'
       const status = row.override_status ? String(row.override_status) : computedStatus
-      const reasons = [
-        activeLoans ? `${activeLoans} unreturned ${activeLoans === 1 ? 'book' : 'books'}` : '',
-        unpaidFines ? `PHP ${unpaidFines.toFixed(2)} unpaid overdue fines` : '',
-        awaitingQuotation ? `${awaitingQuotation} confirmed lost ${awaitingQuotation === 1 ? 'book' : 'books'} awaiting quotation` : '',
-        unpaidReplacement ? `PHP ${unpaidReplacement.toFixed(2)} unpaid lost-book replacement charges` : '',
-        unpaidPrintCharges ? `PHP ${unpaidPrintCharges.toFixed(2)} unpaid printing ${unpaidPrintJobs === 1 ? 'charge' : 'charges'}` : '',
-      ].filter(Boolean)
+      const reasons = [activeLoans ? `${activeLoans} unreturned ${activeLoans === 1 ? 'book' : 'books'}` : '', unpaidFines ? `PHP ${unpaidFines.toFixed(2)} unpaid overdue fines` : '', unpaidReplacement ? `PHP ${unpaidReplacement.toFixed(2)} unpaid lost-book replacement charges` : ''].filter(Boolean)
       return {
         student: { userId: Number(row.user_id), schoolId: String(row.school_id), name: String(row.full_name), program: row.course_or_strand ?? null, section: row.section ?? null, accountStatus: String(row.account_status) },
         status, computedStatus, reason: row.override_status ? `Authorized override: ${row.override_reason}` : reasons.join('; ') || 'No library obligations', checkedAt: new Date(),
-        summary: {
-          activeLoans,
-          unpaidOverdueFines: unpaidFines,
-          unpaidReplacementCharges: unpaidReplacement,
-          unpaidPrintCharges,
-          totalOutstanding: unpaidFines + unpaidReplacement + unpaidPrintCharges,
-          blockCount: activeLoans + (unpaidFines > 0 ? 1 : 0) + openConfirmedLosses + unpaidPrintJobs,
-        },
-        loans: [], fines: [], lostBooks: [], printCharges: [], activeOverride: row.clearance_override_id ? { overrideId: Number(row.clearance_override_id), status: String(row.override_status), reason: String(row.override_reason) } : null, overrideHistory: [],
+        summary: { activeLoans, unpaidOverdueFines: unpaidFines, unpaidReplacementCharges: unpaidReplacement, totalOutstanding: unpaidFines + unpaidReplacement, blockCount: activeLoans + (unpaidFines > 0 ? 1 : 0) + (unpaidReplacement > 0 ? 1 : 0) },
+        loans: [], fines: [], lostBooks: [], activeOverride: row.clearance_override_id ? { overrideId: Number(row.clearance_override_id), status: String(row.override_status), reason: String(row.override_reason) } : null, overrideHistory: [],
       }
     })
   }
 
-  async function compute(userId: number) {
-    const [[userRows], [loanRows], [fineRows], [lostRows], [printRows], [overrideRows], [historyRows]] = await Promise.all([
+  async function compute(userId: number, updateCache = true) {
+    const [[userRows], [loanRows], [fineRows], [lostRows], [overrideRows], [historyRows]] = await Promise.all([
       database.execute<RowDataPacket[]>(
         `SELECT u.user_id, u.school_id, u.full_name, u.course_or_strand, u.section, u.account_status
            FROM users u WHERE u.user_id = ? AND u.user_role IN ('Student','Faculty') LIMIT 1`, [userId],
       ),
       database.execute<RowDataPacket[]>(
-        `SELECT bt.transaction_id,
-                CASE WHEN bt.transaction_status = 'Borrowed' AND bt.due_at < NOW() THEN 'Overdue' ELSE bt.transaction_status END AS transaction_status,
-                bt.borrowed_at, bt.due_at,
+        `SELECT bt.transaction_id, bt.transaction_status, bt.borrowed_at, bt.due_at,
                 COALESCE(t.title,m.title) AS title, COALESCE(pc.accession_number,m.barcode) AS accession_number,
                 CASE WHEN bt.due_at IS NULL OR bt.due_at >= NOW() THEN 0
                      ELSE CEIL(${timestampDiffSeconds('bt.due_at', 'NOW()')}/3600) END AS overdue_hours,
@@ -194,12 +133,6 @@ export function createClearanceService(database: Pool = db) {
           WHERE l.user_id=? ORDER BY l.reported_at DESC`, [userId],
       ),
       database.execute<RowDataPacket[]>(
-        `SELECT request_id,file_name,calculated_cost,job_status,payment_status,started_at,created_at
-           FROM print_requests
-          WHERE user_id=? AND payment_status='Unpaid' AND started_at IS NOT NULL
-          ORDER BY started_at DESC, request_id DESC`, [userId],
-      ),
-      database.execute<RowDataPacket[]>(
         `SELECT o.clearance_override_id, o.override_status, o.reason, o.applied_at, o.expires_at,
                 u.full_name AS applied_by
            FROM clearance_overrides o INNER JOIN users u ON u.user_id=o.applied_by_user_id
@@ -217,22 +150,25 @@ export function createClearanceService(database: Pool = db) {
     ])
     const user = userRows[0]
     if (!user) throw new HttpError(404, 'CLEARANCE_STUDENT_NOT_FOUND', 'The student profile was not found.')
+    if(isPostgres){
+      const [uses]=await database.execute<RowDataPacket[]>(`SELECT -iu.use_id AS transaction_id,t.title,COALESCE(pc.accession_number,ri.accession_number) AS accession_number,CASE WHEN iu.status='Review' THEN 'In-library: hand-back missing' ELSE 'In-library use' END AS transaction_status,iu.started_at AS borrowed_at,iu.hand_back_by AS due_at,0 AS overdue_hours,0 AS current_fine FROM in_library_uses iu LEFT JOIN physical_copies pc ON pc.physical_copy_id=iu.physical_copy_id LEFT JOIN research_inventory ri ON ri.research_inventory_id=iu.research_inventory_id JOIN titles t ON t.title_id=COALESCE(pc.title_id,ri.title_id) WHERE iu.user_id=? AND iu.ended_at IS NULL ORDER BY iu.started_at`,[userId])
+      loanRows.push(...uses)
+    }
     const unpaidFines = fineRows.reduce((sum, row) => sum + Number(row.fine_amount ?? 0), 0)
-    const lostStanding = openConfirmedLostReasons(lostRows)
-    const unpaidReplacement = lostStanding.unpaidReplacement
-    const unpaidPrintCharges = printRows.reduce((sum, row) => sum + Number(row.calculated_cost ?? 0), 0)
+    const unpaidReplacement = lostRows
+      .filter((row) => row.report_status === 'Confirmed' && row.charge_resolution === 'Quoted' && row.payment_status === 'Unpaid')
+      .reduce((sum, row) => sum + Number(row.replacement_charge ?? 0), 0)
     const activeLoans = loanRows.length
-    const computedStatus = activeLoans || unpaidFines > 0 || lostStanding.openConfirmedLosses > 0 || unpaidPrintCharges > 0 ? 'Not Cleared' : 'Cleared'
+    const computedStatus = activeLoans || unpaidFines > 0 || unpaidReplacement > 0 ? 'Not Cleared' : 'Cleared'
     const activeOverride = overrideRows[0]
     const status = activeOverride?.override_status ? String(activeOverride.override_status) : computedStatus
     const reasons = [
       activeLoans ? `${activeLoans} unreturned ${activeLoans === 1 ? 'book' : 'books'}` : '',
       unpaidFines > 0 ? `PHP ${unpaidFines.toFixed(2)} unpaid overdue fines` : '',
-      ...lostStanding.reasons,
-      unpaidPrintCharges > 0 ? `PHP ${unpaidPrintCharges.toFixed(2)} unpaid printing ${printRows.length === 1 ? 'charge' : 'charges'}` : '',
+      unpaidReplacement > 0 ? `PHP ${unpaidReplacement.toFixed(2)} unpaid lost-book replacement charges` : '',
     ].filter(Boolean)
     const reason = activeOverride ? `Authorized override: ${activeOverride.reason}` : reasons.join('; ') || 'No library obligations'
-    await database.execute(
+    if (updateCache) await database.execute(
       isPostgres
         ? `INSERT INTO clearance_statuses(user_id,standing_status,reason_block_details,reviewed_by_user_id,last_checked_at,updated_at)
        VALUES (?,?,?,NULL,NOW(),NOW())
@@ -246,26 +182,10 @@ export function createClearanceService(database: Pool = db) {
     return {
       student: { userId: Number(user.user_id), schoolId: String(user.school_id), name: String(user.full_name), program: user.course_or_strand ?? null, section: user.section ?? null, accountStatus: String(user.account_status) },
       status, computedStatus, reason, checkedAt: new Date(),
-      summary: {
-        activeLoans,
-        unpaidOverdueFines: unpaidFines,
-        unpaidReplacementCharges: unpaidReplacement,
-        unpaidPrintCharges,
-        totalOutstanding: unpaidFines + unpaidReplacement + unpaidPrintCharges,
-        blockCount: activeLoans + fineRows.length + lostStanding.openConfirmedLosses + printRows.length,
-      },
+      summary: { activeLoans, unpaidOverdueFines: unpaidFines, unpaidReplacementCharges: unpaidReplacement, totalOutstanding: unpaidFines + unpaidReplacement, blockCount: activeLoans + fineRows.length + lostRows.filter((row) => row.report_status === 'Confirmed' && row.charge_resolution === 'Quoted' && row.payment_status === 'Unpaid').length },
       loans: loanRows.map((row) => ({ transactionId: Number(row.transaction_id), title: String(row.title), accessionNumber: row.accession_number, status: String(row.transaction_status), borrowedAt: row.borrowed_at, dueAt: row.due_at, overdueHours: Number(row.overdue_hours ?? 0), currentFine: Number(row.current_fine ?? 0) })),
       fines: fineRows.map((row) => ({ fineId: Number(row.fine_id), transactionId: row.transaction_id ? Number(row.transaction_id) : null, title: String(row.title), amount: Number(row.fine_amount), basis: String(row.calculation_basis), overdueUnits: Number(row.overdue_units), rate: Number(row.rate_applied), appliedAt: row.applied_date, notes: row.notes })),
       lostBooks: lostRows.map((row) => ({ lostBookReportId: Number(row.lost_book_report_id), transactionId: Number(row.transaction_id), titleId: row.title_id ? Number(row.title_id) : null, title: String(row.title), status: String(row.report_status), chargeResolution: String(row.charge_resolution), resolutionReason: row.resolution_reason ? String(row.resolution_reason) : null, quotationId: row.current_quotation_id ? Number(row.current_quotation_id) : null, quotedAmount: row.current_quotation_amount === null ? null : Number(row.current_quotation_amount), replacementCharge: Number(row.replacement_charge), paymentStatus: String(row.payment_status), reportedAt: row.reported_at, verifiedAt: row.verified_at })),
-      printCharges: printRows.map((row) => ({
-        requestId: Number(row.request_id),
-        fileName: String(row.file_name),
-        amount: Number(row.calculated_cost),
-        jobStatus: String(row.job_status),
-        paymentStatus: String(row.payment_status),
-        startedAt: row.started_at,
-        createdAt: row.created_at,
-      })),
       activeOverride: activeOverride ? { overrideId: Number(activeOverride.clearance_override_id), status: String(activeOverride.override_status), reason: String(activeOverride.reason), appliedAt: activeOverride.applied_at, expiresAt: activeOverride.expires_at, appliedBy: String(activeOverride.applied_by) } : null,
       overrideHistory: historyRows.map((row) => ({ overrideId: Number(row.clearance_override_id), status: String(row.override_status), reason: String(row.reason), appliedAt: row.applied_at, expiresAt: row.expires_at, revokedAt: row.revoked_at, revocationReason: row.revocation_reason, appliedBy: String(row.applied_by), revokedBy: row.revoked_by ? String(row.revoked_by) : null })),
     }
@@ -364,9 +284,8 @@ export function createClearanceService(database: Pool = db) {
         const userId = await linkedUserId(connection, actorAccountId(actor))
         const [rows] = await connection.execute<RowDataPacket[]>(
           `SELECT bt.transaction_id,bt.user_id,bt.physical_copy_id,bt.transaction_status,
-                  COALESCE(t.title,m.title) AS title,u.user_role
+                  COALESCE(t.title,m.title) AS title
              FROM borrow_transactions bt INNER JOIN materials m ON m.material_id=bt.material_id
-             INNER JOIN users u ON u.user_id=bt.user_id
              LEFT JOIN physical_copies pc ON pc.physical_copy_id=bt.physical_copy_id
              LEFT JOIN titles t ON t.title_id=pc.title_id
             WHERE bt.transaction_id=? LIMIT 1 ${forUpdate('bt')}`, [transactionId],
@@ -374,37 +293,11 @@ export function createClearanceService(database: Pool = db) {
         const loan = rows[0]
         if (!loan || (!staffReport && Number(loan.user_id) !== userId)) throw new HttpError(404, 'LOST_BOOK_LOAN_NOT_FOUND', 'The active borrowing record was not found.')
         if (!['Borrowed', 'Overdue'].includes(String(loan.transaction_status))) throw new HttpError(422, 'LOST_BOOK_REPORT_INVALID', 'Only a currently borrowed or overdue book can be reported lost.')
-        const clearancePath = String(loan.user_role) === 'Faculty' ? '/faculty/clearance' : '/student/clearance'
-        const notifyLostReport = async (reportId: number, reopened: boolean) => {
-          await connection.execute(
-            `INSERT INTO admin_notifications(event_type,actor_user_id,borrow_transaction_id,message_title,message_body)
-             VALUES ('lost_book_reported',?,?, 'Lost book reported',?)`, [userId, transactionId, `${loan.title} was reported lost by ${staffReport ? 'library staff' : 'its borrower'}.`],
-          )
-          await connection.execute(
-            insertIgnoreNotification(`INSERT IGNORE INTO notifications(user_id,message_title,message_body,trigger_type,source_type,source_id,action_path,priority,dedupe_key,scheduled_for,delivered_at)
-             VALUES (?, 'Lost book report received', ?, 'Lost Book','Lost Book Report',?,?,'Urgent',?,NOW(),NOW())`),
-            [loan.user_id, `${loan.title} has been reported lost. Library staff will verify the report and replacement charge.`, reportId, clearancePath, `lost-report:${reportId}:${reopened ? `reopened:${Date.now()}` : 'pending'}`],
-          )
-        }
         const [existing] = await connection.execute<RowDataPacket[]>('SELECT lost_book_report_id,report_status FROM lost_book_reports WHERE transaction_id=? LIMIT 1 FOR UPDATE', [transactionId])
         if (existing[0]) {
-          const reportId = Number(existing[0].lost_book_report_id)
-          if (existing[0].report_status === 'Pending') {
+          if (staffReport && existing[0].report_status === 'Pending') {
             await connection.commit()
-            return { lostBookReportId: reportId, status: 'Pending', alreadyReported: true }
-          }
-          if (existing[0].report_status === 'Rejected') {
-            await connection.execute(
-              `UPDATE lost_book_reports
-                  SET report_status='Pending',purchase_price_snapshot=NULL,replacement_charge=0,payment_status='Unpaid',
-                      quotation_id=NULL,charge_resolution='Awaiting Review',resolution_reason=NULL,
-                      verified_by_user_id=NULL,verified_at=NULL,staff_notes=NULL,reported_at=NOW(),updated_at=NOW()
-                WHERE lost_book_report_id=?`, [reportId],
-            )
-            await connection.execute('UPDATE borrow_transactions SET reported_lost_at=NOW(),updated_at=NOW() WHERE transaction_id=?', [transactionId])
-            await notifyLostReport(reportId, true)
-            await connection.commit()
-            return { lostBookReportId: reportId, status: 'Pending' }
+            return { lostBookReportId: Number(existing[0].lost_book_report_id), status: 'Pending', alreadyReported: true }
           }
           throw new HttpError(409, 'LOST_BOOK_ALREADY_REPORTED', 'This book has already been reported lost.')
         }
@@ -413,7 +306,15 @@ export function createClearanceService(database: Pool = db) {
            VALUES (?,?,?,NULL,0,NOW())`, [transactionId, loan.user_id, loan.physical_copy_id],
         )
         await connection.execute('UPDATE borrow_transactions SET reported_lost_at=NOW(),updated_at=NOW() WHERE transaction_id=?', [transactionId])
-        await notifyLostReport(Number(insert.insertId), false)
+        await connection.execute(
+          `INSERT INTO admin_notifications(event_type,actor_user_id,borrow_transaction_id,message_title,message_body)
+           VALUES ('lost_book_reported',?,?, 'Lost book reported',?)`, [userId, transactionId, `${loan.title} was reported lost by ${staffReport ? 'library staff' : 'its borrower'}.`],
+        )
+        await connection.execute(
+          insertIgnoreNotification(`INSERT IGNORE INTO notifications(user_id,message_title,message_body,trigger_type,source_type,source_id,action_path,priority,dedupe_key,scheduled_for,delivered_at)
+           VALUES (?, 'Lost book report received', ?, 'Lost Book','Lost Book Report',?,'/student/clearance','Urgent',?,NOW(),NOW())`),
+          [loan.user_id, `${loan.title} has been reported lost. Library staff will verify the report and replacement charge.`, insert.insertId, `lost-report:${insert.insertId}:pending`],
+        )
         await connection.commit()
         return { lostBookReportId: Number(insert.insertId), status: 'Pending' }
       } catch (error) { await connection.rollback(); throw error } finally { connection.release() }

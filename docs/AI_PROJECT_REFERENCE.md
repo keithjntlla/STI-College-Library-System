@@ -141,8 +141,6 @@ The following areas have implementation and schema support in the repository. Ex
 - Reassigning a normalized title to another category synchronizes its active copies to the destination category shelf.
 - The Unified catalog results table exposes category and shelf information and provides the category reassignment action.
 - Current category reassignment remains **title-level** and updates all active copies of the selected title. A future requirement to move only one physical barcode needs a separate copy-level category/location design and must not silently change title-level bibliographic categorization.
-- Librarians may link categories to campus programs (`programs` / `program_categories`) for student course browse. Links are maintenance-managed discovery aids only; they do not replace category shelf authority (see ADR-003).
-- Student/Faculty book catalog starts on All courses; selecting a course narrows the category list and book results to linked subjects.
 
 ### 8.3 Borrowing, reservations, and book-cart workflow
 
@@ -195,7 +193,6 @@ The following areas have implementation and schema support in the repository. Ex
 - Admin staff view/search receipts from the printing queue.
 - Printing receipts are deliberately separate from fine-payment receipts and do not affect fines or clearance.
 - Ink is tracked by whole unopened bottles; paper is tracked by whole unopened reams.
-- Print supplies are a manual staff log only; the product does not read printer hardware or assign stock to physical printers.
 - Revenue and stock expenses are kept separate.
 
 ### 8.8 Attendance QR system

@@ -2,10 +2,9 @@ import type { Pool } from 'mysql2/promise'
 import { db } from '../../../config/db.js'
 import { HttpError } from '../../../core/http-error.ts'
 import {
-  assertActiveProgramIds, findCategoryByName, findManagedShelfByLabel, insertCategory, listActivePrograms,
-  listCategoriesWithCounts, lockActiveCategoryAssets, lockCategory, lockManagedShelfByLabel,
-  lockReassignmentCategories, reassignAndDeleteCategory, recordCategoryShelfEvent,
-  replaceCategoryProgramLinks, synchronizeCategoryShelf, updateCategoryRow,
+  findCategoryByName, findManagedShelfByLabel, insertCategory, listCategoriesWithCounts, lockActiveCategoryAssets,
+  lockCategory, lockManagedShelfByLabel, lockReassignmentCategories, reassignAndDeleteCategory,
+  recordCategoryShelfEvent, synchronizeCategoryShelf, updateCategoryRow,
 } from './category.repository.ts'
 import { parseCategoryId, validateCategoryPayload } from './category.validation.ts'
 
@@ -25,22 +24,6 @@ function shelfError() {
   })
 }
 
-function programIdsError() {
-  return new HttpError(422, 'CATEGORY_PROGRAM_IDS_INVALID', 'One or more selected courses are invalid.', {
-    errors: { programIds: 'Select only active campus courses from the list.' },
-  })
-}
-
-async function syncProgramLinks(connection: Parameters<typeof replaceCategoryProgramLinks>[0], categoryId: number, programIds: number[]) {
-  try {
-    await assertActiveProgramIds(connection, programIds)
-  } catch (error) {
-    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'INVALID_PROGRAM_IDS') throw programIdsError()
-    throw error
-  }
-  await replaceCategoryProgramLinks(connection, categoryId, programIds)
-}
-
 function validateShelfPosition(shelf: Record<string, unknown>, column: number, row: number) {
   if (column > Number(shelf.column_count) || row > Number(shelf.row_count)) {
     throw new HttpError(422, 'CATEGORY_SHELF_POSITION_INVALID', 'Choose a column and row that exist on the selected shelf.', {
@@ -57,7 +40,6 @@ function isDuplicateKey(error: unknown) {
 export function createCategoryService(database: Pool = db) {
   return {
     list: () => listCategoriesWithCounts(database),
-    programs: () => listActivePrograms(database),
 
     async create(body: unknown) {
       const validation = validateCategoryPayload(body)
@@ -66,18 +48,13 @@ export function createCategoryService(database: Pool = db) {
       const shelf = await findManagedShelfByLabel(database, validation.data.shelfLocation)
       if (!shelf) throw shelfError()
       validateShelfPosition(shelf, validation.data.shelfColumn, validation.data.shelfRow)
-      const connection = await database.getConnection()
       try {
-        await connection.beginTransaction()
-        const categoryId = await insertCategory(connection, validation.data)
-        await syncProgramLinks(connection, categoryId, validation.data.programIds)
-        await connection.commit()
+        const categoryId = await insertCategory(database, validation.data)
         return { categoryId, ...validation.data }
       } catch (error) {
-        await connection.rollback()
         if (isDuplicateKey(error)) throw duplicateError(validation.data.categoryName)
         throw error
-      } finally { connection.release() }
+      }
     },
 
     async update(categoryIdValue: unknown, body: unknown, actorAccountId: number | null = null) {
@@ -96,7 +73,6 @@ export function createCategoryService(database: Pool = db) {
         if (!shelf) throw shelfError()
         validateShelfPosition(shelf, validation.data.shelfColumn, validation.data.shelfRow)
         await updateCategoryRow(connection, categoryId, validation.data)
-        await syncProgramLinks(connection, categoryId, validation.data.programIds)
         const synchronized = await synchronizeCategoryShelf(connection, categoryId, validation.data.shelfLocation, validation.data.shelfColumn, validation.data.shelfRow)
         await recordCategoryShelfEvent(connection, actorAccountId, 'Category shelf synced', {
           categoryId, categoryName: validation.data.categoryName,
@@ -104,7 +80,6 @@ export function createCategoryService(database: Pool = db) {
           shelfLocation: validation.data.shelfLocation,
           shelfColumn: validation.data.shelfColumn,
           shelfRow: validation.data.shelfRow,
-          programIds: validation.data.programIds,
           ...synchronized,
         })
         await connection.commit()
@@ -137,6 +112,9 @@ export function createCategoryService(database: Pool = db) {
         return { categoryId, deleted: true }
       } catch (error) {
         await connection.rollback()
+        if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23503') {
+          throw new HttpError(422, 'CATEGORY_HAS_HISTORICAL_MATERIALS', 'This category is used by retained catalog records and cannot be deleted.')
+        }
         throw error
       } finally { connection.release() }
     },
