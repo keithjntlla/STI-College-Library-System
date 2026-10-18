@@ -5,17 +5,19 @@ import { BookCoverThumbnail } from './BookCoverThumbnail'
 
 afterEach(cleanup)
 
-it.each(['catalog', 'thumbnail'])('%s shows title initials for missing or unreadable covers and recovers for a different cover', kind => {
-  const cover = (title: string, src?: string) => kind === 'catalog' ? <CatalogCover title={title} src={src} /> : <BookCoverThumbnail title={title} coverImagePath={src} />
-  const { rerender } = render(cover('Harry Potter'))
-  expect(screen.getByRole('img', { name: 'Harry Potter — title initials cover' }).textContent).toBe('HP')
-  for (const [title, initials] of [['1984', '1984'], ['Dune', 'DU'], ['  École   Française  ', 'ÉF'], ['!!!', 'BK']]) {
-    rerender(cover(title))
-    expect(screen.getByRole('img').textContent).toBe(initials)
-  }
+it.each(['catalog', 'thumbnail'])('%s shows the blue plate for missing, generated, or unreadable covers and recovers for a different cover', kind => {
+  const cover = (title: string, src?: string, author?: string) => kind === 'catalog' ? <CatalogCover title={title} author={author} src={src} /> : <BookCoverThumbnail title={title} author={author} coverImagePath={src} />
+  const { rerender } = render(cover('Harry Potter', undefined, 'J. K. Rowling'))
+  expect(screen.getByRole('img', { name: 'Harry Potter cover' }).textContent).toContain('Harry Potter')
+  expect(screen.getByText('J. K. Rowling')).toBeTruthy()
+  rerender(cover('   ', undefined, '   '))
+  expect(screen.getByRole('img', { name: 'Untitled cover' }).textContent).toContain('Author not recorded')
+  rerender(cover('College English', '/api/assets/covers/generated-v4-11111111-1111-4111-8111-111111111111.png', 'STI'))
+  expect(screen.getByRole('img', { name: 'College English cover' }).textContent).toContain('STI')
+  expect(screen.queryByAltText('College English book cover')).toBeNull()
   rerender(cover('1984', '/covers/1984.jpg'))
   fireEvent.error(screen.getByRole('img'))
-  expect(screen.getByRole('img', { name: '1984 — title initials cover' }).textContent).toBe('1984')
+  expect(screen.getByRole('img', { name: '1984 cover' }).textContent).toContain('1984')
   expect(screen.queryByAltText('1984 book cover')).toBeNull()
   rerender(cover('1984', '/covers/replacement.jpg'))
   expect(screen.getByRole('img').getAttribute('src')).toBe('/covers/replacement.jpg')

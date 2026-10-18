@@ -1,7 +1,25 @@
 import type { LucideIcon } from 'lucide-react'
 import { ArrowUpRight, MoreHorizontal, Search } from 'lucide-react'
-import { isValidElement, type ReactNode, type ReactElement } from 'react'
+import { isValidElement, useEffect, useState, type ReactNode, type ReactElement } from 'react'
 import { ResponsiveTable } from './ResponsiveTable'
+
+export function useIsMdUp() {
+  const [isMdUp, setIsMdUp] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return true
+    return window.matchMedia('(min-width: 768px)').matches
+  })
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia('(min-width: 768px)')
+    const onChange = () => setIsMdUp(media.matches)
+    onChange()
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  }, [])
+
+  return isMdUp
+}
 
 export function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ')
@@ -92,14 +110,57 @@ export function TableSearch({ placeholder = 'Search records...', value, onChange
   )
 }
 
-export function TableShell({ title, controls, children }: { title: string; subtitle?: string; controls?: ReactNode; children: ReactNode }) {
+export function MobileList({ children, empty }: { children: ReactNode; empty?: ReactNode }) {
+  return (
+    <div className="divide-y divide-[#0b5ea2]/10 dark:divide-white/10">
+      {children}
+      {empty}
+    </div>
+  )
+}
+
+export function MobileListItem({
+  title,
+  meta,
+  status,
+  detail,
+  actions,
+}: {
+  title: ReactNode
+  meta?: ReactNode
+  status?: ReactNode
+  detail?: ReactNode
+  actions?: ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-3 p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-bold text-[#0b5ea2] dark:text-white">{title}</div>
+          {meta ? <div className="mt-1 text-xs text-[#0b5ea2]/65 dark:text-white/60">{meta}</div> : null}
+        </div>
+        {status ? <div className="shrink-0">{status}</div> : null}
+      </div>
+      {detail ? <div className="text-sm text-[#0b5ea2]/80 dark:text-white/75">{detail}</div> : null}
+      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+    </div>
+  )
+}
+
+export function TableShell({ title, subtitle, controls, children, mobileRows }: { title: string; subtitle?: string; controls?: ReactNode; children: ReactNode; mobileRows?: ReactNode }) {
+  const isMdUp = useIsMdUp()
   return (
     <SectionCard className="overflow-hidden">
       <div className="flex flex-col gap-3 border-b border-[#0b5ea2]/15 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
-        <h2 className="font-display text-base font-bold text-[#0b5ea2] dark:text-white">{title}</h2>
+        <div className="min-w-0">
+          <h2 className="font-display text-base font-bold text-[#0b5ea2] dark:text-white">{title}</h2>
+          {subtitle ? <p className="mt-1 text-xs text-[#0b5ea2]/60 dark:text-white/55">{subtitle}</p> : null}
+        </div>
         {controls}
       </div>
-      {isValidElement(children) && children.type === 'table' ? <ResponsiveTable label={title}>{children as ReactElement<{ children?: ReactNode }>}</ResponsiveTable> : <div className="min-w-0 overflow-x-auto">{children}</div>}
+      {mobileRows ? (
+        isMdUp ? <div className="overflow-x-auto">{children}</div> : mobileRows
+      ) : isValidElement(children) && children.type === 'table' ? <ResponsiveTable label={title}>{children as ReactElement<{ children?: ReactNode }>}</ResponsiveTable> : <div className="min-w-0 overflow-x-auto">{children}</div>}
     </SectionCard>
   )
 }

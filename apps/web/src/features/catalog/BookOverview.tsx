@@ -83,6 +83,7 @@ export function BookOverview({ titleId, role, activeBookCount, bookLimit, select
               <div className="flex justify-center">
                 <BookCoverThumbnail
                   title={book.title}
+                  author={book.author}
                   coverImagePath={book.coverImagePath}
                   className="h-72 w-48 rounded-2xl border border-[#0b5ea2]/20 shadow-[0_12px_30px_rgba(11, 94, 162,0.18)] sm:h-80 sm:w-56"
                 />

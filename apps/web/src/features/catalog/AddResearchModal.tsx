@@ -3,6 +3,7 @@ import { QrCode, X } from 'lucide-react'
 import { ApiError, catalogApi } from './catalog-api'
 import type { BulkBookResult } from './types'
 import { BookLabelSheet } from './BookLabelSheet'
+import { ThesisCoverCard } from './ThesisCoverCard'
 
 const fieldClass = 'h-11 w-full rounded-xl border border-[#0b5ea2]/20 bg-[#FFFFFF] px-3 text-sm text-[#0b5ea2] outline-none focus:border-[#0b5ea2] focus:ring-4 focus:ring-[#0b5ea2]/10'
 const labelClass = 'mb-1.5 block text-xs font-bold uppercase tracking-wide text-[#0b5ea2]'
@@ -15,6 +16,7 @@ export function AddResearchModal({ locations, onCreated, onClose }: { locations:
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [message, setMessage] = useState('')
   const [batch, setBatch] = useState<BulkBookResult | null>(null)
+  const [preview, setPreview] = useState({ title: 'Untitled Capstone Project', authors: 'Author Name', department: 'Bachelor of Science in Information Technology', year: new Date().getFullYear() })
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (saving || batch) return
     const data = Object.fromEntries(new FormData(event.currentTarget).entries())
@@ -33,9 +35,24 @@ export function AddResearchModal({ locations, onCreated, onClose }: { locations:
       setErrors(error.details?.errors ?? {}); setMessage(error.message || 'The research record could not be published.')
     } finally { setSaving(false) }
   }
-  return <div className="fixed inset-0 z-50 overflow-y-auto bg-[#0b5ea2]/80 p-4"><div role="dialog" aria-modal="true" className="mx-auto my-6 max-w-4xl rounded-2xl bg-[#FFFFFF] shadow-2xl">
+  return <div className="fixed inset-0 z-50 overflow-y-auto bg-[#0b5ea2]/80 p-4"><div role="dialog" aria-modal="true" className="mx-auto my-6 max-w-5xl rounded-2xl bg-[#FFFFFF] shadow-2xl">
     <header className="flex items-center justify-between border-b border-[#0b5ea2]/15 p-5"><div><p className="text-xs font-bold uppercase text-[#0b5ea2]">Catalog entry</p><h2 className="text-xl font-black text-[#0b5ea2]">Add research / thesis</h2></div><button aria-label="Close" disabled={saving} onClick={onClose} className="p-2 text-[#0b5ea2] disabled:opacity-40"><X /></button></header>
-    <form onSubmit={submit} className="grid gap-4 p-5 sm:grid-cols-2">
+    <div className="grid gap-0 lg:grid-cols-[14rem_minmax(0,1fr)]">
+      <aside className="border-b border-[#0b5ea2]/10 p-5 lg:border-b-0 lg:border-r">
+        <p className="mb-3 text-[10px] font-bold uppercase tracking-wide text-[#0b5ea2]/55">Cover preview</p>
+        <ThesisCoverCard title={preview.title || 'Untitled Capstone Project'} authors={preview.authors || 'Author Name'} department={preview.department} publicationYear={preview.year} className="mx-auto w-44" />
+        <p className="mt-3 text-xs leading-5 text-[#0b5ea2]/65">View-only bound copy. Cover color follows campus department.</p>
+      </aside>
+    <form onSubmit={submit} className="grid gap-4 p-5 sm:grid-cols-2" onInput={(event) => {
+      const data = new FormData(event.currentTarget)
+      const year = Number(data.get('year'))
+      setPreview({
+        title: String(data.get('title') || 'Untitled Capstone Project'),
+        authors: String(data.get('author') || 'Author Name'),
+        department: String(data.get('departmentOrProgram') || preview.department),
+        year: Number.isFinite(year) && year > 0 ? year : new Date().getFullYear(),
+      })
+    }}>
       {message ? <div role={batch ? 'status' : 'alert'} className={`rounded-xl p-3 text-sm font-semibold text-[#0b5ea2] sm:col-span-2 ${batch ? 'border border-[#0b5ea2] bg-[#FFFFFF]' : 'bg-[#FFF200]'}`}>{message}</div> : null}
       {Object.keys(errors).length ? <div role="alert" className="rounded-xl bg-[#FFF200] p-3 text-sm text-[#0b5ea2] sm:col-span-2"><ul className="list-inside list-disc">{Object.entries(errors).map(([field, value]) => <li key={field}><strong>{field}:</strong> {value}</li>)}</ul></div> : null}
       <Input label="Title" name="title" required /><Input label="Author" name="author" required />
@@ -47,6 +64,7 @@ export function AddResearchModal({ locations, onCreated, onClose }: { locations:
       <label className="sm:col-span-2"><span className={labelClass}>Abstract *</span><textarea name="abstract" required minLength={20} rows={6} className={`${fieldClass} h-auto py-3`} /></label>
       <div className="flex justify-end gap-2 sm:col-span-2">{!batch ? <><button type="button" disabled={saving} onClick={onClose} className="h-11 rounded-xl border border-[#0b5ea2] bg-[#FFFFFF] px-5 font-bold text-[#0b5ea2]">Cancel</button><button disabled={saving || !locations.length} type="submit" className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#0b5ea2] px-5 font-bold text-[#FFFFFF] disabled:opacity-50"><QrCode size={17} />{saving ? 'Publishing and generating codes…' : 'Publish and generate codes'}</button></> : <button type="button" onClick={onClose} className="h-11 rounded-xl bg-[#0b5ea2] px-5 font-bold text-[#FFFFFF]">Close and view inventory</button>}</div>
     </form>
+    </div>
     {batch ? <div className="border-t border-[#0b5ea2]/15 p-5"><BookLabelSheet batch={batch} /></div> : null}
   </div></div>
 }
