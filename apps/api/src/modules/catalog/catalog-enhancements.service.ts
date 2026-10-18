@@ -11,6 +11,7 @@ import { retainImportCorrections, type ImportReferences } from './holdings-clean
 import { insertAuthors, insertLegacyBookMaterial, insertPhysicalCopy, insertTitle } from './catalog.repository.ts'
 import { reserveBarcodeSequence } from './bulk-book.repository.ts'
 import { renderBookLabel } from './book-label.renderer.ts'
+import { mysqlCatalogOptions, mysqlPublicCatalog, mysqlPublicDetail } from './catalog-mysql-public.ts'
 
 const fail=(message:string,status=422)=>new HttpError(status,'CATALOG_REVIEW_REQUIRED',message)
 const id=(value:unknown)=>{const n=positiveId(value);if(!n)throw fail('Choose a valid record.');return n}
@@ -22,7 +23,8 @@ const foundation={locations:{table:'catalog_locations',id:'location_id'},program
 type FoundationKind=keyof typeof foundation
 function foundationKind(value:string):FoundationKind{if(!Object.hasOwn(foundation,value))throw fail('Choose locations, programs, courses or types.');return value as FoundationKind}
 export async function catalogOptions(publicOnly=false){
- pg();const result:Record<string,unknown>={}
+ if(dbDriver!=='postgres')return mysqlCatalogOptions(publicOnly)
+ const result:Record<string,unknown>={}
  for(const [kind,spec] of Object.entries(foundation))result[kind]=await rows(db,`SELECT ${spec.id} AS id,name,lifecycle_status AS status,row_version AS version${kind==='programs'||kind==='courses'?',code':''}${kind==='courses'?',program_id AS "programId"':''}${kind==='types'?',record_kind AS "recordKind"':''}${kind==='locations'?',COALESCE((SELECT column_count FROM floor_plan_shelves s WHERE s.label=name),1) AS "columnCount",COALESCE((SELECT row_count FROM floor_plan_shelves s WHERE s.label=name),1) AS "rowCount"':''} FROM ${spec.table} ${publicOnly?"WHERE lifecycle_status='Active'":''} ORDER BY name`)
  result.categories=await rows(db,"SELECT category_id AS id,category_name AS name,'Active' AS status,1 AS version FROM categories ORDER BY category_name")
  return result
@@ -53,6 +55,8 @@ export async function saveFoundation(kindValue:string,recordId:unknown,body:Reco
 }
 const publicSelect=`SELECT t.title_id AS id,t.title,t.record_type AS kind,t.cover_image_path AS "coverImagePath",t.isbn,t.publisher,t.publication_year AS "publicationYear",t.call_number AS "callNumber",c.category_name AS category,
  COALESCE((SELECT string_agg(a.author_name,', ' ORDER BY a.author_order) FROM authors a WHERE a.title_id=t.title_id),'') AS author,
+ COALESCE((SELECT rr.department_or_program FROM research_records rr WHERE rr.title_id=t.title_id AND rr.viewing_status<>'Archived' LIMIT 1),'') AS department,
+ COALESCE((SELECT rr.adviser_name FROM research_records rr WHERE rr.title_id=t.title_id AND rr.viewing_status<>'Archived' LIMIT 1),'') AS adviser,
  d.copyright_year AS "copyrightYear",d.edition,d.page_count AS pages,d.synopsis,d.glossary_text AS glossary,d.row_version AS version,d.type_id AS "typeId",rt.name AS "resourceType",
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',p.program_id,'name',p.name,'code',p.code)) FROM catalog_title_programs tp JOIN catalog_programs p ON p.program_id=tp.program_id WHERE tp.title_id=t.title_id),'[]') AS programs,
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.course_id,'name',s.name,'programId',s.program_id,'code',s.code)) FROM catalog_title_courses tc JOIN catalog_courses s ON s.course_id=tc.course_id WHERE tc.title_id=t.title_id),'[]') AS courses,
@@ -66,13 +70,17 @@ function publicWhere(query:Record<string,unknown>){
  if(['Book','Research/Thesis'].includes(String(query.kind))){clauses.push('t.record_type=?');values.push(query.kind)}
  if(positiveId(query.categoryId)){clauses.push('t.category_id=?');values.push(positiveId(query.categoryId))}
  for(const [param,table,col] of [['programId','catalog_title_programs','program_id'],['courseId','catalog_title_courses','course_id'],['typeId','catalog_title_details','type_id']])if(positiveId(query[param])){clauses.push(`EXISTS(SELECT 1 FROM ${table} f WHERE f.title_id=t.title_id AND f.${col}=?)`);values.push(positiveId(query[param]))}
+ const department=clean(query.department).slice(0,150);if(department){clauses.push(`EXISTS(SELECT 1 FROM research_records rr WHERE rr.title_id=t.title_id AND rr.viewing_status<>'Archived' AND rr.department_or_program ILIKE ?)`);values.push(`%${department.replace(/[\\%_]/g,match=>`\\${match}`)}%`)}
+ const year=Number(clean(query.publicationYear));if(Number.isInteger(year)&&year>=1000&&year<=new Date().getFullYear()){clauses.push('t.publication_year=?');values.push(year)}
+ const author=clean(query.author).slice(0,120);if(author){clauses.push('EXISTS(SELECT 1 FROM authors a WHERE a.title_id=t.title_id AND a.author_name ILIKE ?)');values.push(`%${author.replace(/[\\%_]/g,match=>`\\${match}`)}%`)}
+ const adviser=clean(query.adviser).slice(0,120);if(adviser){clauses.push(`EXISTS(SELECT 1 FROM research_records rr WHERE rr.title_id=t.title_id AND rr.viewing_status<>'Archived' AND rr.adviser_name ILIKE ?)`);values.push(`%${adviser.replace(/[\\%_]/g,match=>`\\${match}`)}%`)}
  return {sql:clauses.join(' AND '),values}
 }
-export async function publicCatalog(query:Record<string,unknown>){pg();const where=publicWhere(query),page=Math.max(1,Math.min(10000,positiveId(query.page)??1)),limit=24
+export async function publicCatalog(query:Record<string,unknown>){if(dbDriver!=='postgres')return mysqlPublicCatalog(query);const where=publicWhere(query),page=Math.max(1,Math.min(10000,positiveId(query.page)??1)),limit=24
  const [items,count]=await Promise.all([rows(db,`${publicSelect} WHERE ${where.sql} ORDER BY t.title,t.title_id LIMIT ${limit} OFFSET ${(page-1)*limit}`,where.values),rows(db,`SELECT COUNT(*) AS total FROM titles t WHERE ${where.sql}`,where.values)])
  return {items,pagination:{page,limit,total:Number(count[0].total)}}
 }
-export async function publicDetail(value:unknown){pg();const titleId=id(value),where=publicWhere({}),book=(await rows(db,`${publicSelect} WHERE ${where.sql} AND t.title_id=?`,[titleId]))[0];if(!book)throw fail('This catalog entry is unavailable.',404)
+export async function publicDetail(value:unknown){if(dbDriver!=='postgres')return mysqlPublicDetail(value);const titleId=id(value),where=publicWhere({}),book=(await rows(db,`${publicSelect} WHERE ${where.sql} AND t.title_id=?`,[titleId]))[0];if(!book)throw fail('This catalog entry is unavailable.',404)
  const copies=book.kind==='Book'?await rows(db,`SELECT physical_copy_id AS id,accession_number AS accession,barcode,shelf_location AS shelf,condition_status AS condition,availability_status AS availability FROM physical_copies WHERE title_id=? AND lifecycle_status='Active' ORDER BY physical_copy_id`,[titleId]):await rows(db,`SELECT research_inventory_id AS id,accession_number AS accession,barcode,shelf_location AS shelf,condition_state AS condition,availability_status AS availability FROM research_inventory WHERE title_id=? AND lifecycle_status='Active' ORDER BY research_inventory_id`,[titleId])
  const files=await rows(db,"SELECT file_id AS id,original_name AS name,byte_size AS size,created_at AS uploaded FROM catalog_digital_files WHERE title_id=? AND lifecycle_status='Active' ORDER BY file_id",[titleId])
  return {...book,version:Number(book.version??0),copies,files}
