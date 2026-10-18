@@ -108,6 +108,7 @@ html {
   min-width: 320px;
   background: var(--sl-bg);
   color: var(--sl-text);
+  scroll-behavior: smooth;
 }
 
 body {
