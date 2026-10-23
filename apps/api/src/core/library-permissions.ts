@@ -6,6 +6,7 @@ import { HttpError } from './http-error.ts'
 export const libraryPermissionRoles = {
   'accounts.manage': ['Librarian', 'Admin'],
   'library.manage': ['Librarian'],
+  'library.hours': ['Librarian', 'Admin'],
   'desk.operate': ['Librarian', 'Staff'],
   'announcements.manage': ['Librarian', 'Staff'],
   'self-service.use': ['Student', 'Faculty'],

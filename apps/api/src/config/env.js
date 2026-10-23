@@ -59,6 +59,8 @@ const dbDriver = databaseUrl.startsWith('postgres') ? 'postgres' : 'mysql'
 export const env = Object.freeze({
   isProduction,
   inventoryPreviewEnabled: !isProduction && process.env.INVENTORY_PREVIEW_ENABLED === 'true',
+  // Laptop testing only. Production always keeps the email login code.
+  localDirectLogin: !isProduction && process.env.LOCAL_DIRECT_LOGIN === 'true',
   port: Number(process.env.PORT ?? 4000),
   webOrigin: process.env.WEB_ORIGIN
     ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:5173'),

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button, PageHeader, SectionCard } from '../../components/ui'
 import { getCurrentIdentity } from '../auth/auth-storage'
 import { notificationApi } from './notification-api'
+import { eventAccessLine, libraryClock, libraryDateTime } from '../attendance/library-clock'
 import type { LibrarySchedule, NotificationItem, NotificationList } from './types'
 
 const days = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -65,11 +66,7 @@ export function NotificationCenterPage() {
   return <>
     <PageHeader eyebrow="Activity center" title="Notifications" description="Due reminders, reservation updates, printing progress, schedules, and announcements." action={<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => void load()}><RefreshCw size={16} /> Refresh</Button><Button disabled={busy || !data?.unreadCount} onClick={() => void readAll()}><CheckCircle2 size={16} /> Mark all read</Button><Button variant="secondary" className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700" disabled={busy || !data?.items.length} onClick={() => setShowDeleteAllConfirm(true)}><Trash2 size={16}/> Delete all</Button></div>} />
     {error ? <div role="alert" className="mb-5 flex gap-2 rounded-xl bg-[#FFF200] p-4 font-bold text-[#0b5ea2]"><AlertTriangle size={18} />{error}</div> : null}
-    <div className="mb-5 grid gap-4 xl:grid-cols-[1fr_1.5fr]">
-      <SectionCard className="p-5"><h2 className="font-display text-lg font-bold text-[#0b5ea2]">Library schedule</h2><p className="mt-1 text-xs text-[#0b5ea2]/60">Asia/Manila campus time</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm">{schedule?.weekly.map((entry) => <div key={entry.dayOfWeek} className="rounded-xl bg-[#0b5ea2]/5 p-3"><p className="font-bold text-[#0b5ea2]">{days[entry.dayOfWeek]}</p><p className="mt-1 text-xs text-[#0b5ea2]/65">{entry.isOpen ? `${String(entry.opensAt).slice(0,5)} - ${String(entry.closesAt).slice(0,5)}` : 'Closed'}</p></div>)}</div></SectionCard>
-      <SectionCard className="p-5"><h2 className="font-display text-lg font-bold text-[#0b5ea2]">Upcoming closures</h2><div className="mt-4 space-y-2">{schedule?.upcomingClosures.length ? schedule.upcomingClosures.map((closure) => <div key={closure.date} className="rounded-xl border border-[#0b5ea2]/15 p-3"><p className="font-bold text-[#0b5ea2]">{date(closure.date)}</p><p className="mt-1 text-sm text-[#0b5ea2]/65">{closure.reason}</p></div>) : <p className="rounded-xl bg-[#0b5ea2]/5 p-4 text-sm text-[#0b5ea2]/65">No upcoming closures are recorded.</p>}</div></SectionCard>
-    </div>
-    <SectionCard className="overflow-hidden">
+    <SectionCard className="mb-5 overflow-hidden">
       <div className="border-b border-[#0b5ea2]/15 px-5 py-4">
         <h2 className="font-bold text-[#0b5ea2]">Inbox</h2>
         <p className="text-xs text-[#0b5ea2]/60">{data?.unreadCount ?? 0} unread</p>
@@ -97,6 +94,11 @@ export function NotificationCenterPage() {
         }) : <div className="p-12 text-center font-semibold text-[#0b5ea2]">No notifications yet.</div>}
       </div>
     </SectionCard>
+    <div className="grid gap-4">
+      <SectionCard className="p-5"><h2 className="font-display text-lg font-bold text-[#0b5ea2]">Library schedule</h2><p className="mt-1 text-xs text-[#0b5ea2]/60">Asia/Manila campus time</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4 xl:grid-cols-7">{schedule?.weekly.map((entry) => <div key={entry.dayOfWeek} className="rounded-xl bg-[#0b5ea2]/5 p-3"><p className="font-bold text-[#0b5ea2]">{days[entry.dayOfWeek]}</p><p className="mt-1 text-xs text-[#0b5ea2]/65">{entry.isOpen && entry.opensAt && entry.closesAt ? `${libraryClock(entry.opensAt)} – ${libraryClock(entry.closesAt)}` : 'Closed'}</p></div>)}</div></SectionCard>
+      <SectionCard className="p-5"><h2 className="font-display text-lg font-bold text-[#0b5ea2]">Scheduled events</h2><div className="mt-4 space-y-2">{schedule?.events?.length ? schedule.events.map((event) => <div key={`${event.title}-${event.startsAt}`} className="rounded-xl border border-[#0b5ea2]/15 p-3"><p className="font-bold text-[#0b5ea2]">{event.title}</p><p className="mt-1 text-xs text-[#0b5ea2]/65">{event.kind} · {event.space}</p><p className="mt-1 text-sm text-[#0b5ea2]/65">{libraryDateTime(event.startsAt)} – {libraryDateTime(event.endsAt)}</p><p className="mt-1 text-xs text-[#0b5ea2]/65">{eventAccessLine(event)}</p></div>) : <p className="rounded-xl bg-[#0b5ea2]/5 p-4 text-sm text-[#0b5ea2]/65">No scheduled events.</p>}</div></SectionCard>
+      <SectionCard className="p-5"><h2 className="font-display text-lg font-bold text-[#0b5ea2]">Upcoming closures</h2><div className="mt-4 space-y-2">{schedule?.upcomingClosures.length ? schedule.upcomingClosures.map((closure) => <div key={closure.date} className="rounded-xl border border-[#0b5ea2]/15 p-3"><p className="font-bold text-[#0b5ea2]">{date(closure.date)}</p><p className="mt-1 text-sm text-[#0b5ea2]/65">{closure.reason}</p></div>) : <p className="rounded-xl bg-[#0b5ea2]/5 p-4 text-sm text-[#0b5ea2]/65">No upcoming closures are recorded.</p>}</div></SectionCard>
+    </div>
     {showDeleteAllConfirm ? <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#0b5ea2]/65 p-4 backdrop-blur-sm">
       <section role="alertdialog" aria-modal="true" aria-labelledby="delete-all-notifications-title" aria-describedby="delete-all-notifications-description" className="w-full max-w-md overflow-hidden rounded-3xl border border-[#0b5ea2]/15 bg-white shadow-2xl shadow-[#0b5ea2]/30">
         <div className="h-2 bg-[#FFF200]"/>

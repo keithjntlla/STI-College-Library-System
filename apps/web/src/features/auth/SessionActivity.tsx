@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getAccessToken, saveAccessToken, clearAccessToken, setSessionIdentity } from './auth-storage'
-import { logout } from './auth-api'
+import { clearManualLogout, isManualLogout, logout } from './auth-api'
 
 const IDLE = 600_000
 const CHANNEL = 'sti-library-session-activity'
@@ -11,26 +11,28 @@ export function SessionActivity() {
   const [unavailable, setUnavailable] = useState(false)
   useEffect(() => {
     if (!getAccessToken()) return
+    clearManualLogout()
     let lastActivity = Date.now(), lastSent = 0, pending = false, ended = false
     const token = () => getAccessToken()
     // Broadcast contains timestamps and account identity only, never credentials or QR data.
     const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(CHANNEL)
     const account = () => { try { return JSON.parse(atob((token() ?? '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).accountId } catch { return null } }
     const accountId = account()
-    const exit = async (broadcast = true) => {
+    const exit = (broadcast = true, idle = true) => {
       if (ended) return
+      const showExpired = idle && !isManualLogout()
       ended = true
-      if (broadcast) channel?.postMessage({ type: 'logout', accountId })
-      void logout().catch(() => {})
+      if (broadcast) channel?.postMessage({ type: 'logout', reason: showExpired ? 'idle' : 'manual', accountId })
+      void logout(showExpired ? 'session' : 'manual').catch(() => {})
       clearAccessToken(); setSessionIdentity(null)
-      navigate('/login', { replace: true, state: { sessionExpired: true } })
+      navigate('/login', { replace: true, state: showExpired ? { sessionExpired: true } : undefined })
     }
     const sendActivity = async () => {
       if (pending || ended || Date.now() - lastSent < 30_000 || Date.now() - lastActivity > 35_000) return
       pending = true
       try {
         const response = await fetch('/api/v1/auth/activity', { method: 'POST', headers: { Authorization: `Bearer ${token() ?? ''}`, 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(10_000) })
-        if (response.status === 401 || response.status === 403) { void exit(); return }
+        if (response.status === 401 || response.status === 403) { if (!isManualLogout()) void exit(); return }
         if (!response.ok) throw new Error('Session renewal unavailable')
         const payload = await response.json()
         if (ended) return
@@ -48,7 +50,7 @@ export function SessionActivity() {
     }
     channel?.addEventListener('message', event => {
       if (event.data?.accountId !== accountId) return
-      if (event.data.type === 'logout') void exit(false)
+      if (event.data.type === 'logout') void exit(false, event.data.reason === 'idle')
       else if (event.data.type === 'activity' && Number.isFinite(event.data.at)) { lastActivity = Math.max(lastActivity, Math.min(Date.now(), event.data.at)); void sendActivity() }
     })
     const events = ['pointerdown', 'keydown', 'wheel', 'touchstart', 'click']

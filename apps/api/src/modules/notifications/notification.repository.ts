@@ -1,6 +1,7 @@
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import { db } from '../../config/db.js'
-import { currentDate, isPostgres } from '../../config/sql-dialect.js'
+import { currentDate, formatTime, isPostgres } from '../../config/sql-dialect.js'
+import { loadPublicLibraryEvents } from '../attendance/public-library-events.ts'
 import { HttpError } from '../../core/http-error.ts'
 import type { AnnouncementInput } from './notification.validation.ts'
 
@@ -133,7 +134,7 @@ export function createNotificationRepository(database: Pool = db) {
     async schedule() {
       const [[weekly], [closures]] = await Promise.all([
         database.execute<RowDataPacket[]>(
-          'SELECT day_of_week, is_open, opens_at, closes_at FROM library_operating_schedule ORDER BY day_of_week',
+          `SELECT day_of_week, is_open, ${formatTime('opens_at')} opens_at, ${formatTime('closes_at')} closes_at FROM library_operating_schedule ORDER BY day_of_week`,
         ),
         database.execute<RowDataPacket[]>(
           `SELECT closed_date, reason FROM library_closed_days WHERE closed_date >= ${currentDate()} ORDER BY closed_date LIMIT 20`,
@@ -141,8 +142,9 @@ export function createNotificationRepository(database: Pool = db) {
       ])
       return {
         timezone: 'Asia/Manila',
-        weekly: weekly.map((row) => ({ dayOfWeek: Number(row.day_of_week), isOpen: Boolean(row.is_open), opensAt: row.opens_at, closesAt: row.closes_at })),
+        weekly: weekly.map((row) => ({ dayOfWeek: Number(row.day_of_week), isOpen: Boolean(row.is_open), opensAt: row.opens_at ? String(row.opens_at).trim() : null, closesAt: row.closes_at ? String(row.closes_at).trim() : null })),
         upcomingClosures: closures.map((row) => ({ date: row.closed_date, reason: String(row.reason) })),
+        events: await loadPublicLibraryEvents(database),
       }
     },
 

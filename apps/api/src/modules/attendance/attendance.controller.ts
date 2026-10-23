@@ -6,6 +6,7 @@ import { attendanceService } from './attendance.service.ts'
 import { parseAttendanceFilters } from './attendance.validation.ts'
 import { HttpError } from '../../core/http-error.ts'
 import { attendanceOperations } from './attendance-operations.service.ts'
+import { attendanceHours } from './attendance-hours.service.ts'
 import { dbDriver } from '../../config/db.js'
 const handle=(fn:(req:Request,res:Response)=>Promise<void>)=>(req:Request,res:Response,next:NextFunction)=>{void fn(req,res).catch(next)}
 const actor=(res:Response)=>{const user=res.locals.authenticatedUser as {accountId?:number;id?:number;role?:string}|undefined;return{accountId:user?.accountId??user?.id,role:user?.role}}
@@ -25,6 +26,10 @@ export const attendanceController={
  state:handle(async(_req,res)=>{res.json({success:true,data:await attendanceOperations.state()})}),
  events:handle(async(_req,res)=>{res.json({success:true,data:await attendanceOperations.events()})}),
  policy:handle(async(req,res)=>{res.json({success:true,data:await attendanceOperations.configure(actor(res).accountId!,req.body)})}),
+ hours:handle(async(_req,res)=>{res.json({success:true,data:await attendanceHours.read()})}),
+ saveHours:handle(async(req,res)=>{res.json({success:true,message:'Library hours saved.',data:await attendanceHours.save(actor(res).accountId!,req.body)})}),
+ addClosure:handle(async(req,res)=>{res.status(201).json({success:true,message:'Closed date added.',data:await attendanceHours.addClosure(actor(res).accountId!,req.body)})}),
+ removeClosure:handle(async(req,res)=>{res.json({success:true,message:'Closed date removed.',data:await attendanceHours.removeClosure(actor(res).accountId!,String(req.params.date??''))})}),
  saveEvent:handle(async(req,res)=>{const id=req.params.id==null?null:Number(req.params.id);if(id!==null&&(!Number.isSafeInteger(id)||id<1))throw new HttpError(422,'EVENT_ID_INVALID','Choose a valid event.');res.json({success:true,data:await attendanceOperations.saveEvent(actor(res).accountId!,id,req.body)})}),
  cancelEvent:handle(async(req,res)=>{const id=Number(req.params.id),version=Number(req.body?.version);if(!Number.isSafeInteger(id)||id<1||!Number.isSafeInteger(version)||version<1)throw new HttpError(422,'EVENT_ID_INVALID','Choose a valid event and version.');res.json({success:true,data:await attendanceOperations.cancelEvent(actor(res).accountId!,id,version)})}),
  updateCapacity:handle(async(req,res)=>{res.json({success:true,message:'Library capacity updated.',data:await attendanceService.updateCapacity(actor(res),req.body)})}),

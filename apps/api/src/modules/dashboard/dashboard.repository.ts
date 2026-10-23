@@ -16,6 +16,7 @@ import {
   sumCondition,
 } from '../../config/sql-dialect.js'
 import { libraryState } from '../attendance/attendance-operations.service.ts'
+import { loadPublicLibraryEvents } from '../attendance/public-library-events.ts'
 import { concurrentAttendanceReport } from '../attendance/attendance-concurrent-report.ts'
 import { parseAttendanceFilters } from '../attendance/attendance.validation.ts'
 import { manilaDate } from '../attendance/attendance-intervals.ts'
@@ -197,6 +198,7 @@ export class DashboardRepository {
       this.pool.execute<RowDataPacket[]>(`SELECT ${sumCondition(`attendance_date=${currentDate()} AND time_out IS NULL`)} currently_inside FROM attendance_logs`),
     ])
     const state=isPostgres?await libraryState(this.pool):null
+    const events = await loadPublicLibraryEvents(this.pool)
     const summary = summaryResult[0][0] ?? {}, loan = loanResult[0][0], reservation = reservationResult[0][0], print = printResult[0][0], notice = noticeResult[0][0], announcement = announcementResult[0][0], occupancy = occupancyResult[0][0] ?? {}
     const policy = await createBorrowingPolicyService(this.pool).resolveActive(this.pool)
     const limit = roleBookLimit(policy, actor.role)
@@ -205,6 +207,7 @@ export class DashboardRepository {
       generatedAt: new Date().toISOString(), user: { name: identity.full_name, schoolId: identity.school_id, program: identity.program, role: actor.role }, profile,
       summary: { activeLoans: number(summary.active_loans), activeBookCount: number(summary.active_loans)+number(summary.pending_book_requests)+number(summary.active_reservations), borrowingLimit: limit, activeReservations: number(summary.active_reservations), unreadNotifications: number(summary.unread_notifications), outstandingFines: standing.summary.totalOutstanding, clearanceStatus: standing.status, clearanceComputedStatus: standing.computedStatus },
       occupancy: { current: state?.current??number(occupancy.currently_inside), capacity: state?.capacity??profile.seatCapacity },
+      events,
       currentLoan: loan ? { id:number(loan.transaction_id),title:String(loan.title),author:String(loan.author),barcode:String(loan.barcode ?? ''),shelfLocation:String(loan.shelf_location ?? ''),status:String(loan.transaction_status),dueAt:String(loan.due_at ?? ''),coverPath:loan.cover_image_path?String(loan.cover_image_path):null } : null,
       reservation: reservation ? { id:number(reservation.reservation_id),title:String(reservation.title),coverPath:reservation.cover_image_path?String(reservation.cover_image_path):null,queuePosition:reservation.request_kind==='CartHandover'?0:number(reservation.queue_position),status:isPostgres&&reservation.request_kind==='CartHandover'?'Awaiting handover':isPostgres?requestLabels[requestEventStatus(String(reservation.reservation_status),Boolean(reservation.assigned_physical_copy_id))]:String(reservation.reservation_status),pickupDeadline:reservation.pickup_deadline?String(reservation.pickup_deadline):null } : null,
       printRequest: print ? { id:number(print.request_id),fileName:String(print.file_name),copies:number(print.number_of_copies),printType:String(print.print_type),cost:money(print.calculated_cost),status:String(print.job_status),createdAt:String(print.created_at) } : null,
@@ -218,7 +221,8 @@ export class DashboardRepository {
   private async emptyUser(identity: IdentityRow, role: string, profile: Awaited<ReturnType<DashboardRepository['libraryProfile']>>) {
     const policy = await createBorrowingPolicyService(this.pool).resolveActive(this.pool)
     const state = isPostgres ? await libraryState(this.pool) : null
-    return { generatedAt:new Date().toISOString(),user:{name:identity.full_name,schoolId:identity.school_id,program:identity.program,role},profile,summary:{activeLoans:0,activeBookCount:0,borrowingLimit:roleBookLimit(policy, role),activeReservations:0,unreadNotifications:0,outstandingFines:0,clearanceStatus:'Needs verification'},occupancy:{current:state?.current??0,capacity:state?.capacity??profile.seatCapacity},currentLoan:null,reservation:null,printRequest:null,latestNotification:null,announcement:null,recentHistory:[],recommendations:[] }
+    const events = await loadPublicLibraryEvents(this.pool)
+    return { generatedAt:new Date().toISOString(),user:{name:identity.full_name,schoolId:identity.school_id,program:identity.program,role},profile,summary:{activeLoans:0,activeBookCount:0,borrowingLimit:roleBookLimit(policy, role),activeReservations:0,unreadNotifications:0,outstandingFines:0,clearanceStatus:'Needs verification'},occupancy:{current:state?.current??0,capacity:state?.capacity??profile.seatCapacity},events,currentLoan:null,reservation:null,printRequest:null,latestNotification:null,announcement:null,recentHistory:[],recommendations:[] }
   }
 }
 

@@ -10,6 +10,9 @@ import { MySqlSessionStore } from './core/mysql-session-store.js'
 import { HttpError } from './core/http-error.ts'
 import { isDatabaseUnavailable } from './core/database-availability.ts'
 import { checkSchemaReadiness, isMissingSchemaError } from './core/schema-readiness.ts'
+import { localDesignData, localDesignFallbackAllowed, localDesignMeta } from './core/local-design-fallback.ts'
+
+const LOCAL_SCHEMA_CODES = new Set(['SUPABASE_REQUIRED', 'WORKSPACE_UNAVAILABLE', 'REPORTS_UNAVAILABLE', 'COLLECTION_REVIEW_INVALID'])
 import { registerModules } from './modules/index.ts'
 import { dashboardForRole, ROLES, STAFF_ROLES, USER_ROLES, webDashboardForRole } from './modules/auth/auth.constants.js'
 import { requireAuth, requireCsrfForStateChanges, requireRoles, sessionCookie } from './modules/auth/auth.middleware.js'
@@ -25,7 +28,7 @@ import { researchAssetRouter } from './modules/catalog/research-asset.routes.ts'
 import { adminCirculationRouter, borrowCartRouter, circulationRequestRouter, userCirculationRouter } from './modules/circulation/circulation.routes.ts'
 import { deskCirculationRouter,userInLibraryRouter } from './modules/circulation/desk-circulation.routes.ts'
 import { adminReservationsV1Router, userReservationsV1Router } from './modules/reservations/reservations.routes.ts'
-import { adminAttendanceV1Router, userAttendanceV1Router } from './modules/attendance/attendance.routes.ts'
+import { adminAttendanceV1Router, libraryClosuresRouter, libraryHoursRouter, userAttendanceV1Router } from './modules/attendance/attendance.routes.ts'
 import { adminUsersV1Router, selfProfileRouter } from './modules/users/users.routes.ts'
 import { adminPrintingV1Router, userPrintingV1Router } from './modules/printing/printing.routes.ts'
 import { adminClearanceV1Router, userClearanceV1Router } from './modules/clearance/clearance.routes.ts'
@@ -133,6 +136,8 @@ export function createApp() {
   app.use('/api/v1/borrow', authenticateJwt, requireJwtRoles('Student', 'Faculty'), borrowCartRouter)
   app.use('/api/v1/circulation', authenticateJwt, requireJwtRoles('Student', 'Faculty', 'Librarian', 'Staff'), circulationRequestRouter)
   app.use('/api/v1/admin/reservations', authenticateJwt, requireLibraryPermission('desk.operate'), adminReservationsV1Router)
+  app.use('/api/v1/admin/attendance/hours', authenticateJwt, requireLibraryPermission('library.hours'), libraryHoursRouter)
+  app.use('/api/v1/admin/attendance/closures', authenticateJwt, requireLibraryPermission('library.hours'), libraryClosuresRouter)
   app.use('/api/v1/admin/attendance', authenticateJwt, requireLibraryPermission('desk.operate'), adminAttendanceV1Router)
   app.use('/api/v1/attendance', authenticateJwt, requireJwtRoles('Librarian', 'Student', 'Faculty'), userAttendanceV1Router)
   app.use('/api/v1/admin/users', authenticateJwt, requireLibraryPermission('accounts.manage'), adminUsersV1Router)
@@ -193,6 +198,11 @@ export function createApp() {
       return response.status(400).json({ success: false, message: 'The request body contains invalid JSON.' })
     }
     if (error instanceof HttpError) {
+      if (env.localDirectLogin && error.status === 503 && LOCAL_SCHEMA_CODES.has(error.code) && localDesignFallbackAllowed(_request.method, _request.path)) {
+        return localDesignData(_request.originalUrl, response.locals.authenticatedUser)
+          .then((data) => response.json({ success: true, data }))
+          .catch(() => response.status(error.status).json({ success: false, code: error.code, message: error.message }))
+      }
       return response.status(error.status).json({
         success: false,
         code: error.code,
@@ -209,6 +219,21 @@ export function createApp() {
       })
     }
     if (isMissingSchemaError(error)) {
+      if (env.localDirectLogin && localDesignFallbackAllowed(_request.method, _request.path)) {
+        return localDesignData(_request.originalUrl, response.locals.authenticatedUser)
+          .then((data) => {
+            const meta = localDesignMeta(_request.originalUrl)
+            response.json({ success: true, data, ...(meta ? { meta } : {}) })
+          })
+          .catch(() => response.status(503).json({
+            success: false,
+            code: 'DATABASE_MIGRATION_REQUIRED',
+            message: 'This module is unavailable until the required database migrations are applied.',
+          }))
+      }
+      if (env.localDirectLogin && _request.method === 'GET' && _request.path === '/api/v1/attendance/pass.png') {
+        return response.set('Content-Type', 'image/png').send(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'))
+      }
       return response.status(503).json({
         success: false,
         code: 'DATABASE_MIGRATION_REQUIRED',

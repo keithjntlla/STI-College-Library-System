@@ -18,9 +18,9 @@ import {
   Map,
   Megaphone,
   Moon,
+  ChevronLeft,
+  ChevronRight,
   PackageOpen,
-  PanelLeftClose,
-  PanelLeftOpen,
   Printer,
   QrCode,
   Search,
@@ -123,17 +123,17 @@ function Sidebar({ role, open, onClose, collapsed, onToggleCollapse }: { role: R
     <>
       {open ? <button aria-label="Close navigation" onClick={onClose} className="fixed inset-0 z-40 bg-[#0b5ea2]/45 backdrop-blur-sm lg:hidden" /> : null}
       <aside id="portal-navigation" aria-label="Portal navigation" inert={!open && mobile ? true : undefined} className={cn('portal-sidebar fixed inset-y-0 left-0 z-50 flex w-64 max-w-[calc(100vw-2rem)] flex-col overflow-hidden bg-[#0b5ea2] text-white transition-[width,transform] duration-300 ease-out lg:max-w-none lg:translate-x-0', open ? 'translate-x-0' : '-translate-x-full', collapsed && 'lg:w-[5.5rem]')}>
-        <div className={cn('flex h-20 shrink-0 items-center gap-2 border-b border-white/10 px-4 transition-[padding] duration-300', collapsed && 'lg:justify-center lg:px-2')}>
+        <div className={cn('flex h-20 shrink-0 items-center gap-2 border-b border-white/10 pl-4 pr-1 transition-[padding] duration-300', collapsed && 'lg:justify-center lg:px-2')}>
           <div className={cn('flex min-w-0 flex-1 items-center gap-2', collapsed && 'lg:flex-none')}>
-            <img src="/logo.jpg" alt="STI College Ormoc Logo" className={cn('h-11 w-11 shrink-0 rounded-sm object-contain', collapsed && 'lg:h-8 lg:w-8')} />
+            <img src="/logo.jpg" alt="STI College Ormoc Logo" className={cn('h-11 w-11 shrink-0 rounded-xl object-contain', collapsed && 'lg:h-8 lg:w-8')} />
             <div className={cn('min-w-0', collapsed && 'lg:hidden')}>
-              <p className="whitespace-nowrap font-display text-[11px] font-black leading-tight tracking-tight text-white">STI COLLEGE ORMOC</p>
-              <p className="whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.14em] text-[#FFF200]">Online Library</p>
+              <p className="whitespace-nowrap font-display text-[13px] font-black leading-tight tracking-tight text-white">STI COLLEGE ORMOC</p>
+              <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.14em] text-[#FFF200]">Online Library</p>
             </div>
-            <button type="button" onClick={onToggleCollapse} aria-expanded={!collapsed} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/60 transition-colors hover:bg-white/10 hover:text-white lg:inline-flex">
-              {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-            </button>
           </div>
+          <button type="button" onClick={onToggleCollapse} aria-expanded={!collapsed} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} className={cn('hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/60 transition-colors hover:bg-white/10 hover:text-white lg:inline-flex', collapsed ? 'lg:ml-0' : 'ml-auto')}>
+            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
           <button onClick={onClose} aria-label="Close navigation menu" className="ml-auto min-h-11 min-w-11 shrink-0 rounded-lg p-2 text-white/60 hover:bg-white/10 hover:text-white lg:hidden"><X size={18} /></button>
         </div>
         <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 transition-[padding] duration-300', collapsed && 'lg:px-2')}>
@@ -280,6 +280,7 @@ export function PortalLayout({ role }: { role: Role }) {
   const nav = navigation(role)
   const current = nav.find((item) => location.pathname.startsWith(item.to))
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [catalogQuery, setCatalogQuery] = useState('')
   useEffect(() => {
     const media = window.matchMedia?.('(min-width: 1024px)')
     const closeOnDesktop = () => { if (media?.matches) setSidebarOpen(false) }
@@ -315,11 +316,11 @@ export function PortalLayout({ role }: { role: Role }) {
         <header className="sticky top-0 z-30 flex h-20 items-center gap-3 border-b border-[#0b5ea2]/10 bg-white/90 px-4 backdrop-blur-xl transition-colors sm:px-6 lg:px-8 dark:border-white/10 dark:bg-[#14151b]/92">
           <button onClick={() => setSidebarOpen(true)} aria-label="Open navigation" aria-controls="portal-navigation" aria-expanded={sidebarOpen} className="shrink-0 rounded-xl border border-[#0b5ea2]/15 p-2.5 text-[#0b5ea2]/65 lg:hidden dark:border-white/15 dark:text-white/70"><Menu size={19} /></button>
           <div className="hidden min-w-0 sm:block"><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#0b5ea2]/45 dark:text-white/45">{role === 'admin' ? 'Admin workspace' : role === 'librarian' ? 'Library Admin workspace' : role === 'staff' ? 'Staff workspace' : role === 'faculty' ? 'Faculty portal' : 'Student portal'}</p><p className="mt-0.5 truncate font-display text-sm font-bold text-[#0b5ea2] dark:text-white">{current?.label ?? 'STI College Ormoc ILMS'}</p></div>
-          <label className="relative ml-auto hidden w-64 xl:block"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#0b5ea2]/45 dark:text-white/45" size={15} /><input placeholder="Search anywhere..." className="h-10 w-full rounded-xl border border-[#0b5ea2]/15 bg-[#0b5ea2]/5 pl-9 pr-3 text-sm outline-none transition focus:border-[#0b5ea2]/15 focus:bg-white focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-white/15 dark:bg-white/5 dark:text-white dark:focus:bg-[#002266]" /></label>
+          {role === 'student' || role === 'faculty' ? <form role="search" className="relative ml-auto hidden w-64 xl:block" onSubmit={(event) => { event.preventDefault(); const q = catalogQuery.trim(); navigate(q ? `/${role}/library?q=${encodeURIComponent(q)}` : `/${role}/library`) }}><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#0b5ea2]/45 dark:text-white/45" size={15} /><input value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} aria-label="Search catalog" placeholder="Search catalog..." className="h-10 w-full rounded-xl border border-[#0b5ea2]/15 bg-[#0b5ea2]/5 pl-9 pr-3 text-sm outline-none transition focus:border-[#0b5ea2]/15 focus:bg-white focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-white/15 dark:bg-white/5 dark:text-white dark:focus:bg-[#002266]" /></form> : <label className="relative ml-auto hidden w-64 xl:block"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#0b5ea2]/45 dark:text-white/45" size={15} /><input placeholder="Search anywhere..." className="h-10 w-full rounded-xl border border-[#0b5ea2]/15 bg-[#0b5ea2]/5 pl-9 pr-3 text-sm outline-none transition focus:border-[#0b5ea2]/15 focus:bg-white focus:ring-4 focus:ring-[#0b5ea2]/10 dark:border-white/15 dark:bg-white/5 dark:text-white dark:focus:bg-[#002266]" /></label>}
           <div className="ml-auto flex items-center gap-2 xl:ml-3"><NotificationBell role={role} /><AccountMenu role={role} onRequestSignOut={() => setShowLogoutConfirm(true)} /></div>
         </header>
         <SessionActivity /><main className="portal-content mx-auto min-w-0 max-w-[1500px] p-4 sm:p-6 lg:p-8"><Outlet /></main>
-        {role !== 'admin' ? <AttendanceFab role={role} /> : null}
+        {role === 'librarian' || role === 'staff' ? <AttendanceFab role={role} /> : null}
       </div>
       {showLogoutConfirm ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0b5ea2]/40 p-4 backdrop-blur-sm">

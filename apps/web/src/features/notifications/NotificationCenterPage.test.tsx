@@ -13,7 +13,7 @@ const notification = {
   type: 'Reservation Arrival', sourceType: 'Reservation', sourceId: 5, actionPath: '/student/reservations',
   priority: 'Urgent' as const, isRead: false, createdAt: '2026-09-05T08:00:00.000Z', readAt: null, expiresAt: null,
 }
-const schedule = { timezone: 'Asia/Manila', weekly: [], upcomingClosures: [] }
+const schedule = { timezone: 'Asia/Manila', weekly: [], upcomingClosures: [], events: [{ title: 'Thesis seminar', kind: 'Seminar', space: 'Main reading area', startsAt: '2026-10-20T01:00:00.000Z', endsAt: '2026-10-20T03:00:00.000Z', seats: 20, allowWalkIns: true, allowBorrowing: true, allowPrinting: true, active: false }] }
 
 describe('notification center', () => {
   it('keeps the inbox and unread state when marking notifications read fails', async () => {
@@ -38,6 +38,7 @@ describe('notification center', () => {
 
     await waitFor(() => expect(api.remove).toHaveBeenCalledWith(12))
     expect(await screen.findByText('No notifications yet.')).toBeTruthy()
+    expect(screen.getByText('Thesis seminar')).toBeTruthy()
   })
 
   it('uses a custom confirmation dialog before deleting all delivered notifications', async () => {

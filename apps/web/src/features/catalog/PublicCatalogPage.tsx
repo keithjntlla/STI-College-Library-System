@@ -35,7 +35,7 @@ export function PublicCatalogPage({embedded=false,refreshKey=0,onViewBook,render
  const requestLink=(book:CatalogRecord)=>claims&&['Student','Faculty'].includes(claims.role)?`/${claims.role.toLowerCase()}/library?titleId=${book.id}&request=1`:`/login?catalogTitleId=${book.id}`
  const content=<>
  {!embedded&&<PublicCatalogWelcome role={claims?.role} query={params.get('q')??''} onSearch={value=>change('q',value)}/>}
- <section id="catalog" className={embedded?'space-y-6':'scroll-mt-6 px-5 py-10 sm:px-8'} style={embedded?undefined:{backgroundImage:'radial-gradient(color-mix(in srgb, currentColor 15%, transparent) 0.8px, transparent 0.8px)',backgroundSize:'22px 22px'}}>
+ <section id="catalog" className={embedded?'space-y-6':'scroll-mt-6 px-5 py-10 sm:px-8'}>
  <div className={embedded?'space-y-6':'mx-auto max-w-7xl space-y-6'}>
  <header className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
   <div>{embedded&&!onViewBook?<h1 className="font-display text-2xl font-black tracking-tight">{heading}</h1>:<h2 className="font-display text-2xl font-black tracking-tight">{heading}</h2>}<p className="mt-1 text-sm text-[#0b5ea2]/65 dark:text-white/65">Browse our complete library collection.</p></div>

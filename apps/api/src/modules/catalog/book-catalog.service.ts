@@ -1,6 +1,8 @@
 import type { Pool } from 'mysql2/promise'
 import { db } from '../../config/db.js'
+import { env } from '../../config/env.js'
 import { HttpError } from '../../core/http-error.ts'
+import { isMissingSchemaError } from '../../core/schema-readiness.ts'
 import { createBorrowingPolicyService } from '../circulation/borrowing-policy.service.ts'
 import { roleBookLimit } from '../circulation/borrowing-policy.types.ts'
 import { reservationService } from '../reservations/reservation.service.ts'
@@ -16,19 +18,53 @@ import { parseBookCatalogFilters, parseBookTitleId } from './book-catalog.valida
 
 export type CatalogViewer = { accountId: number; role: 'Librarian' | 'Student' | 'Faculty' }
 
+function localBorrowingPolicy() {
+  return {
+    versionId: 0,
+    effectiveOn: '2026-01-01',
+    studentMaxActiveBooks: 3,
+    facultyMaxActiveBooks: null,
+    borrowingDays: 3,
+    dueTimeCutoff: '17:00:00',
+    maxRenewals: 0,
+    renewalExtensionDays: 0,
+    studentMaxActiveReservations: 1,
+    facultyMaxActiveReservations: null,
+    blockRenewalIfOverdue: true,
+    blockRenewalIfUnpaidFines: true,
+    blockRenewalIfReserved: true,
+    longOverdueAfterDays: null,
+    changeReason: '',
+    createdByUserId: null,
+    createdAt: new Date(0),
+    materialRules: [],
+  }
+}
+
 export function createBookCatalogService(database: Pool = db) {
   return {
     categories: () => queryBookCategories(database),
 
     async list(query: Record<string, unknown>, viewer: CatalogViewer) {
       const policyService = createBorrowingPolicyService(database)
-      const [catalog, activeBookCount, policy] = await Promise.all([
-        queryBookCatalog(database, parseBookCatalogFilters(query)),
-        viewer.role === 'Student' || viewer.role === 'Faculty'
-          ? queryViewerActiveBookCount(database, viewer.accountId)
-          : Promise.resolve(0),
-        policyService.resolveActive(database),
-      ])
+      const catalog = await queryBookCatalog(database, parseBookCatalogFilters(query))
+      let activeBookCount = 0
+      let policy = localBorrowingPolicy()
+      if (!env.localDirectLogin) {
+        ;[activeBookCount, policy] = await Promise.all([
+          viewer.role === 'Student' || viewer.role === 'Faculty' ? queryViewerActiveBookCount(database, viewer.accountId) : Promise.resolve(0),
+          policyService.resolveActive(database),
+        ])
+      } else {
+        try {
+          ;[activeBookCount, policy] = await Promise.all([
+            viewer.role === 'Student' || viewer.role === 'Faculty' ? queryViewerActiveBookCount(database, viewer.accountId) : Promise.resolve(0),
+            policyService.resolveActive(database),
+          ])
+        } catch (error) {
+          if (!isMissingSchemaError(error)) throw error
+        }
+      }
       return {
         ...catalog,
         viewer: {

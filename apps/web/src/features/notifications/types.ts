@@ -3,10 +3,23 @@ export type NotificationItem = {
   actionPath: string | null; priority: 'Normal' | 'Important' | 'Urgent'; isRead: boolean; createdAt: string; readAt: string | null; expiresAt: string | null
 }
 export type NotificationList = { items: NotificationItem[]; unreadCount: number; pagination: { page: number; limit: number; total: number; totalPages: number } }
+export type ScheduledLibraryEvent = {
+  title: string
+  kind: string
+  space: string
+  startsAt: string
+  endsAt: string
+  seats: number
+  allowWalkIns: boolean
+  allowBorrowing: boolean
+  allowPrinting: boolean
+  active: boolean
+}
 export type LibrarySchedule = {
   timezone: string
   weekly: Array<{ dayOfWeek: number; isOpen: boolean; opensAt: string | null; closesAt: string | null }>
   upcomingClosures: Array<{ date: string; reason: string }>
+  events?: ScheduledLibraryEvent[]
 }
 export type Announcement = {
   announcementId: number; title: string; body: string; priority: string; status: string; publishAt: string | null

@@ -169,6 +169,10 @@ export function createAttendanceService(pool: Pool = db) {
     },
 
     async capacity() {
+      if (isPostgres) {
+        const state = await libraryState(pool)
+        return { baseCapacity: state.baseCapacity, current: state.current, capacity: state.capacity, available: state.available, percentage: state.percentage, overCapacity: state.overCapacity, serviceVisits: state.serviceVisits }
+      }
       const [rows] = await pool.execute<RowDataPacket[]>(
         `SELECT p.seat_capacity,
                 (SELECT COUNT(*) FROM attendance_logs WHERE attendance_date=${currentDate()} AND time_out IS NULL) current_occupancy

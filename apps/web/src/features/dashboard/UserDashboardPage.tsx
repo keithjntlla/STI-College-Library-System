@@ -1,11 +1,12 @@
-import { ArrowRight, Bell, BookMarked, BookOpen, CalendarClock, CheckCircle2, Clock3, Eye, MapPin, PhilippinePeso, Printer, RotateCcw, Search, ShoppingBag, Sparkles } from 'lucide-react'
+import { ArrowRight, Bell, BookMarked, BookOpen, CalendarClock, CheckCircle2, Clock3, Download, Eye, MapPin, PhilippinePeso, Printer, QrCode, RotateCcw, Search, ShoppingBag, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, CardLink, PageHeader, SectionCard, StatCard, StatusBadge } from '../../components/ui'
 import { dashboardApi } from './dashboard-api'
 import type { UserDashboardData } from './types'
 import { BookCoverThumbnail } from '../catalog/BookCoverThumbnail'
-import { DashboardQrPass } from '../attendance/DashboardQrPass'
+import { attendanceApi } from '../attendance/attendance-api'
+import { eventAccessLine, libraryClock, libraryDateTime } from '../attendance/library-clock'
 import { BookOverview } from '../catalog/BookOverview'
 import { fetchBookOverview } from '../catalog/book-catalog-api'
 import { validateBookCartAddition } from '../catalog/book-cart'
@@ -28,7 +29,7 @@ export function UserDashboardPage(){
   if(!data)return <SectionCard className="p-8 text-center"><p className="font-display text-xl font-bold text-[#0b5ea2]">Dashboard unavailable</p><p role="alert" className="mt-4 rounded-xl p-4 text-sm">{error}</p><Button className="mt-5" onClick={()=>void load()}><RotateCcw size={16}/>Try again</Button></SectionCard>
   const prefix=data.user.role==='Faculty'?'/faculty':'/student',limitNote=data.summary.borrowingLimit===null?'No fixed borrowing limit':`${Math.max(0,data.summary.borrowingLimit-data.summary.activeLoans)} slot${Math.max(0,data.summary.borrowingLimit-data.summary.activeLoans)===1?'':'s'} remaining`
   const clearanceOverride=data.summary.clearanceStatus==='Cleared' && data.summary.clearanceComputedStatus==='Not Cleared';const clearanceDeadline=data.clearanceSchedule?.deadlineAt;const clearanceOverdue=Boolean(!clearanceOverride && data.summary.clearanceStatus!=='Cleared' && clearanceDeadline && Date.now()>new Date(clearanceDeadline).getTime())
-  const occupancyPercent=Math.min(100,Math.round(data.occupancy.current/data.occupancy.capacity*100));const cleared=data.summary.clearanceStatus==='Cleared';const today=manilaDay();const todaySchedule=data.profile.schedule.find(item=>item.day===today)
+  const occupancyPercent=Math.min(100,Math.round(data.occupancy.current/Math.max(1,data.occupancy.capacity)*100));const cleared=data.summary.clearanceStatus==='Cleared';const today=manilaDay();const todaySchedule=data.profile.schedule.find(item=>item.day===today);const events=data.events??[];const limited=events.filter(event=>event.active&&data.occupancy.capacity<data.profile.seatCapacity)
   const addCatalogBook=(book:BookCatalogItem)=>{
     const validation=validateBookCartAddition({role:data.user.role as AuthRole,activeBookCount:data.summary.activeBookCount,selectedBookCount:cart.length,alreadySelected:cartIds.has(book.titleId)})
     if(!validation.allowed){setNotice('');setError(validation.message??'This book cannot be added to the cart.');return}
@@ -44,7 +45,6 @@ export function UserDashboardPage(){
     <div className="mt-5 flex flex-wrap gap-3 border-t border-[#0b5ea2]/10 pt-4"><Link to={`${prefix}/library`}><Button><Search size={16}/>Browse catalog</Button></Link><Link to={`${prefix}/cart`}><Button variant="secondary"><ShoppingBag size={16}/>Borrow cart ({cart.length})</Button></Link><Button variant="secondary" onClick={()=>void load()}><RotateCcw size={16}/>Refresh dashboard</Button></div>
   </SectionCard>
   return <>
-    <DashboardQrPass />
     <PageHeader eyebrow={`${data.user.role} workspace`} title={`Good day, ${first(data.user.name)}!`}/>
     {error?<div role="alert" className="mb-5 rounded-2xl bg-[#b42318] px-4 py-3 text-sm font-semibold text-white">{error}</div>:null}{notice?<div role="status" className="mb-5 rounded-2xl bg-[#0b5ea2] px-4 py-3 text-sm font-semibold text-[#FFFFFF]">{notice}</div>:null}
     <section className="relative mb-5 overflow-hidden rounded-3xl bg-cover bg-center p-6 text-white shadow-xl shadow-black/5 ring-1 ring-white/15 sm:p-8" style={{ backgroundImage: "url('/library-hero.webp')" }}>
@@ -52,10 +52,6 @@ export function UserDashboardPage(){
       <div className="absolute inset-0 bg-gradient-to-t from-[#0b5ea2] via-transparent to-transparent opacity-80" />
       <div className="relative z-10 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
         <div>
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold text-white ring-1 ring-white/25 backdrop-blur-md">
-            <Sparkles size={14} className="text-[#FFF200]" />
-            Your library, made smarter
-          </div>
           <h2 className="max-w-2xl font-display text-2xl font-bold text-white sm:text-3xl">Your books, requests, updates, and library visit in one place.</h2>
           <p className="mt-3 max-w-xl text-sm leading-6 text-white/85">{data.profile.information ?? 'Check your account and explore available library resources.'}</p>
           <div className="mt-5 flex flex-wrap gap-3">
@@ -64,11 +60,7 @@ export function UserDashboardPage(){
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:w-80">
-          <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/25 backdrop-blur-md">
-            <p className="text-xs text-white/75">Library occupancy</p>
-            <p className="mt-2 text-2xl font-bold">{data.occupancy.current}<span className="text-sm font-medium text-white/70"> / {data.occupancy.capacity}</span></p>
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/15"><div style={{ width: `${occupancyPercent}%` }} className="h-full rounded-full bg-[#FFF200]" /></div>
-          </div>
+          <HeroQr schoolId={data.user.schoolId} />
           <Link to={`${prefix}/clearance`} className="min-w-0 rounded-2xl bg-white/10 p-4 ring-1 ring-white/25 backdrop-blur-md transition hover:bg-white/15">
             <p className="text-xs text-white/75">Clearance status</p>
             <div className="mt-2 flex items-start gap-2">
@@ -89,13 +81,44 @@ export function UserDashboardPage(){
     <div className="mt-5 grid gap-5 xl:grid-cols-3">
       <SectionCard className="p-5"><p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]/45">Book request</p><h2 className="mt-1 font-display text-lg font-bold text-[#0b5ea2]">Cart and reservations</h2><Link className="mt-2 inline-block text-sm font-bold underline" to={`${prefix}/reservations`}>View requests &amp; reservations</Link>{data.reservation?<div className="mt-4 flex gap-4 rounded-xl bg-[#0b5ea2]/5 p-4"><BookCoverThumbnail title={data.reservation.title} coverImagePath={data.reservation.coverPath} className="h-28 w-20 shrink-0 rounded-xl border border-[#0b5ea2]/15 shadow-[0_4px_12px_rgba(11, 94, 162,0.12)]"/><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><p className="line-clamp-2 font-semibold text-[#0b5ea2]">{data.reservation.title}</p><StatusBadge status={data.reservation.status}/></div>{data.reservation.queuePosition>0?<p className="mt-3 text-sm text-[#0b5ea2]/65">Queue position <strong>#{data.reservation.queuePosition}</strong></p>:<p className="mt-3 text-sm text-[#0b5ea2]/65">Awaiting staff handover</p>}{data.reservation.pickupDeadline?<p className="mt-1 text-xs text-[#0b5ea2]/55">Pickup by {data.reservation.pickupDeadline}</p>:null}</div></div>:<Empty text="No active book request."/>}</SectionCard>
       <SectionCard className="p-5"><p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]/45">Latest update</p><h2 className="mt-1 font-display text-lg font-bold text-[#0b5ea2]">Notifications</h2>{data.latestNotification?<div className="mt-4"><p className="font-semibold text-[#0b5ea2]">{data.latestNotification.title}</p><p className="mt-2 line-clamp-3 text-sm leading-6 text-[#0b5ea2]/65">{data.latestNotification.message}</p><Link to={`${prefix}/notifications`} className="mt-3 inline-block"><CardLink>View notifications</CardLink></Link></div>:<Empty text="You are all caught up."/>}</SectionCard>
-      <SectionCard className="p-5"><p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]/45">Library information</p><h2 className="mt-1 font-display text-lg font-bold text-[#0b5ea2]">Hours and schedule</h2><div className="mt-4 flex items-start gap-3"><Clock3 size={19} className="mt-0.5 text-[#0b5ea2]"/><div><p className="text-sm font-semibold text-[#0b5ea2]">{dayNames[today]}: {todaySchedule?.isOpen?`${todaySchedule.opensAt} – ${todaySchedule.closesAt}`:'Closed'}</p>{data.profile.nextClosure?<p className="mt-2 text-xs text-[#0b5ea2]/65">Next closure: {data.profile.nextClosure.date} · {data.profile.nextClosure.reason}</p>:<p className="mt-2 text-xs text-[#0b5ea2]/65">No upcoming closure is posted.</p>}</div></div>{data.profile.mapPath?<a className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-[#0b5ea2]" href={data.profile.mapPath}><MapPin size={15}/>View library map</a>:null}</SectionCard>
+      <SectionCard className="p-5"><p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]/45">Library information</p><h2 className="mt-1 font-display text-lg font-bold text-[#0b5ea2]">Hours and schedule</h2><div className="mt-4 flex items-start gap-3"><Clock3 size={19} className="mt-0.5 text-[#0b5ea2]"/><div><p className="text-sm font-semibold text-[#0b5ea2]">{dayNames[today]}: {todaySchedule?.isOpen?`${libraryClock(todaySchedule.opensAt)} – ${libraryClock(todaySchedule.closesAt)}`:'Closed'}</p>{data.profile.nextClosure?<p className="mt-2 text-xs text-[#0b5ea2]/65">Next closure: {data.profile.nextClosure.date} · {data.profile.nextClosure.reason}</p>:<p className="mt-2 text-xs text-[#0b5ea2]/65">No upcoming closure is posted.</p>}</div></div><div className="mt-4 space-y-2">{events.length?events.map(event=><div className="rounded-xl bg-[#0b5ea2]/5 p-3" key={`${event.title}-${event.startsAt}`}><p className="text-sm font-semibold text-[#0b5ea2]">{event.title}</p><p className="mt-1 text-xs text-[#0b5ea2]/65">{event.kind} · {event.space}</p><p className="mt-1 text-xs text-[#0b5ea2]/65">{libraryDateTime(event.startsAt)} – {libraryDateTime(event.endsAt)}</p><p className="mt-1 text-xs text-[#0b5ea2]/65">{eventAccessLine(event)}</p></div>):<p className="text-xs text-[#0b5ea2]/65">No scheduled events.</p>}</div><div className="mt-4 border-t border-[#0b5ea2]/10 pt-4"><p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]/45">Library occupancy</p><p className="mt-1 text-sm font-semibold text-[#0b5ea2]">{data.occupancy.current}<span className="font-medium text-[#0b5ea2]/60"> / {data.occupancy.capacity}</span></p>{limited.length?<p className="mt-1 text-xs text-[#0b5ea2]/65">Seats are limited during {limited.map(event=>event.title).join(', ')}.</p>:null}<div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#0b5ea2]/10"><div style={{ width: `${occupancyPercent}%` }} className="h-full rounded-full bg-[#0b5ea2]" /></div></div>{data.profile.mapPath?<a className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-[#0b5ea2]" href={data.profile.mapPath}><MapPin size={15}/>View library map</a>:null}</SectionCard>
     </div>
     {data.announcement?<SectionCard className="mt-5 border-[#FFF200] bg-[#FFF200]/20 p-5"><div className="flex items-start gap-3"><Bell className="mt-0.5 text-[#0b5ea2]" size={20}/><div><p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]/55">Library announcement · {data.announcement.priority}</p><h2 className="mt-1 font-display text-lg font-bold text-[#0b5ea2]">{data.announcement.title}</h2><p className="mt-2 text-sm leading-6 text-[#0b5ea2]/70">{data.announcement.message}</p></div></div></SectionCard>:null}
     <div className="mt-5">
       <SectionCard className="p-5"><div className="mb-4"><p className="text-xs font-bold uppercase tracking-wider text-[#0b5ea2]/45">Recent borrowing</p><h2 className="mt-1 font-display text-lg font-bold text-[#0b5ea2]">History preview</h2></div><div className="divide-y divide-[#0b5ea2]/10">{data.recentHistory.map(item=><div key={item.id} className="flex items-center justify-between gap-3 py-3"><div className="flex min-w-0 items-center gap-3"><BookCoverThumbnail title={item.title} coverImagePath={item.coverPath} className="h-16 w-11 shrink-0 rounded-lg border border-[#0b5ea2]/15 shadow-[0_2px_8px_rgba(11, 94, 162,0.10)]"/><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#0b5ea2]">{item.title}</p><p className="mt-1 text-[11px] text-[#0b5ea2]/45">{item.eventAt}</p></div></div><StatusBadge status={item.status}/></div>)}{!data.recentHistory.length?<Empty text="No borrowing history yet."/>:null}</div><Link to={`${prefix}/borrowing`}><CardLink>View full history</CardLink></Link></SectionCard>
     </div>
     {selectedTitleId!==null?<BookOverview titleId={selectedTitleId} role={data.user.role as AuthRole} activeBookCount={data.summary.activeBookCount} selectedBookCount={cart.length} alreadySelected={cartIds.has(selectedTitleId)} onAddToCart={addCatalogBook} onClose={()=>setSelectedTitleId(null)}/>:null}
+  </>
+}
+
+function HeroQr({ schoolId }: { schoolId: string }) {
+  const [url, setUrl] = useState('')
+  const [error, setError] = useState('')
+  const [open, setOpen] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  useEffect(() => {
+    let active = true, objectUrl = ''
+    attendanceApi.passImage().then(blob => { if (active) { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl) } }).catch(() => { if (active) setError('Your QR could not be loaded.') })
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [])
+  useEffect(() => {
+    if (!open) return
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [open])
+  return <>
+    <button type="button" onClick={() => setOpen(true)} className="rounded-2xl bg-white/10 p-4 text-left ring-1 ring-white/25 backdrop-blur-md transition hover:bg-white/15">
+      <p className="flex items-center gap-2 text-xs text-white/75"><QrCode size={14} />Your library QR</p>
+      {url ? <img src={url} alt="" className="mx-auto mt-2 size-24 rounded-lg bg-white p-1" /> : <p className="mt-3 text-sm font-semibold">{error || 'Loading QR…'}</p>}
+    </button>
+    {open ? <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0b5ea2]/40 p-4 backdrop-blur-sm">
+      <div role="dialog" aria-modal="true" aria-labelledby="library-qr-title" className="w-full max-w-sm rounded-3xl border border-[#0b5ea2]/15 bg-white p-6 text-[#0b5ea2] shadow-2xl dark:border-white/15 dark:bg-[#22232e] dark:text-white">
+        <div className="flex items-start justify-between gap-3"><h3 id="library-qr-title" className="font-display text-xl font-bold">Your library QR</h3><button type="button" aria-label="Close QR" onClick={() => setOpen(false)} className="rounded-lg p-2 hover:bg-[#0b5ea2]/5 dark:hover:bg-white/10"><X size={18} /></button></div>
+        {url ? <img src={url} alt="Your permanent library QR code" className="mx-auto mt-4 aspect-square w-72 max-w-full rounded-xl bg-white p-3" /> : <p className="mt-4 text-sm">{error || 'Loading QR…'}</p>}
+        <button type="button" disabled={!url || downloading} onClick={() => { setDownloading(true); void attendanceApi.downloadPass(schoolId).catch(() => setError('Unable to download your QR code.')).finally(() => setDownloading(false)) }} className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0b5ea2] text-sm font-bold text-white disabled:opacity-50"><Download size={16} />{downloading ? 'Preparing image…' : 'Download QR code'}</button>
+      </div>
+    </div> : null}
   </>
 }
 

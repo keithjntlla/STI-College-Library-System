@@ -160,12 +160,23 @@ export async function resolveSessionIdentity(): Promise<AuthenticatedIdentity | 
   }
 }
 
-export async function logout() {
+let manualLogout = false
+
+export function isManualLogout() {
+  return manualLogout
+}
+
+export function clearManualLogout() {
+  manualLogout = false
+}
+
+export async function logout(source: 'manual' | 'session' = 'manual') {
+  if (source === 'manual') manualLogout = true
   const token = getAccessToken()
-  if (token && typeof BroadcastChannel !== 'undefined') {
+  if (source === 'manual' && token && typeof BroadcastChannel !== 'undefined') {
     const claims = decodeAccessToken(token)
     const channel = new BroadcastChannel('sti-library-session-activity')
-    channel.postMessage({ type: 'logout', accountId: claims?.userId })
+    channel.postMessage({ type: 'logout', reason: 'manual', accountId: claims?.userId })
     channel.close()
   }
   // Clear immediately. A delayed logout response must not erase a later login.

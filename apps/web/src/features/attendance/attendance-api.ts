@@ -9,7 +9,9 @@ export type OperationalState=Capacity&{state:string;entryOpen:boolean;serviceVis
 export type AttendancePass={profile:{userId:number;schoolId:string;name:string;role:string;program:string|null;section:string|null};credential:{credentialId:number;publicId:string;issuedAt:string};summary:{visitsThisMonth:number;todayCheckIn:string|null;commonPurpose:string|null};history:Array<{log_id:number;attendance_date:string;time_in:string;time_out:string|null;checkout_source?:string|null;purpose:string;presence:'Inside'|'Exited'}>}
 export type ScanResult={visitor:{userId:number;schoolId:string;name:string;role:string;program:string|null;section:string|null;purpose?:string|null};openVisit:null|{log_id:number;attendance_date:string;time_in:string;reason_for_visit:string};occupancy:Capacity}
 export type ScanConfirmation={duplicate?:boolean;message:string;visitor:ScanResult['visitor'];attendance:{logId:number;checkedInAt?:string;checkedOutAt?:string;purpose?:string};occupancy:Capacity}
-export type AcademicTerm={academic_term_id:number;academic_year:string;term_name:string;starts_on:string;ends_on:string;is_active:number}
+export type LibraryHoursDay={dayOfWeek:number;isOpen:boolean;opensAt:string|null;closesAt:string|null}
+export type LibraryClosure={date:string;reason:string}
+export type LibraryHours={weekly:LibraryHoursDay[];closures:LibraryClosure[]}
 export type Pagination={page:number;limit:number;total:number;total_pages:number}
 function params(f:AttendanceFilters){const q=new URLSearchParams({period:f.period,page:String(f.page),limit:String(f.limit)});if(f.q)q.set('q',f.q);if(f.role)q.set('role',f.role);if(f.purpose)q.set('purpose',f.purpose);if(f.presence)q.set('presence',f.presence);if(f.period==='daily'&&f.date)q.set('date',f.date);if(f.period==='weekly'&&f.weekStart)q.set('week_start',f.weekStart);if(f.period==='monthly'){q.set('year',String(f.year));q.set('month',String(f.month))}if(f.period==='semester'&&f.academicTermId)q.set('academic_term_id',f.academicTermId);return q}
 function headers(accept='application/json'){const h=new Headers({Accept:accept}),token=getAccessToken();if(token)h.set('Authorization',`Bearer ${token}`);return h}
@@ -20,6 +22,10 @@ export const attendanceApi={
 state:async()=>(await json<OperationalState>('/api/v1/admin/attendance/state')).data,
 events:async()=>(await json<LibraryEvent[]>('/api/v1/admin/attendance/events')).data,
 updatePolicy:(body:unknown)=>mutate<OperationalState>('/api/v1/admin/attendance/policy','PATCH',body),
+hours:async()=>(await json<LibraryHours>('/api/v1/admin/attendance/hours')).data,
+saveHours:(days:LibraryHoursDay[])=>mutate<LibraryHours>('/api/v1/admin/attendance/hours','PUT',{days}),
+addClosure:(date:string,reason:string)=>mutate<LibraryHours>('/api/v1/admin/attendance/closures','POST',{date,reason}),
+removeClosure:(date:string)=>mutate<LibraryHours>(`/api/v1/admin/attendance/closures/${date}`,'DELETE',{}),
 saveEvent:(id:number|null,body:unknown)=>mutate<OperationalState>(id?'/api/v1/admin/attendance/events/'+id:'/api/v1/admin/attendance/events',id?'PATCH':'POST',body),
 cancelEvent:(id:number,version:number)=>mutate<OperationalState>('/api/v1/admin/attendance/events/'+id+'/cancel','POST',{version}),
 scan:(qrPayload:string,purpose:string,requestId:string,action:'Entry'|'Exit')=>mutate<ScanConfirmation>('/api/v1/admin/attendance/scan','POST',{qr_payload:qrPayload,purpose,request_id:requestId,expected_action:action}),

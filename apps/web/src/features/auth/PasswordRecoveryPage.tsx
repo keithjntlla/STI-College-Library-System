@@ -45,7 +45,7 @@ export function PasswordRecoveryPage() {
   }
   return <main className="flex min-h-screen items-center justify-center bg-[#0b5ea2] bg-cover bg-center px-4 py-10" style={{ backgroundImage: "linear-gradient(rgba(11,94,162,0.9), rgba(11,94,162,0.82)), url('/library-hero.webp')" }}>
     <section className="w-full max-w-md rounded-3xl bg-white p-7 text-[#0b5ea2] shadow-xl sm:p-9">
-      <img src="/logo.jpg" alt="STI College Ormoc Logo" className="mb-4 h-14 w-14 rounded-sm object-contain" />
+      <img src="/logo.jpg" alt="STI College Ormoc Logo" className="mb-4 h-14 w-14 rounded-xl object-contain" />
       <p className="text-xs font-black tracking-widest">STI COLLEGE ORMOC Â· SMART LIBRARY</p>
       <h1 className="mt-3 font-display text-3xl font-black">Forgot Password</h1>
       <p className="mt-3 text-sm">Student accounts can recover access using the school email saved on their account.</p>

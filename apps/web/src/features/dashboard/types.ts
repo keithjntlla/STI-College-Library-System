@@ -24,6 +24,7 @@ export type UserDashboardData = {
   profile: LibraryProfile
   summary: {activeLoans:number;activeBookCount:number;borrowingLimit:number|null;activeReservations:number;unreadNotifications:number;outstandingFines:number;clearanceStatus:string;clearanceComputedStatus?:string}
   occupancy: {current:number;capacity:number}
+  events?: Array<{title:string;kind:string;space:string;startsAt:string;endsAt:string;seats:number;allowWalkIns:boolean;allowBorrowing:boolean;allowPrinting:boolean;active:boolean}>
   currentLoan: null|{id:number;title:string;author:string;barcode:string;shelfLocation:string;status:string;dueAt:string;coverPath:string|null}
   reservation: null|{id:number;title:string;coverPath:string|null;queuePosition:number;status:string;pickupDeadline:string|null}
   printRequest: null|{id:number;fileName:string;copies:number;printType:string;cost:number;status:string;createdAt:string}

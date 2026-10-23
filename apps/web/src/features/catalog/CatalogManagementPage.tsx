@@ -1,6 +1,6 @@
 import { ResponsiveTable } from '../../components/ResponsiveTable'
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { Archive, ArrowRightLeft, BookOpen, Download, Eye, FileText, MapPin, Plus, ScanBarcode, Search, X } from 'lucide-react'
+import { Archive, ArrowRightLeft, BookOpen, Download, Eye, FileText, MapPin, MoreHorizontal, Plus, ScanBarcode, Search, X } from 'lucide-react'
 import { PageHeader, SectionCard, StatusBadge } from '../../components/ui'
 import { ApiError, catalogApi } from './catalog-api'
 import type { CatalogFilters, CatalogItem, Category, PhysicalCopy } from './types'
@@ -45,6 +45,16 @@ export function CatalogManagementPage({maintenance=false}: {maintenance?:boolean
   const [quotationItem, setQuotationItem] = useState<CatalogItem | null>(null)
   const [archiveReason, setArchiveReason] = useState('')
   const [archiving, setArchiving] = useState(false)
+  const [actionMenuId, setActionMenuId] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (actionMenuId == null) return
+    const close = () => setActionMenuId(null)
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close() }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', close)
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('pointerdown', close) }
+  }, [actionMenuId])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -165,7 +175,7 @@ export function CatalogManagementPage({maintenance=false}: {maintenance?:boolean
           <td className="px-4 py-3 text-[#0b5ea2]">{item.publicationYear ?? '—'}</td>
           <td className="px-4 py-3 font-mono text-xs text-[#0b5ea2]">{item.isbn ?? item.research?.researchCode ?? '—'}</td>
           <td className="px-4 py-3"><StatusBadge status={item.availability} /></td>
-          <td className="px-4 py-3"><div className="flex min-w-[130px] flex-col items-start gap-2">{item.recordType === 'Book' ? <button onClick={() => setOverviewTitleId(item.titleId)} className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0b5ea2]"><Eye size={15} /> View details</button> : item.research?.researchInventoryId ? <button type="button" onClick={() => setResearchAssetId(item.research!.researchInventoryId)} className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0b5ea2]"><Eye size={15} /> View codes</button> : <span className="text-xs text-[#0b5ea2]/50">Codes unavailable</span>}<button type="button" onClick={() => { setCategoryError(null); setCategoryItem(item) }} className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0b5ea2]"><ArrowRightLeft size={15} /> Change category</button>{item.recordType === 'Book' ? <><button type="button" onClick={() => setQuotationItem(item)} className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0b5ea2]">Supplier quotations</button><button type="button" onClick={() => { setArchiveReason(''); setArchiveItem(item) }} className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0b5ea2]"><Archive size={15} /> Archive book</button></> : null}</div></td>
+          <td className="px-4 py-3"><div className="flex items-center gap-2" onPointerDown={(event) => event.stopPropagation()}><button type="button" onClick={() => item.recordType === 'Book' ? setOverviewTitleId(item.titleId) : item.research?.researchInventoryId ? setResearchAssetId(item.research.researchInventoryId) : undefined} disabled={item.recordType !== 'Book' && !item.research?.researchInventoryId} className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#0b5ea2] px-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"><Eye size={15} />{item.recordType === 'Book' ? 'View details' : 'View codes'}</button><div className="relative"><button type="button" aria-haspopup="menu" aria-expanded={actionMenuId === item.titleId} aria-label={`More actions for ${item.title}`} onClick={() => setActionMenuId((current) => current === item.titleId ? null : item.titleId)} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#0b5ea2]/20 text-[#0b5ea2]"><MoreHorizontal size={16} /></button>{actionMenuId === item.titleId ? <div role="menu" className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-[#0b5ea2]/15 bg-white p-1 shadow-lg"><button type="button" role="menuitem" onClick={() => { setActionMenuId(null); setCategoryError(null); setCategoryItem(item) }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-bold text-[#0b5ea2] hover:bg-[#0b5ea2]/5"><ArrowRightLeft size={15} /> Change category</button>{item.recordType === 'Book' ? <><button type="button" role="menuitem" onClick={() => { setActionMenuId(null); setQuotationItem(item) }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-bold text-[#0b5ea2] hover:bg-[#0b5ea2]/5">Supplier quotations</button><button type="button" role="menuitem" onClick={() => { setActionMenuId(null); setArchiveReason(''); setArchiveItem(item) }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-bold text-[#0b5ea2] hover:bg-[#0b5ea2]/5"><Archive size={15} /> Archive book</button></> : null}</div> : null}</div></div></td>
         </tr>) : <tr><td colSpan={8} className="px-4 py-8 text-center text-[#0b5ea2]">No records match these filters.</td></tr>}</tbody>
       </table></ResponsiveTable>
     </SectionCard>

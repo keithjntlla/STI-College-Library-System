@@ -26,6 +26,14 @@ attendanceRouter.post('/scan/check-in',attendanceController.checkIn)
 attendanceRouter.post('/scan/check-out',attendanceController.checkOut)
 export const adminAttendanceV1Router=attendanceRouter
 
+export const libraryHoursRouter=Router()
+libraryHoursRouter.get('/',attendanceController.hours)
+libraryHoursRouter.put('/',attendanceController.saveHours)
+
+export const libraryClosuresRouter=Router()
+libraryClosuresRouter.post('/',attendanceController.addClosure)
+libraryClosuresRouter.delete('/:date',attendanceController.removeClosure)
+
 export const userAttendanceV1Router=Router()
 userAttendanceV1Router.get('/pass',attendanceController.myPass)
 userAttendanceV1Router.get('/pass.png',attendanceController.passPng)

@@ -329,6 +329,11 @@ html.dark textarea {
   border-color: rgba(255, 255, 255, 0.22) !important;
 }
 
+html.dark input.welcome-search:not([type="checkbox"]):not([type="radio"]) {
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
 html.dark input::placeholder,
 html.dark textarea::placeholder {
   color: rgba(247, 249, 255, 0.55) !important;

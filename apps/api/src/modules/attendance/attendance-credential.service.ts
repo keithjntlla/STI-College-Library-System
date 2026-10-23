@@ -16,6 +16,17 @@ export type AttendanceCredential = {
 
 const prefix = 'STILIB.ATTENDANCE.1'
 const digest = (value: string) => createHash('sha256').update(value, 'utf8').digest()
+function hashBytes(value: unknown) {
+  if (Buffer.isBuffer(value)) return value
+  if (value instanceof Uint8Array) return Buffer.from(value)
+  const text = String(value ?? '').trim()
+  const hex = text.startsWith('\\x') ? text.slice(2) : /^[0-9a-f]{64}$/i.test(text) ? text : ''
+  return hex.length % 2 === 0 && hex ? Buffer.from(hex, 'hex') : null
+}
+function sameHash(stored: unknown, supplied: Buffer) {
+  const bytes = hashBytes(stored)
+  return Boolean(bytes && bytes.length === supplied.length && timingSafeEqual(bytes, supplied))
+}
 const randomToken = (bytes: number) => randomBytes(bytes).toString('base64url')
 const credentialSecret = (publicId: string, userId: number, version: number) =>
   createHmac('sha256', env.attendanceQr.secret).update(`${publicId}:${userId}:${version}`, 'utf8').digest('base64url')
@@ -49,13 +60,20 @@ export function parseAttendanceQr(value: unknown, now = new Date()) {
 
 export async function issueAttendanceCredential(executor: Executor, userId: number): Promise<AttendanceCredential> {
   const [existing] = await executor.execute<RowDataPacket[]>(
-    `SELECT credential_id,user_id,public_id,credential_version,issued_at,credential_status
+    `SELECT credential_id,user_id,public_id,secret_hash,credential_version,issued_at,credential_status
        FROM attendance_qr_credentials WHERE user_id=? LIMIT 1`, [userId],
   )
   if (existing[0]?.credential_status === 'Active') {
     const version = Number(existing[0].credential_version)
     const publicId = String(existing[0].public_id)
     const secret = credentialSecret(publicId, userId, version)
+    const nextHash = digest(secret)
+    if (!sameHash(existing[0].secret_hash, nextHash)) {
+      await executor.execute(
+        `UPDATE attendance_qr_credentials SET secret_hash=?,updated_at=NOW() WHERE user_id=? AND credential_status='Active'`,
+        [nextHash, userId],
+      )
+    }
     return { credentialId: Number(existing[0].credential_id), userId, publicId, payload: payload(publicId, secret), issuedAt: new Date(existing[0].issued_at) }
   }
 
@@ -95,9 +113,8 @@ export async function validateAttendanceCredential(executor: Executor, value: un
       WHERE c.public_id=? LIMIT 1${lock ? ' FOR UPDATE' : ''}`, [parsed.publicId],
   )
   const row = rows[0]
-  const stored = row?.secret_hash as Buffer | undefined
   const supplied = digest(parsed.secret)
-  if (!row || !stored || stored.length !== supplied.length || !timingSafeEqual(stored, supplied)) {
+  if (!row || !sameHash(row.secret_hash, supplied)) {
     throw new HttpError(422, 'ATTENDANCE_QR_INVALID', 'This attendance QR code is invalid or no longer recognized.')
   }
   if (row.credential_status !== 'Active') throw new HttpError(422, 'ATTENDANCE_QR_REVOKED', 'This attendance QR code has been revoked.')

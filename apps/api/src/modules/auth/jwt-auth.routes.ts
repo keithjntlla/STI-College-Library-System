@@ -7,6 +7,7 @@ import { registrationService } from './registration.service.ts'
 import { passwordRecoveryService } from './password-recovery.service.ts'
 import { loginSecurityService, signSessionToken } from './login-security.service.ts'
 import { db } from '../../config/db.js'
+import { env } from '../../config/env.js'
 
 type Service = typeof jwtAuthService
 export function createJwtLoginController(service: Service = jwtAuthService) {
@@ -57,7 +58,7 @@ jwtAuthRouter.post('/register/verify', registrationLimiter, async (request, resp
 })
 jwtAuthRouter.post('/login', rateLimit({ windowMs: 10 * 60_000, limit: 60, standardHeaders: 'draft-8', legacyHeaders: false }), async (request, response, next) => {
   response.set('Cache-Control', 'no-store')
-  try { response.json({ success: true, data: await loginSecurityService.login(request.body) }) } catch (error) { next(error) }
+  try { response.json({ success: true, data: await (env.localDirectLogin ? jwtAuthService.login(request.body) : loginSecurityService.login(request.body)) }) } catch (error) { next(error) }
 })
 const otpLimiter = rateLimit({ windowMs: 10 * 60_000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false })
 for (const action of ['verify', 'resend'] as const) jwtAuthRouter.post(`/login/${action}`, otpLimiter, async (request, response, next) => {
@@ -68,7 +69,10 @@ jwtAuthRouter.post('/activity', authenticateJwt, ensureActiveJwtAccount, async (
   response.set('Cache-Control', 'no-store')
   try {
     const identity = response.locals.authenticatedUser
-    if (!identity.sessionId) { response.status(401).json({ success: false, message: 'Sign in again to start a renewed session.' }); return }
+    if (!identity.sessionId) {
+      if (env.localDirectLogin) { response.json({ success: true, data: { idleSeconds: 600 } }); return }
+      response.status(401).json({ success: false, message: 'Sign in again to start a renewed session.' }); return
+    }
     const [result] = await db.execute('UPDATE library_login_sessions SET last_activity_at=NOW() WHERE session_id=? AND account_id=? AND auth_version=? AND revoked_at IS NULL AND last_activity_at>NOW()-INTERVAL \'10 minutes\'', [identity.sessionId, identity.accountId, identity.authVersion])
     if (!(result as { affectedRows: number }).affectedRows) { response.status(401).json({ success: false, message: 'Your session expired. Sign in again.' }); return }
     response.json({ success: true, data: { token: signSessionToken(identity), idleSeconds: 600 } })
