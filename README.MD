@@ -77,7 +77,7 @@ npm --version
 Open PowerShell in the folder where you keep development projects:
 
 ```powershell
-git clone --branch feat/library-ui-integration https://github.com/keithjntlla/STI-College-Library-System.git
+git clone https://github.com/keithjntlla/STI-College-Library-System.git
 Set-Location StiOrmocLibrary
 npm install
 ```
