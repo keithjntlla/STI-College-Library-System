@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "codex/phase2-phase6-updates": false,
+      "codex/job-runner-manila": false
+    }
+  },
+  "framework": "vite",
+  "regions": ["icn1"],
+  "buildCommand": "npm run build",
+  "outputDirectory": "apps/web/dist",
+  "functions": {
+    "api/index.mjs": {
+      "includeFiles": "{apps/api/assets/fonts/**,node_modules/@sparticuz/chromium/bin/**,node_modules/docx-preview/dist/docx-preview.js,node_modules/jszip/dist/jszip.min.js}",
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index?__api_route=:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

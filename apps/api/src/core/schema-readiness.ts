@@ -1,0 +1,136 @@
+import type { Pool, RowDataPacket } from '../config/db.js'
+import { db } from '../config/db.js'
+import { enrollmentEnabled } from '../modules/enrollment/enrollment-policy.ts'
+import { loginDevicesEnabled } from '../modules/auth/login-device-policy.ts'
+
+const REQUIRED_COLUMNS: Record<string, string[]> = {
+  categories: ['category_id', 'category_name', 'shelf_location', 'created_at', 'updated_at'],
+  titles: ['title_id', 'category_id', 'record_type', 'title', 'cover_image_path', 'purchase_price', 'classification', 'volumes', 'remarks', 'lifecycle_status'],
+  authors: ['author_id', 'title_id', 'author_name'],
+  research_records: ['research_record_id', 'title_id', 'research_code', 'adviser_name'],
+  physical_copies: ['physical_copy_id', 'title_id', 'barcode', 'qr_code_data', 'accession_number', 'availability_status', 'fund_source', 'fund_detail', 'cost_php'],
+  barcode_sequences: ['sequence_year', 'last_value', 'updated_at'],
+  inventory_audit_events: ['inventory_audit_event_id', 'physical_copy_id', 'barcode_snapshot', 'event_type', 'action_reason', 'created_at'],
+  research_inventory: ['research_inventory_id', 'title_id', 'title', 'authors', 'adviser', 'publication_year', 'accession_number', 'barcode', 'qr_code_data', 'condition_state', 'availability_status', 'lifecycle_status', 'shelf_location', 'archived_at', 'archive_reason'],
+  research_inventory_audit_events: ['research_inventory_audit_event_id', 'research_inventory_id', 'barcode_snapshot', 'event_type', 'action_reason', 'created_at'],
+  reservations: ['reservation_id', 'user_id', 'material_id', 'book_title_id', 'accession_id', 'assigned_physical_copy_id', 'borrowing_policy_version_id', 'reservation_status', 'reserved_at', 'pickup_deadline'],
+  borrow_transactions: ['transaction_id', 'user_id', 'material_id', 'physical_copy_id', 'reservation_id', 'borrowing_policy_version_id', 'request_group_id', 'borrowed_at', 'due_at', 'initial_due_at', 'renewal_count', 'returned_at', 'reported_lost_at', 'lost_confirmed_at', 'transaction_status'],
+  loan_renewal_requests: ['renewal_request_id', 'request_key', 'transaction_id', 'renewal_number', 'requester_account_id', 'requester_user_id', 'decision_source', 'deciding_staff_account_id', 'deciding_staff_user_id', 'staff_note', 'status', 'decision_code', 'decision_summary', 'blocker_codes', 'previous_due_at', 'new_due_at', 'borrowing_policy_version_id', 'requested_at', 'decided_at', 'created_at'],
+  borrowing_policy_versions: ['borrowing_policy_version_id', 'effective_on', 'student_max_active_books', 'faculty_max_active_books', 'borrowing_days', 'due_time_cutoff', 'max_renewals', 'renewal_extension_days', 'student_max_active_reservations', 'faculty_max_active_reservations', 'change_reason', 'created_at'],
+  borrowing_policy_material_rules: ['borrowing_policy_version_id', 'material_type', 'is_borrowable'],
+  circulation_override_events: ['override_event_id', 'borrow_transaction_id', 'borrower_user_id', 'physical_copy_id', 'approved_by_user_id', 'warning_codes', 'override_reason', 'preflight_decision_id', 'approved_at'],
+  circulation_cases: ['case_id', 'case_type', 'transaction_id', 'physical_copy_id', 'borrower_user_id', 'status', 'opened_at', 'resolved_at', 'baseline_condition_status', 'observed_condition_status', 'lost_book_report_id'],
+  circulation_case_events: ['event_id', 'case_id', 'event_type', 'actor_user_id', 'from_status', 'to_status', 'reason', 'notes', 'created_at'],
+  admin_notifications: ['admin_notification_id', 'event_type', 'reservation_id', 'borrow_transaction_id', 'book_title_id', 'created_at'],
+  library_closed_days: ['closed_date', 'reason', 'created_at'],
+  library_operating_schedule: ['day_of_week', 'is_open', 'opens_at', 'closes_at'],
+  notifications: ['notification_id', 'user_id', 'trigger_type', 'source_type', 'source_id', 'dedupe_key', 'is_read', 'read_at', 'deleted_at'],
+  announcements: ['announcement_id', 'title', 'message_body', 'priority', 'announcement_status', 'publish_at', 'created_by_user_id'],
+  announcement_revisions: ['announcement_revision_id', 'announcement_id', 'revision_number', 'changed_by_user_id'],
+  clearance_overrides: ['clearance_override_id', 'user_id', 'override_status', 'reason', 'applied_by_user_id', 'revoked_at'],
+  lost_book_reports: ['lost_book_report_id', 'transaction_id', 'user_id', 'report_status', 'replacement_charge', 'payment_status', 'quotation_id', 'charge_resolution', 'resolution_reason'],
+  book_quotations: ['quotation_id', 'title_id', 'storage_path', 'quoted_amount', 'created_at'],
+  scheduled_job_state: ['job_name', 'lease_token', 'lease_expires_at', 'last_success_at', 'last_failure_at', 'last_outcome', 'progress_cursor'],
+  scheduled_job_runs: ['run_id', 'job_name', 'started_at', 'finished_at', 'outcome', 'result_json'],
+  invoice_setup: ['settings_id', 'issuer_name', 'issuer_tin', 'serial_prefix', 'next_serial', 'approved'],
+  customer_invoices: ['invoice_id', 'source_type', 'source_id', 'invoice_number', 'status', 'amount'],
+  fines: ['fine_id', 'user_id', 'fine_type', 'fine_amount', 'payment_status', 'maximum_cap_applied', 'finalized_at'],
+  fine_policy_versions: ['fine_policy_id', 'hourly_rate', 'daily_rate', 'maximum_penalty', 'effective_from', 'is_active'],
+  fine_infractions: ['fine_infraction_id', 'fine_id', 'category', 'incident_at', 'details', 'issued_by_user_id'],
+  fine_payment_receipts: ['fine_payment_receipt_id', 'receipt_number', 'request_key', 'user_id', 'amount_received', 'payment_method', 'receipt_status', 'document_label'],
+  fine_payment_allocations: ['fine_payment_allocation_id', 'fine_payment_receipt_id', 'fine_id', 'lost_book_report_id', 'amount_allocated', 'balance_before', 'balance_after'],
+  fine_adjustments: ['fine_adjustment_id', 'fine_id', 'adjustment_type', 'amount_adjusted', 'reason', 'adjusted_by_user_id'],
+  users: ['user_id', 'school_id', 'user_role', 'password_hash'],
+  accounts: ['account_id', 'school_id', 'contact_number', 'password_hash', 'role', 'account_status'],
+  registration_requests: ['request_id', 'school_id', 'email', 'requested_role', 'password_hash', 'status', 'code_hash', 'code_expires_at', 'email_verified_at', 'reviewed_by_account_id'],
+  profile_avatar_submissions: ['submission_id', 'account_id', 'storage_path', 'status', 'reviewed_by_account_id', 'review_reason'],
+  student_profiles: ['student_profile_id', 'account_id', 'first_name', 'last_name', 'program_strand', 'year_grade_level'],
+  academic_terms: ['academic_term_id', 'academic_year', 'term_name', 'starts_on', 'ends_on', 'is_active'],
+  attendance_logs: ['log_id', 'user_id', 'attendance_date', 'time_in', 'time_out', 'reason_for_visit'],
+  print_requests: ['request_id', 'user_id', 'printer_id', 'paper_size', 'page_count', 'total_sheets', 'payment_status', 'job_status', 'row_version'],
+  printing_service_settings: ['settings_id', 'accepting_requests', 'unavailable_reason', 'updated_by_user_id', 'updated_at'],
+  print_file_download_audit: ['download_audit_id', 'request_id', 'downloaded_by_user_id', 'downloaded_at'],
+  printers: ['printer_id', 'printer_name', 'operational_status', 'status_reason'],
+  ink_repository: ['ink_id', 'printer_id', 'available_bottles', 'low_stock_threshold_bottles', 'cost_per_bottle'],
+  bond_paper_stocks: ['paper_stock_id', 'paper_size_dimension', 'remaining_reams', 'unopened_reams', 'low_stock_threshold_reams'],
+  print_pricing_rules: ['pricing_rule_id', 'print_type', 'paper_size', 'price_per_page', 'is_active'],
+  print_status_history: ['print_status_history_id', 'request_id', 'from_status', 'to_status', 'created_at'],
+  print_cash_payments: ['print_cash_payment_id', 'request_id', 'amount_paid', 'received_at'],
+  ink_stock_movements: ['ink_stock_movement_id', 'ink_id', 'movement_type', 'activity_code', 'quantity_bottles', 'unit_cost_per_bottle', 'balance_before', 'balance_after', 'created_at'],
+  paper_stock_movements: ['paper_stock_movement_id', 'paper_stock_id', 'movement_type', 'activity_code', 'quantity_reams', 'unit_cost_per_ream', 'balance_before', 'balance_after', 'created_at'],
+  print_payment_receipts: ['print_receipt_id', 'print_cash_payment_id', 'request_id', 'user_id', 'receipt_number', 'verification_code', 'receipt_status', 'document_label', 'amount_received', 'payment_method', 'received_at'],
+  floor_plan_shelves: ['id', 'label', 'column_count', 'row_count'],
+  library_profile_settings: ['settings_id', 'library_name', 'seat_capacity', 'updated_by_user_id'],
+  library_capacity_changes: ['capacity_change_id', 'previous_capacity', 'new_capacity', 'change_reason', 'changed_at'],
+  attendance_qr_credentials: ['credential_id', 'user_id', 'public_id', 'secret_hash', 'credential_status', 'issued_at'],
+}
+
+export type SchemaReadiness = { ready: boolean; missingTables: string[]; missingColumns: string[] }
+
+export async function checkSchemaReadiness(database: Pool = db as Pool): Promise<SchemaReadiness> {
+  const requiredColumns: Record<string, string[]> = {
+    ...REQUIRED_COLUMNS,
+    login_attempt_windows: ['identifier_hash', 'failed_count', 'window_started_at', 'locked_until'],
+    login_otp_challenges: ['challenge_id', 'account_id', 'auth_version', 'code_hash', 'failed_count', 'expires_at', 'sent_at', 'consumed_at', 'resend_count', ...(enrollmentEnabled() ? ['restoration_semester_id'] : []), ...(loginDevicesEnabled() ? ['remember_device'] : [])],
+    library_login_sessions: ['session_id', 'account_id', 'auth_version', 'last_activity_at', 'revoked_at', ...(loginDevicesEnabled() ? ['device_token_hash', 'remembered_until'] : [])],
+    ...(loginDevicesEnabled() ? { login_device_switches: ['token_hash', 'account_id', 'auth_version', 'replaced_session_id', 'remember_device', 'expires_at'] } : {}),
+    clearance_semester_schedules: ['academic_term_id', 'deadline_at', 'row_version', 'updated_by', 'updated_at'],
+    clearance_schedule_events: ['event_id', 'academic_term_id', 'previous_deadline', 'deadline_at', 'actor_id', 'created_at'],
+    collection_reference_versions:['reference_id','academic_year','reference_year','review_age','approved_by','approval_source'],
+    collection_review_settings:['settings_id','reference_id','row_version'],
+    collection_age_status:['title_id','reference_id','age_status'],
+    collection_review_decisions:['decision_id','title_id','reference_id','decision','note','evidence','decided_by'],
+    collection_requirement_versions:['requirement_id','program_id','course_id','minimum_count','minimum_recent','maximum_age','year_basis','approved','mapping_verified'],
+    collection_review_alerts:['alert_id','dedupe_key','title_id','requirement_id','reference_id'],
+    collection_requirement_status:['requirement_id','status','checked_at'],
+    reservations:[...REQUIRED_COLUMNS.reservations,'client_request_id','preparation_started_at','ready_at','request_kind'],
+    in_library_uses:['use_id','research_inventory_id','user_id','physical_copy_id','attendance_log_id','started_at','hand_back_by','ended_at','status'],
+    book_request_events:['event_id','reservation_id','event_status','physical_copy_id','occurred_at'],
+    book_request_email_deliveries:['delivery_id','event_id','status','attempts','lease_token'],
+    circulation_scan_receipts:['request_id','actor_account_id','operation','payload_digest','result'],
+    attendance_operation_settings:['settings_id','service_purposes','preclosing_minutes','configured','row_version'],
+    library_operational_events:['event_id','starts_at','ends_at','seat_capacity','allow_walk_ins','allow_borrowing','allow_printing','row_version'],
+    attendance_scan_receipts:['request_id','user_id','actor_account_id','log_id','action'],
+    attendance_logs:[...REQUIRED_COLUMNS.attendance_logs,'seat_visit','checkout_source','checked_in_at','checked_out_at'],
+    account_recovery_challenges: ['account_id', 'public_id', 'account_version', 'code_hash', 'code_expires_at', 'code_sent_at', 'code_attempts', 'locked_until', 'reset_token_hash', 'reset_expires_at'],
+    ...(enrollmentEnabled() ? {
+      enrollment_lifecycle: ['id', 'started'],
+      enrollment_semesters: ['semester_id', 'academic_year', 'term_name', 'end_date', 'manual_end_at', 'scheduled_end_at', 'started_at', 'ended_at'],
+      enrollment_roster_imports: ['roster_id', 'semester_id', 'source_date', 'complete', 'file_hash', 'file_name'],
+      enrollment_roster_students: ['roster_id', 'school_id', 'school_email', 'student_name', 'first_name', 'last_name', 'program', 'year_level'],
+      enrollment_semester_members: ['semester_id', 'account_id', 'school_id', 'student_name', 'closed_status', 'closed_auth_version'],
+      enrollment_signup_challenges: ['challenge_id', 'semester_id', 'roster_id', 'school_id', 'school_email', 'code_hash', 'grant_hash', 'attempts', 'sent_at', 'expires_at'],
+    } : {}),
+  }
+  const tableNames = Object.keys(requiredColumns)
+  const placeholders = tableNames.map(() => '?').join(', ')
+  const [rows] = await database.execute<RowDataPacket[]>(
+    `SELECT table_name AS "TABLE_NAME", column_name AS "COLUMN_NAME"
+       FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name IN (${placeholders})`,
+    tableNames,
+  )
+  const found = new Map<string, Set<string>>()
+  for (const row of rows) {
+    const table = String(row.TABLE_NAME ?? row.table_name)
+    const column = String(row.COLUMN_NAME ?? row.column_name)
+    if (!found.has(table)) found.set(table, new Set())
+    found.get(table)!.add(column)
+  }
+  const missingTables = tableNames.filter((table) => !found.has(table))
+  const missingColumns = tableNames.flatMap((table) =>
+    missingTables.includes(table) ? [] : requiredColumns[table]
+      .filter((column) => !found.get(table)?.has(column))
+      .map((column) => `${table}.${column}`),
+  )
+  return { ready: missingTables.length === 0 && missingColumns.length === 0, missingTables, missingColumns }
+}
+
+export function isMissingSchemaError(error: unknown) {
+  const code = (error as { code?: string } | null)?.code
+  const message = String((error as { message?: string } | null)?.message ?? '')
+  return [
+    '42P01', // undefined_table
+    '42703', // undefined_column
+  ].includes(code ?? '') || /relation .* does not exist|column .* does not exist/i.test(message)
+}
